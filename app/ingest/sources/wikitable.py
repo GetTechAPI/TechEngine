@@ -37,13 +37,10 @@ def parse_table(table: Tag, header_rules: dict[str, list[str]]) -> Iterator[Grid
     grid = _table_to_grid(table)
     if not grid:
         return
-    headers = _detect_headers(grid, header_rules)
-    if not headers:
+    detected = _detect_headers(grid, header_rules)
+    if detected is None:
         return
-    header_row_idx = headers["__row_index__"]
-    column_to_field = {
-        col: field for col, field in headers.items() if isinstance(col, int)
-    }
+    header_row_idx, column_to_field = detected
     for row_idx, row in enumerate(grid):
         if row_idx <= header_row_idx:
             continue
@@ -96,8 +93,8 @@ def _table_to_grid(table: Tag) -> list[list[str]]:
 
 def _detect_headers(
     grid: list[list[str]], header_rules: dict[str, list[str]]
-) -> dict[object, object]:
-    """Return ``{col_idx: field_name, "__row_index__": row_idx}`` or ``{}``."""
+) -> tuple[int, dict[int, str]] | None:
+    """Return ``(row_index, {col_idx: field_name})`` or ``None`` if no header row."""
     for row_idx, row in enumerate(grid):
         mapping: dict[int, str] = {}
         for col_idx, text in enumerate(row):
@@ -105,8 +102,8 @@ def _detect_headers(
             if field is not None:
                 mapping.setdefault(col_idx, field)
         if mapping and "model" in mapping.values():
-            return {**mapping, "__row_index__": row_idx}
-    return {}
+            return row_idx, mapping
+    return None
 
 
 def _match_header(text: str, rules: dict[str, list[str]]) -> str | None:

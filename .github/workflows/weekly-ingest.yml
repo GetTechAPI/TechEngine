@@ -10,7 +10,7 @@ on:
       category:
         description: "Category to ingest"
         type: choice
-        options: [cpu]
+        options: [cpu, gpu]
         default: cpu
       limit:
         description: "Max candidates per source"
