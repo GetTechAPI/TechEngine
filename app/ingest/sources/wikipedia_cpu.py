@@ -2,14 +2,11 @@
 
 Each ``List_of_<vendor>_<family>_processors`` page on Wikipedia is a series
 of ``table.wikitable`` blocks; rows are individual SKUs and columns map to
-schema fields. Column headers vary subtly between pages, so we match by
+schema fields. Header text varies subtly between pages, so we match by
 loose keywords (``"cores"``, ``"base"``, ``"tdp"`` …) rather than position.
-
-Required output fields (per the validator): ``slug``, ``name``,
-``manufacturer``, ``release_date``, ``segment``, ``architecture``,
-``cores``, ``threads``. Anything missing collapses into
-``IngestCandidate.missing_fields``; the pipeline skips drafts unless a
-``--include-drafts`` flag is set.
+Rows whose first column is provided via ``rowspan`` on the preceding row
+(e.g. an ``Architecture`` cell shared across a generation) are materialised
+by the shared grid parser.
 """
 
 from __future__ import annotations
@@ -32,20 +29,26 @@ from ..normalize import (
     parse_tdp_w,
 )
 from .base import IngestCandidate
+from .wikitable import parse_table
 
 # (manufacturer, page, architecture-fallback). Architecture is overridden
-# per-table when a preceding ``<h2>``/``<h3>`` provides a better label.
+# per-row when the table has an explicit ``Architecture`` / ``Codename``
+# column, and per-table from the preceding section heading otherwise.
 PAGES: list[tuple[str, str, str]] = [
     ("intel", "List_of_Intel_Core_processors", "Intel Core"),
     ("intel", "List_of_Intel_Xeon_processors", "Intel Xeon"),
+    ("intel", "List_of_Intel_Atom_processors", "Intel Atom"),
     ("amd", "List_of_AMD_Ryzen_processors", "AMD Ryzen"),
     ("amd", "List_of_AMD_Epyc_processors", "AMD EPYC"),
+    ("amd", "List_of_AMD_Threadripper_processors", "AMD Threadripper"),
 ]
 
-# Lowercased header tokens → canonical field name. Only the first match wins
-# per row (so a "Cores/Threads" column maps to ``cores`` via the first hit).
+# Lowercased header tokens → canonical field name. Order matters: the first
+# matching fragment per cell wins (so a "Cores/Threads" column maps to
+# ``cores`` rather than ``threads``).
 HEADER_RULES: dict[str, list[str]] = {
     "model": ["model", "processor", "cpu", "name"],
+    "architecture": ["architecture", "codename", "code name", "core name"],
     "cores": ["cores", "core"],
     "threads": ["threads", "thread"],
     "base_clock": ["base", "freq", "clock"],
@@ -88,85 +91,27 @@ class WikipediaCpuIngest:
         soup = BeautifulSoup(html, "html.parser")
         source_url = f"https://en.wikipedia.org/wiki/{page}"
         for table in soup.select("table.wikitable"):
-            headers = _table_headers(table)
-            if not headers or "model" not in headers.values():
-                continue
-            architecture = _nearest_section_label(table) or fallback_arch
-            for row in table.select("tr"):
-                cells = row.find_all(["td"])
-                if not cells:
-                    continue
-                row_text = _row_by_field(cells, headers)
-                model = row_text.get("model")
-                if not model:
-                    continue
+            section_label = _nearest_section_label(table) or fallback_arch
+            for row in parse_table(table, HEADER_RULES):
+                model = row.cells.get("model", "")
                 slug = slugify(model, manufacturer=manufacturer)
                 if len(slug) < 4 or not any(ch.isdigit() for ch in slug):
                     continue
+                architecture = row.cells.get("architecture") or section_label
                 yield _build_candidate(
                     manufacturer=manufacturer,
                     architecture=architecture,
                     model=model,
                     slug=slug,
-                    row=row_text,
+                    row=row.cells,
                     source_url=source_url,
                 )
-
-
-def _table_headers(table: Tag) -> dict[int, str]:
-    """Map column index → canonical field name based on header text."""
-    header_row = table.find("tr")
-    if header_row is None:
-        return {}
-    out: dict[int, str] = {}
-    index = 0
-    for cell in header_row.find_all(["th", "td"]):
-        if not isinstance(cell, Tag):
-            continue
-        text = cell.get_text(" ", strip=True).lower()
-        canonical = _match_header(text)
-        if canonical is not None:
-            out[index] = canonical
-        index += _colspan(cell)
-    return out
-
-
-def _match_header(text: str) -> str | None:
-    for canonical, tokens in HEADER_RULES.items():
-        for token in tokens:
-            if token in text:
-                return canonical
-    return None
-
-
-def _row_by_field(cells: list[Tag], headers: dict[int, str]) -> dict[str, str]:
-    result: dict[str, str] = {}
-    index = 0
-    for cell in cells:
-        canonical = headers.get(index)
-        if canonical is not None and canonical not in result:
-            result[canonical] = cell.get_text(" ", strip=True)
-        index += _colspan(cell)
-    return result
-
-
-def _colspan(cell: Tag) -> int:
-    raw = cell.attrs.get("colspan")
-    if isinstance(raw, list):
-        raw = raw[0] if raw else None
-    if raw is None:
-        return 1
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return 1
 
 
 def _nearest_section_label(table: Tag) -> str | None:
     for prev in table.find_all_previous(["h2", "h3", "h4"]):
         text = prev.get_text(" ", strip=True)
         if text and "edit" not in text.lower():
-            # Wikipedia headings sometimes end with "[edit]" pre-strip.
             return text.split("[")[0].strip() or None
     return None
 

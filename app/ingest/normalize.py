@@ -12,8 +12,12 @@ import re
 from datetime import date
 
 _FREQ_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(GHz|MHz)\b", re.IGNORECASE)
-_INT_RE = re.compile(r"(\d{1,4})")
+_FREQ_MHZ_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(MHz|GHz)\b", re.IGNORECASE)
+_INT_RE = re.compile(r"(\d{1,5})")
 _CACHE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(MB|KB|GB)\b", re.IGNORECASE)
+_MEMORY_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(GB|MB)\b", re.IGNORECASE)
+_BUS_RE = re.compile(r"(\d{2,4})\s*-?\s*bit\b", re.IGNORECASE)
+_PCIE_RE = re.compile(r"PCI[-\s]?[Ee]?\s*(?:Gen\s*)?(\d(?:\.\d)?)", re.IGNORECASE)
 _TDP_RE = re.compile(r"(\d{1,4})(?:\s*/\s*\d{1,4})?\s*W\b", re.IGNORECASE)
 
 _ISO_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
@@ -138,6 +142,59 @@ def _safe_date(year: int, month: int, day: int) -> date | None:
         return date(year, month, day)
     except ValueError:
         return None
+
+
+def parse_frequency_mhz(text: str) -> int | None:
+    """``"1500 MHz"`` → ``1500``; ``"2.5 GHz"`` → ``2500``."""
+    if not text:
+        return None
+    match = _FREQ_MHZ_RE.search(text)
+    if not match:
+        return None
+    value = float(match.group(1))
+    unit = match.group(2).lower()
+    return int(value * 1000) if unit == "ghz" else int(value)
+
+
+def parse_memory_gb(text: str) -> float | None:
+    """``"24 GB"`` → ``24.0``; ``"4096 MB"`` → ``4.0``."""
+    if not text:
+        return None
+    match = _MEMORY_RE.search(text)
+    if not match:
+        return None
+    value = float(match.group(1))
+    return value if match.group(2).lower() == "gb" else round(value / 1024, 3)
+
+
+def parse_memory_bus_bit(text: str) -> int | None:
+    """``"384-bit"`` → ``384``; ``"128 bit"`` → ``128``."""
+    if not text:
+        return None
+    match = _BUS_RE.search(text)
+    return int(match.group(1)) if match else None
+
+
+def parse_pcie_version(text: str) -> str | None:
+    """``"PCIe 4.0 x16"`` → ``"4.0"``; ``"PCI-e Gen 5"`` → ``"5"``."""
+    if not text:
+        return None
+    match = _PCIE_RE.search(text)
+    return match.group(1) if match else None
+
+
+def guess_gpu_segment(name: str) -> str:
+    """Heuristic GPU segment classifier (``"consumer"`` vs ``"enterprise"``)."""
+    lowered = name.lower()
+    enterprise_tokens = (
+        "quadro", "tesla", "a100", "h100", "h200", "b100", "b200",
+        "instinct", "mi300", "mi325", "mi350",
+        "data center", "datacenter", "professional", "radeon pro",
+        "rtx 6000", "rtx 5000", "rtx 4500", "rtx 4000",
+    )
+    if any(token in lowered for token in enterprise_tokens):
+        return "enterprise"
+    return "consumer"
 
 
 def guess_cpu_segment(name: str) -> str:

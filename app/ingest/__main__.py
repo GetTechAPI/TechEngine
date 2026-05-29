@@ -21,9 +21,11 @@ from pathlib import Path
 from .pipeline import run
 from .sources.base import IngestCandidate, IngestSource
 from .sources.wikipedia_cpu import WikipediaCpuIngest
+from .sources.wikipedia_gpu import WikipediaGpuIngest
 
 SOURCES_BY_CATEGORY: dict[str, list[IngestSource]] = {
     "cpu": [WikipediaCpuIngest()],
+    "gpu": [WikipediaGpuIngest()],
 }
 
 
