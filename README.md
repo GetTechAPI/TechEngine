@@ -25,13 +25,17 @@ app/
   ├ models/            # SQLModel tables
   ├ routers/           # /v1/{brands,socs,smartphones,gpus,cpus}
   ├ schemas/           # Pydantic response models
-  └ services/          # scoring (algorithm_version-tagged)
+  ├ services/          # scoring (algorithm_version-tagged)
+  ├ coverage/          # upstream-vs-curated diff + Markdown report
+  └ ingest/            # draft new records from upstream pages
 tests/                 # unit + integration
 site/                  # Astro engine landing (deploys to Pages)
 docs/                  # SPEC / DATA_PIPELINE / DEVELOPMENT
 .github/workflows/
   ├ validate-data.yml  # workflow_call: PR-time data validation for TechAPI
   ├ refresh-data.yml   # cron: regenerate the static dump weekly
+  ├ coverage-report.yml # cron: gap report, sticky issue
+  ├ weekly-ingest.yml  # cron: drafts new SKUs, opens PR against TechAPI
   ├ deploy-pages.yml   # build & deploy engine site + dump
   └ test.yml           # lint + type-check + tests
 ```
@@ -74,11 +78,13 @@ Spins up Postgres 16, seeds from the mounted TechAPI checkout, serves on `:8000`
 ## Roadmap
 
 - [x] Split out from TechAPI; sibling-checkout data pipeline
-- [ ] **Coverage gap detector** — diff curated dataset vs upstream catalogs
-  (Intel ARK, AMD product pages, Wikipedia infoboxes, TechPowerUp DB) and emit
-  weekly issues listing missing SKUs ([#1](https://github.com/GetTechAPI/TechEngine/issues/1))
-- [ ] **Weekly ingestion crawler** — scrape canonical sources and open PRs
-  against TechAPI with new SKUs ([#2](https://github.com/GetTechAPI/TechEngine/issues/2))
+- [x] **Coverage gap detector** — diff curated dataset vs upstream catalogs
+  and surface missing SKUs as a sticky weekly issue
+  ([#1](https://github.com/GetTechAPI/TechEngine/issues/1))
+- [x] **Weekly ingestion crawler** — scrape canonical sources and open PRs
+  against TechAPI with new SKUs (requires `TECHAPI_PR_TOKEN` secret to push)
+  ([#2](https://github.com/GetTechAPI/TechEngine/issues/2))
+- [ ] More sources (Intel ARK, AMD product pages, TechPowerUp DB)
 
 ## License
 

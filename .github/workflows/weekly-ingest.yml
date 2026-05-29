@@ -1,0 +1,109 @@
+name: weekly-ingest
+
+# Weekly: scrape upstream catalogs, draft missing SKUs into a TechAPI worktree,
+# open a PR for curator review.
+on:
+  schedule:
+    - cron: "29 6 * * 1"   # Mondays 06:29 UTC, after coverage-report (06:23)
+  workflow_dispatch:
+    inputs:
+      category:
+        description: "Category to ingest"
+        type: choice
+        options: [cpu]
+        default: cpu
+      limit:
+        description: "Max candidates per source"
+        type: string
+        default: "50"
+      include_drafts:
+        description: "Write incomplete records too (PR marked as draft)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Use the PAT when present so we can push to the TechAPI fork later;
+      # fall back to the default token for read-only test runs.
+      - uses: actions/checkout@v4
+        with:
+          repository: Seungpyo1007/TechAPI
+          path: TechAPI
+          token: ${{ secrets.TECHAPI_PR_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -e .
+
+      - name: Run ingest
+        env:
+          TECHAPI_DATA_DIR: ${{ github.workspace }}/TechAPI/data
+          INGEST_CATEGORY: ${{ inputs.category || 'cpu' }}
+          INGEST_LIMIT: ${{ inputs.limit || '50' }}
+          INGEST_DRAFTS: ${{ inputs.include_drafts && '--include-drafts' || '' }}
+        run: |
+          python -m app.ingest \
+            --category "$INGEST_CATEGORY" \
+            --limit "$INGEST_LIMIT" \
+            --data-root TechAPI/data \
+            --summary ingest-summary.md \
+            $INGEST_DRAFTS
+
+      - name: Upload summary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ingest-summary
+          path: ingest-summary.md
+
+      - name: Check whether ingest produced any additions
+        id: changes
+        run: |
+          cd TechAPI
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open PR against TechAPI
+        if: ${{ steps.changes.outputs.has_changes == 'true' && secrets.TECHAPI_PR_TOKEN != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.TECHAPI_PR_TOKEN }}
+          CATEGORY: ${{ inputs.category || 'cpu' }}
+          IS_DRAFT: ${{ inputs.include_drafts && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          cd TechAPI
+          BRANCH="ingest/${CATEGORY}-$(date -u +%Y%m%d-%H%M%S)"
+          git config user.name "techengine-bot"
+          git config user.email "techengine-bot@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add data/
+          git commit -m "feat(data/${CATEGORY}): weekly ingest"
+          git push -u origin "$BRANCH"
+          DRAFT_FLAG=""
+          if [ "$IS_DRAFT" = "true" ]; then
+            DRAFT_FLAG="--draft"
+          fi
+          gh pr create \
+            --title "feat(data/${CATEGORY}): weekly ingest" \
+            --body-file ../ingest-summary.md \
+            --base main \
+            --head "$BRANCH" \
+            $DRAFT_FLAG
+
+      - name: Note when PR token is missing
+        if: ${{ steps.changes.outputs.has_changes == 'true' && secrets.TECHAPI_PR_TOKEN == '' }}
+        run: |
+          echo "::warning::Ingest produced additions but TECHAPI_PR_TOKEN is unset; skipping PR. Summary attached as artifact."

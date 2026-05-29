@@ -14,23 +14,23 @@ const pillars = [
   },
   {
     title: "Cover",
-    blurb: "Diff the curated dataset against upstream catalogs (ARK, AMD, Wikipedia) and surface missing SKUs as weekly reports.",
+    blurb: "Diff the curated dataset against upstream catalogs (Wikipedia today; ARK / vendor pages next) and surface missing SKUs as weekly reports.",
     cmd: "python -m app.coverage",
-    link: `${ghEngine}/issues/1`,
-    pending: true,
+    link: `${ghEngine}/blob/main/app/coverage`,
   },
   {
     title: "Ingest",
     blurb: "Drafts new records from canonical sources and opens PRs against TechAPI for human review.",
-    cmd: "python -m app.ingest",
-    link: `${ghEngine}/issues/2`,
-    pending: true,
+    cmd: "python -m app.ingest --category cpu",
+    link: `${ghEngine}/blob/main/app/ingest`,
   },
 ];
 
 const workflows = [
   { name: "validate-data", file: "validate-data.yml", desc: "Reusable: called by TechAPI on every PR + push." },
   { name: "refresh-data", file: "refresh-data.yml", desc: "Cron Mondays 06:17 UTC — regenerates the static dump." },
+  { name: "coverage-report", file: "coverage-report.yml", desc: "Cron Mondays 06:23 UTC — diffs upstream vs curated, syncs sticky issue." },
+  { name: "weekly-ingest", file: "weekly-ingest.yml", desc: "Cron Mondays 06:29 UTC — drafts missing SKUs, opens PR against TechAPI." },
   { name: "test", file: "test.yml", desc: "Lint + type-check + pytest on every push." },
   { name: "deploy-pages", file: "deploy-pages.yml", desc: "Builds this site + dump and publishes to Pages." },
 ];
