@@ -1,16 +1,16 @@
 # TechEngine
 
-> **Validation, ingestion, and serving engine for the [TechAPI](https://github.com/GetTechAPI/TechAPI) dataset.**
+> **Validation, ingestion, and serving engine for the [TechAPI](https://github.com/Seungpyo1007/TechAPI) dataset.**
 
 [![test](https://github.com/GetTechAPI/TechEngine/actions/workflows/test.yml/badge.svg)](https://github.com/GetTechAPI/TechEngine/actions/workflows/test.yml)
-&nbsp;Code: **MIT** · Data: lives in **[TechAPI](https://github.com/GetTechAPI/TechAPI)** (CC-BY-SA 4.0)
+&nbsp;Code: **MIT** · Data: lives in **[TechAPI](https://github.com/Seungpyo1007/TechAPI)** (CC-BY-SA 4.0)
 
 TechEngine owns everything *around* the data: schema validation, the FastAPI
-read API, the PokeAPI-style static JSON dump, the engine's own landing site,
-and (next up) automated coverage checks and a weekly ingestion crawler.
+read API, the static JSON dump generator, the engine's own landing site, and
+(next up) automated coverage checks and a weekly ingestion crawler.
 
 The dataset and the public-facing playground site live in
-[TechAPI](https://github.com/GetTechAPI/TechAPI) so each can be versioned,
+[TechAPI](https://github.com/Seungpyo1007/TechAPI) so each can be versioned,
 mirrored, and licensed independently. The site shipped in this repo is the
 engine's own landing — what TechEngine is, what it runs, link out to docs.
 
@@ -20,7 +20,7 @@ engine's own landing — what TechEngine is, what it runs, link out to docs.
 app/
   ├ validate.py        # schema/range/uniqueness checks
   ├ seed.py            # data/ → SQLModel database
-  ├ dump.py            # API → static JSON tree (PokeAPI-style)
+  ├ dump.py            # API → static JSON tree
   ├ main.py            # FastAPI entrypoint
   ├ models/            # SQLModel tables
   ├ routers/           # /v1/{brands,socs,smartphones,gpus,cpus}
@@ -53,7 +53,7 @@ location can be overridden via `TECHAPI_DATA_DIR`; the default looks for
 ## Quickstart
 
 ```bash
-git clone https://github.com/GetTechAPI/TechAPI.git ../TechAPI   # data source
+git clone https://github.com/Seungpyo1007/TechAPI.git ../TechAPI   # data source
 pip install -e ".[dev]"
 python -m app.validate          # check data integrity
 python -m app.seed              # data/ → ./techapi.db (SQLite)

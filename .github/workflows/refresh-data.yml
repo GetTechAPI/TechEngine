@@ -1,6 +1,6 @@
 name: refresh-data
 
-# Static-dump refresh (PokeAPI api-data style + git-scraping pattern).
+# Static-dump refresh (git-scraping pattern).
 # Pulls the latest TechAPI data, validates, regenerates dump/.
 # - weekly schedule keeps the static dump fresh
 # - manual trigger for on-demand rebuilds
@@ -24,7 +24,7 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          repository: GetTechAPI/TechAPI
+          repository: Seungpyo1007/TechAPI
           path: TechAPI
 
       - uses: actions/setup-python@v5

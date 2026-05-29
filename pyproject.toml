@@ -30,7 +30,7 @@ dev = [
 [project.urls]
 Homepage = "https://techapi.dev"
 Repository = "https://github.com/GetTechAPI/TechEngine"
-Data = "https://github.com/GetTechAPI/TechAPI"
+Data = "https://github.com/Seungpyo1007/TechAPI"
 
 [build-system]
 requires = ["setuptools>=68"]
