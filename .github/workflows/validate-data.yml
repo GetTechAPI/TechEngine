@@ -1,0 +1,36 @@
+name: validate-data
+
+# Reusable: TechAPI's PR workflow calls this with the TechAPI ref to validate.
+on:
+  workflow_call:
+    inputs:
+      data-ref:
+        description: "TechAPI ref (branch/SHA) to validate"
+        type: string
+        required: false
+        default: "main"
+  workflow_dispatch:
+    inputs:
+      data-ref:
+        description: "TechAPI ref to validate"
+        type: string
+        required: false
+        default: "main"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: GetTechAPI/TechAPI
+          ref: ${{ inputs.data-ref }}
+          path: TechAPI
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate seed JSON (§9.3, §15.3)
+        env:
+          TECHAPI_DATA_DIR: ${{ github.workspace }}/TechAPI/data
+        run: python -m app.validate
