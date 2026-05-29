@@ -27,10 +27,15 @@ permissions:
 jobs:
   ingest:
     runs-on: ubuntu-latest
+    env:
+      CATEGORY: ${{ inputs.category || 'cpu' }}
+      LIMIT: ${{ inputs.limit || '50' }}
+      INCLUDE_DRAFTS: ${{ inputs.include_drafts || 'false' }}
+      TECHAPI_PR_TOKEN: ${{ secrets.TECHAPI_PR_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
-      # Use the PAT when present so we can push to the TechAPI fork later;
+      # Use the PAT when present so we can push to TechAPI later;
       # fall back to the default token for read-only test runs.
       - uses: actions/checkout@v4
         with:
@@ -49,16 +54,17 @@ jobs:
       - name: Run ingest
         env:
           TECHAPI_DATA_DIR: ${{ github.workspace }}/TechAPI/data
-          INGEST_CATEGORY: ${{ inputs.category || 'cpu' }}
-          INGEST_LIMIT: ${{ inputs.limit || '50' }}
-          INGEST_DRAFTS: ${{ inputs.include_drafts && '--include-drafts' || '' }}
         run: |
+          DRAFTS_FLAG=""
+          if [ "$INCLUDE_DRAFTS" = "true" ]; then
+            DRAFTS_FLAG="--include-drafts"
+          fi
           python -m app.ingest \
-            --category "$INGEST_CATEGORY" \
-            --limit "$INGEST_LIMIT" \
+            --category "$CATEGORY" \
+            --limit "$LIMIT" \
             --data-root TechAPI/data \
             --summary ingest-summary.md \
-            $INGEST_DRAFTS
+            $DRAFTS_FLAG
 
       - name: Upload summary artifact
         uses: actions/upload-artifact@v4
@@ -77,13 +83,15 @@ jobs:
           fi
 
       - name: Open PR against TechAPI
-        if: ${{ steps.changes.outputs.has_changes == 'true' && secrets.TECHAPI_PR_TOKEN != '' }}
+        if: steps.changes.outputs.has_changes == 'true'
         env:
           GH_TOKEN: ${{ secrets.TECHAPI_PR_TOKEN }}
-          CATEGORY: ${{ inputs.category || 'cpu' }}
-          IS_DRAFT: ${{ inputs.include_drafts && 'true' || 'false' }}
         run: |
           set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::warning::Ingest produced additions but TECHAPI_PR_TOKEN is unset; skipping PR. Summary attached as artifact."
+            exit 0
+          fi
           cd TechAPI
           BRANCH="ingest/${CATEGORY}-$(date -u +%Y%m%d-%H%M%S)"
           git config user.name "techengine-bot"
@@ -93,7 +101,7 @@ jobs:
           git commit -m "feat(data/${CATEGORY}): weekly ingest"
           git push -u origin "$BRANCH"
           DRAFT_FLAG=""
-          if [ "$IS_DRAFT" = "true" ]; then
+          if [ "$INCLUDE_DRAFTS" = "true" ]; then
             DRAFT_FLAG="--draft"
           fi
           gh pr create \
@@ -102,8 +110,3 @@ jobs:
             --base main \
             --head "$BRANCH" \
             $DRAFT_FLAG
-
-      - name: Note when PR token is missing
-        if: ${{ steps.changes.outputs.has_changes == 'true' && secrets.TECHAPI_PR_TOKEN == '' }}
-        run: |
-          echo "::warning::Ingest produced additions but TECHAPI_PR_TOKEN is unset; skipping PR. Summary attached as artifact."

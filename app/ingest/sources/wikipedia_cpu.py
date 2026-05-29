@@ -121,12 +121,13 @@ def _table_headers(table: Tag) -> dict[int, str]:
     out: dict[int, str] = {}
     index = 0
     for cell in header_row.find_all(["th", "td"]):
+        if not isinstance(cell, Tag):
+            continue
         text = cell.get_text(" ", strip=True).lower()
         canonical = _match_header(text)
         if canonical is not None:
             out[index] = canonical
-        colspan = int(cell.get("colspan", 1) or 1)
-        index += colspan
+        index += _colspan(cell)
     return out
 
 
@@ -145,9 +146,20 @@ def _row_by_field(cells: list[Tag], headers: dict[int, str]) -> dict[str, str]:
         canonical = headers.get(index)
         if canonical is not None and canonical not in result:
             result[canonical] = cell.get_text(" ", strip=True)
-        colspan = int(cell.get("colspan", 1) or 1)
-        index += colspan
+        index += _colspan(cell)
     return result
+
+
+def _colspan(cell: Tag) -> int:
+    raw = cell.attrs.get("colspan")
+    if isinstance(raw, list):
+        raw = raw[0] if raw else None
+    if raw is None:
+        return 1
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 1
 
 
 def _nearest_section_label(table: Tag) -> str | None:
