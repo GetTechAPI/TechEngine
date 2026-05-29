@@ -6,11 +6,13 @@
 &nbsp;Code: **MIT** · Data: lives in **[TechAPI](https://github.com/GetTechAPI/TechAPI)** (CC-BY-SA 4.0)
 
 TechEngine owns everything *around* the data: schema validation, the FastAPI
-read API, the PokeAPI-style static JSON dump, the Astro intro/playground site,
+read API, the PokeAPI-style static JSON dump, the engine's own landing site,
 and (next up) automated coverage checks and a weekly ingestion crawler.
 
-The data itself stays in [TechAPI](https://github.com/GetTechAPI/TechAPI) so it
-can be versioned, mirrored, and licensed independently.
+The dataset and the public-facing playground site live in
+[TechAPI](https://github.com/GetTechAPI/TechAPI) so each can be versioned,
+mirrored, and licensed independently. The site shipped in this repo is the
+engine's own landing — what TechEngine is, what it runs, link out to docs.
 
 ## Layout
 
@@ -25,12 +27,12 @@ app/
   ├ schemas/           # Pydantic response models
   └ services/          # scoring (algorithm_version-tagged)
 tests/                 # unit + integration
-site/                  # Astro homepage + playground (deployed to Pages)
+site/                  # Astro engine landing (deploys to Pages)
 docs/                  # SPEC / DATA_PIPELINE / DEVELOPMENT
 .github/workflows/
   ├ validate-data.yml  # workflow_call: PR-time data validation for TechAPI
   ├ refresh-data.yml   # cron: regenerate the static dump weekly
-  ├ deploy-pages.yml   # build & deploy Astro site + dump
+  ├ deploy-pages.yml   # build & deploy engine site + dump
   └ test.yml           # lint + type-check + tests
 ```
 

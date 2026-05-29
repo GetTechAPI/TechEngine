@@ -1,26 +1,47 @@
 ---
 const raw = import.meta.env.BASE_URL;
-const base = raw.endsWith("/") ? raw : raw + "/"; // ensure trailing slash
+const base = raw.endsWith("/") ? raw : raw + "/";
 
-const endpoints = [
-  { label: "/v1/smartphones", desc: "List all phones", href: `${base}v1/smartphones/index.json` },
-  { label: "/v1/smartphones/{slug}", desc: "Phone detail + scores", href: `${base}v1/smartphones/galaxy-s25/index.json` },
-  { label: "/v1/smartphones/{slug}/score", desc: "Computed scores", href: `${base}v1/smartphones/galaxy-s25/score/index.json` },
-  { label: "/v1/socs/{slug}", desc: "System-on-chip detail", href: `${base}v1/socs/snapdragon-8-elite/index.json` },
-  { label: "/v1/gpus/{slug}", desc: "Discrete GPU detail", href: `${base}v1/gpus/geforce-rtx-4090/index.json` },
-  { label: "/v1/cpus/{slug}", desc: "Desktop/laptop CPU", href: `${base}v1/cpus/core-i9-14900k/index.json` },
-  { label: "/v1/brands", desc: "All brands", href: `${base}v1/brands/index.json` },
+const ghEngine = "https://github.com/GetTechAPI/TechEngine";
+const ghData = "https://github.com/GetTechAPI/TechAPI";
+
+const pillars = [
+  {
+    title: "Validate",
+    blurb: "Schema, slug, range, and uniqueness checks gate every PR to the dataset.",
+    cmd: "python -m app.validate",
+    link: `${ghEngine}/blob/main/app/validate.py`,
+  },
+  {
+    title: "Cover",
+    blurb: "Diff the curated dataset against upstream catalogs (ARK, AMD, Wikipedia) and surface missing SKUs as weekly reports.",
+    cmd: "python -m app.coverage",
+    link: `${ghEngine}/issues/1`,
+    pending: true,
+  },
+  {
+    title: "Ingest",
+    blurb: "Drafts new records from canonical sources and opens PRs against TechAPI for human review.",
+    cmd: "python -m app.ingest",
+    link: `${ghEngine}/issues/2`,
+    pending: true,
+  },
 ];
 
-const ghUrl = "https://github.com/Seungpyo1007/TechAPI";
+const workflows = [
+  { name: "validate-data", file: "validate-data.yml", desc: "Reusable: called by TechAPI on every PR + push." },
+  { name: "refresh-data", file: "refresh-data.yml", desc: "Cron Mondays 06:17 UTC — regenerates the static dump." },
+  { name: "test", file: "test.yml", desc: "Lint + type-check + pytest on every push." },
+  { name: "deploy-pages", file: "deploy-pages.yml", desc: "Builds this site + dump and publishes to Pages." },
+];
 ---
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>TechAPI — open data for consumer electronics specs</title>
-  <meta name="description" content="A free, open, static dataset of smartphone, SoC, GPU and CPU specs with computed scores. Inspired by PokeAPI. No API key, no server." />
+  <title>TechEngine — validation & ingestion for the TechAPI dataset</title>
+  <meta name="description" content="The engine that validates, fills, and serves the TechAPI dataset. Schema checks, coverage diffs against upstream catalogs, and a weekly ingestion crawler that opens PRs." />
 </head>
 <body>
   <div class="bg-grid" aria-hidden="true"></div>
@@ -28,29 +49,31 @@ const ghUrl = "https://github.com/Seungpyo1007/TechAPI";
   <nav class="nav">
     <div class="wrap nav-inner">
       <a class="brand" href={base}>
-        <span class="dot"></span> TechAPI
+        <span class="dot"></span> TechEngine
       </a>
       <div class="nav-links">
-        <a href="#playground">Try it</a>
-        <a href="#featured">Devices</a>
-        <a href={`${base}docs`}>Docs</a>
-        <a href={`${base}v1/index.json`}>Data</a>
-        <a class="nav-gh" href={ghUrl} target="_blank" rel="noopener">GitHub ↗</a>
+        <a href="#pillars">What it does</a>
+        <a href="#status">Status</a>
+        <a href="#workflows">Workflows</a>
+        <a href={`${base}docs`}>API docs</a>
+        <a href={ghData} target="_blank" rel="noopener">TechAPI ↗</a>
+        <a class="nav-gh" href={ghEngine} target="_blank" rel="noopener">GitHub ↗</a>
       </div>
     </div>
   </nav>
 
   <header class="hero">
     <div class="wrap">
-      <span class="pill">⚡ Static JSON API · no key · no server</span>
-      <h1>Open data for <span class="grad">consumer electronics</span></h1>
+      <span class="pill">⚙️ Validation · coverage · ingestion · serving</span>
+      <h1>The engine behind <a href={ghData} target="_blank" rel="noopener" class="grad">TechAPI</a></h1>
       <p class="tagline">
-        Structured specs &amp; computed scores for smartphones, SoCs, GPUs and CPUs —
-        served as plain static JSON files. Free, open, and inspired by PokeAPI.
+        TechEngine validates every change to the dataset, diffs it against upstream
+        catalogs to surface what is missing, and (next) drafts new records
+        automatically so curators only review.
       </p>
       <div class="cta">
-        <a class="btn primary" href="#playground">Try the API ↓</a>
-        <a class="btn ghost" href={`${base}docs`}>Interactive docs →</a>
+        <a class="btn primary" href={`${base}docs`}>Read API docs →</a>
+        <a class="btn ghost" href={ghEngine} target="_blank" rel="noopener">View on GitHub ↗</a>
       </div>
       <div class="stats" id="stats">
         <div class="stat skeleton"><div class="n">—</div><div class="l">loading</div></div>
@@ -59,104 +82,131 @@ const ghUrl = "https://github.com/Seungpyo1007/TechAPI";
   </header>
 
   <main class="wrap">
-    <!-- ─────────────── Interactive playground ─────────────── -->
-    <section id="playground">
+    <!-- ─────────────── Pillars ─────────────── -->
+    <section id="pillars">
       <div class="sec-head">
-        <h2>Try it live</h2>
-        <p class="sec-sub">Pick a resource and a slug — the response is fetched straight from the static dataset, right in your browser.</p>
+        <h2>Three pillars</h2>
+        <p class="sec-sub">Each pillar is a Python module under <code>app/</code>; CI orchestrates them.</p>
       </div>
-
-      <div class="pg">
-        <div class="pg-controls">
-          <div class="field">
-            <label for="pg-resource">Resource</label>
-            <div class="select-wrap">
-              <select id="pg-resource">
-                <option value="smartphones">smartphones</option>
-                <option value="socs">socs</option>
-                <option value="gpus">gpus</option>
-                <option value="cpus">cpus</option>
-                <option value="brands">brands</option>
-              </select>
+      <div class="hiw">
+        {pillars.map((p) => (
+          <div class={`hiw-card pillar${p.pending ? " pending" : ""}`}>
+            <div class="pillar-row">
+              <h3>{p.title}</h3>
+              {p.pending && <span class="badge">planned</span>}
             </div>
+            <p>{p.blurb}</p>
+            <code class="cmd">$ {p.cmd}</code>
+            <a class="more" href={p.link} target="_blank" rel="noopener">
+              {p.pending ? "Roadmap →" : "Source →"}
+            </a>
           </div>
-          <div class="field grow">
-            <label for="pg-slug">Slug</label>
-            <input id="pg-slug" list="pg-slugs" autocomplete="off" spellcheck="false" placeholder="galaxy-s25" />
-            <datalist id="pg-slugs"></datalist>
-          </div>
-          <div class="field btns">
-            <button id="pg-send" class="btn primary">Send</button>
-            <button id="pg-random" class="btn ghost" title="Random slug">🎲</button>
-          </div>
-        </div>
+        ))}
+      </div>
+    </section>
 
+    <!-- ─────────────── Status ─────────────── -->
+    <section id="status">
+      <div class="sec-head">
+        <h2>Status</h2>
+        <p class="sec-sub">Pulled from the static dump's manifest. Populates once <code>refresh-data</code> has run.</p>
+      </div>
+      <div class="pg">
         <div class="pg-reqline">
           <span class="method">GET</span>
-          <code id="pg-url">/v1/smartphones/galaxy-s25</code>
+          <code>/v1/index.json</code>
           <span class="spacer"></span>
-          <span id="pg-status" class="status"></span>
-          <button id="pg-copy" class="copy" title="Copy as curl">Copy curl</button>
+          <span id="status-pill" class="status pending">…</span>
         </div>
-
-        <pre class="pg-out"><code id="pg-output">Loading example…</code></pre>
+        <pre class="pg-out"><code id="status-out">Loading…</code></pre>
       </div>
     </section>
 
-    <!-- ─────────────── Featured devices ─────────────── -->
-    <section id="featured">
-      <div class="sec-head">
-        <h2>Featured devices</h2>
-        <p class="sec-sub">Each card is built live from a detail response. Click one to load it into the playground.</p>
-      </div>
-      <div class="cards" id="cards">
-        <div class="card-skel"></div><div class="card-skel"></div><div class="card-skel"></div>
-      </div>
-    </section>
-
-    <!-- ─────────────── Endpoints ─────────────── -->
+    <!-- ─────────────── Pipeline ─────────────── -->
     <section>
       <div class="sec-head">
-        <h2>Endpoints</h2>
-        <p class="sec-sub">Every resource is a static file ending in <code>/index.json</code>.</p>
+        <h2>How the two repos connect</h2>
+        <p class="sec-sub">
+          The dataset lives in <a href={ghData} target="_blank" rel="noopener">TechAPI</a>.
+          TechEngine reads it via a sibling checkout, validates, and emits artifacts.
+        </p>
+      </div>
+      <div class="flow">
+        <div class="flow-card">
+          <div class="flow-head">TechAPI</div>
+          <div class="flow-body">
+            <code>data/</code><br/>
+            <code>app/validate.py</code> (self-check)
+          </div>
+        </div>
+        <div class="flow-arrow">
+          <div class="flow-arrow-label">workflow_call</div>
+          <div class="flow-arrow-line">⟶</div>
+          <div class="flow-arrow-label muted">checkout sibling</div>
+        </div>
+        <div class="flow-card">
+          <div class="flow-head">TechEngine</div>
+          <div class="flow-body">
+            <code>app/validate.py</code> (heavy)<br/>
+            <code>app/seed.py · dump.py</code><br/>
+            <span class="muted">app/coverage · app/ingest (planned)</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────── Workflows ─────────────── -->
+    <section id="workflows">
+      <div class="sec-head">
+        <h2>Workflows</h2>
+        <p class="sec-sub">CI surface lives in <code>.github/workflows/</code>.</p>
       </div>
       <ul class="ep">
-        {endpoints.map((e) => (
+        {workflows.map((w) => (
           <li>
-            <a href={e.href}>
-              <span class="method">GET</span>
-              <span class="ep-path">{e.label}</span>
-              <span class="ep-desc">{e.desc}</span>
+            <a href={`${ghEngine}/blob/main/.github/workflows/${w.file}`} target="_blank" rel="noopener">
+              <span class="method">YAML</span>
+              <span class="ep-path">{w.name}</span>
+              <span class="ep-desc">{w.desc}</span>
             </a>
           </li>
         ))}
       </ul>
     </section>
 
+    <!-- ─────────────── Roadmap ─────────────── -->
     <section>
       <div class="sec-head">
-        <h2>How it works</h2>
+        <h2>Roadmap</h2>
+        <p class="sec-sub">Each line is a tracked GitHub issue.</p>
       </div>
-      <div class="hiw">
-        <div class="hiw-card"><div class="hiw-n">1</div><h3>Curated data</h3><p>Specs live as reviewed JSON files in the repo, each with source URLs.</p></div>
-        <div class="hiw-card"><div class="hiw-n">2</div><h3>Replayed to disk</h3><p>The real API is run in-process and every response is written out — byte-for-byte.</p></div>
-        <div class="hiw-card"><div class="hiw-n">3</div><h3>Served from a CDN</h3><p>No server, no cold starts. Just <code>fetch()</code> a file — exactly what this page does.</p></div>
-      </div>
+      <ul class="ep">
+        <li>
+          <a href={`${ghEngine}/issues/1`} target="_blank" rel="noopener">
+            <span class="method">#1</span>
+            <span class="ep-path">coverage gap detector</span>
+            <span class="ep-desc">Diff curated dataset vs upstream catalogs; weekly report.</span>
+          </a>
+        </li>
+        <li>
+          <a href={`${ghEngine}/issues/2`} target="_blank" rel="noopener">
+            <span class="method">#2</span>
+            <span class="ep-path">ingestion crawler</span>
+            <span class="ep-desc">Weekly automated PRs to TechAPI with proposed new SKUs.</span>
+          </a>
+        </li>
+      </ul>
     </section>
   </main>
 
   <footer class="wrap">
-    <p>TechAPI · code <strong>MIT</strong> · data <strong>CC-BY-SA 4.0</strong> · a curated, growing dataset.</p>
-    <p class="muted">⚠️ Not yet an exhaustive catalog of every device.</p>
-    <p><a href={ghUrl} target="_blank" rel="noopener">GitHub</a> · <a href={`${base}docs`}>API reference</a></p>
+    <p>TechEngine · code <strong>MIT</strong> · dataset lives at <a href={ghData} target="_blank" rel="noopener">TechAPI</a> (CC-BY-SA 4.0).</p>
+    <p><a href={ghEngine} target="_blank" rel="noopener">GitHub</a> · <a href={`${base}docs`}>API reference</a></p>
   </footer>
 
   <script>
     const raw = import.meta.env.BASE_URL;
     const base = raw.endsWith("/") ? raw : raw + "/";
-    const absUrl = (path) => new URL(path.replace(/^\//, ""), location.origin + base).href;
-
-    // ── helpers ──────────────────────────────────────────────────────────
     const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
     function highlightJSON(obj) {
@@ -179,7 +229,6 @@ const ghUrl = "https://github.com/Seungpyo1007/TechAPI";
       return r.json();
     }
 
-    // ── hero stats (count-up) ────────────────────────────────────────────
     function countUp(el, target) {
       const dur = 800, t0 = performance.now();
       function tick(t) {
@@ -189,6 +238,7 @@ const ghUrl = "https://github.com/Seungpyo1007/TechAPI";
       }
       requestAnimationFrame(tick);
     }
+
     getJSON("v1/index.json").then((m) => {
       const order = ["smartphones", "socs", "gpus", "cpus", "brands"];
       const el = document.getElementById("stats");
@@ -200,162 +250,20 @@ const ghUrl = "https://github.com/Seungpyo1007/TechAPI";
           `<div class="stat"><div class="n" data-n="${c}">0</div><div class="l">${k}</div></div>`);
       }
       el.querySelectorAll(".n").forEach((n) => countUp(n, +n.dataset.n));
-    }).catch(() => {
+      // Mirror the manifest into the status panel.
+      const pill = document.getElementById("status-pill");
+      pill.textContent = "200 OK";
+      pill.className = "status ok";
+      document.getElementById("status-out").innerHTML = highlightJSON(m);
+    }).catch((e) => {
       document.getElementById("stats").innerHTML =
-        '<div class="stat"><div class="n">—</div><div class="l">build data first</div></div>';
+        '<div class="stat"><div class="n">—</div><div class="l">run refresh-data</div></div>';
+      const pill = document.getElementById("status-pill");
+      pill.textContent = "no dump yet";
+      pill.className = "status err";
+      document.getElementById("status-out").innerHTML =
+        '<span class="j-null">No dump artifact deployed yet. Trigger the refresh-data workflow to populate this panel.</span>';
     });
-
-    // ── playground ───────────────────────────────────────────────────────
-    const resSel = document.getElementById("pg-resource");
-    const slugIn = document.getElementById("pg-slug");
-    const dataList = document.getElementById("pg-slugs");
-    const out = document.getElementById("pg-output");
-    const urlEl = document.getElementById("pg-url");
-    const statusEl = document.getElementById("pg-status");
-    const listCache = {};
-
-    async function loadList(resource) {
-      if (!listCache[resource]) {
-        const data = await getJSON(`v1/${resource}/index.json`);
-        listCache[resource] = data.results || [];
-      }
-      return listCache[resource];
-    }
-
-    async function populateSlugs(resource) {
-      try {
-        const items = await loadList(resource);
-        dataList.innerHTML = items
-          .map((it) => `<option value="${esc(it.slug)}">${esc(it.name)}</option>`)
-          .join("");
-        return items;
-      } catch { return []; }
-    }
-
-    async function run(resource, slug) {
-      const path = `v1/${resource}/${slug}/index.json`;
-      urlEl.textContent = `/v1/${resource}/${slug}`;
-      statusEl.textContent = "…";
-      statusEl.className = "status pending";
-      out.innerHTML = "Loading…";
-      const t0 = performance.now();
-      try {
-        const data = await getJSON(path);
-        const ms = Math.max(1, Math.round(performance.now() - t0));
-        statusEl.textContent = `200 OK · ${ms}ms`;
-        statusEl.className = "status ok";
-        out.innerHTML = highlightJSON(data);
-      } catch (e) {
-        statusEl.textContent = "404 Not Found";
-        statusEl.className = "status err";
-        out.innerHTML = `<span class="j-null">No data for "${esc(slug)}". Try a slug from the suggestions.</span>`;
-      }
-    }
-
-    function send() {
-      const slug = slugIn.value.trim();
-      if (slug) run(resSel.value, slug);
-    }
-
-    resSel.addEventListener("change", async () => {
-      const items = await populateSlugs(resSel.value);
-      if (items.length) { slugIn.value = items[0].slug; send(); }
-    });
-    document.getElementById("pg-send").addEventListener("click", send);
-    slugIn.addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
-    document.getElementById("pg-random").addEventListener("click", async () => {
-      const items = await loadList(resSel.value);
-      if (items.length) {
-        slugIn.value = items[Math.floor(Math.random() * items.length)].slug;
-        send();
-      }
-    });
-    document.getElementById("pg-copy").addEventListener("click", (e) => {
-      const cmd = "curl " + absUrl(urlEl.textContent + "/index.json");
-      navigator.clipboard?.writeText(cmd);
-      const b = e.currentTarget; const prev = b.textContent;
-      b.textContent = "Copied ✓"; setTimeout(() => (b.textContent = prev), 1200);
-    });
-
-    // initial example
-    populateSlugs("smartphones").then(() => run("smartphones", "galaxy-s25"));
-
-    // ── featured devices ─────────────────────────────────────────────────
-    const PREFERRED = ["galaxy-s25-ultra", "iphone-16-pro-max", "pixel-9-pro",
-      "oneplus-13", "xiaomi-15-ultra", "galaxy-z-fold-6"];
-
-    function bar(label, v) {
-      const w = v == null ? 0 : Math.round(v);
-      const val = v == null ? "—" : v;
-      return `<div class="sb"><span class="sb-l">${label}</span>
-        <span class="sb-track"><span class="sb-fill" style="width:${w}%"></span></span>
-        <span class="sb-v">${val}</span></div>`;
-    }
-
-    function deviceCard(d) {
-      const sc = d.score || {};
-      const overall = sc.overall == null ? "—" : Math.round(sc.overall);
-      const initial = (d.brand?.name || d.name || "?").charAt(0).toUpperCase();
-      const specs = [
-        d.ram_gb ? `${d.ram_gb}GB RAM` : null,
-        d.battery_mah ? `${d.battery_mah} mAh` : null,
-        d.display?.size_inch ? `${d.display.size_inch}"` : null,
-        d.display?.refresh_hz ? `${d.display.refresh_hz}Hz` : null,
-      ].filter(Boolean);
-      const card = document.createElement("article");
-      card.className = "card";
-      card.dataset.slug = d.slug;
-      card.innerHTML = `
-        <div class="card-top">
-          <div class="thumb"><span class="thumb-fallback">${esc(initial)}</span></div>
-          <div class="card-id">
-            <div class="card-brand">${esc(d.brand?.name || "")}</div>
-            <div class="card-name">${esc(d.name)}</div>
-            <div class="card-soc">${esc(d.soc?.name || "")}</div>
-          </div>
-          <div class="ring" style="--p:${sc.overall || 0}">
-            <span>${overall}</span><small>score</small>
-          </div>
-        </div>
-        <div class="chips">${specs.map((s) => `<span class="chip">${esc(s)}</span>`).join("")}</div>
-        <div class="bars">
-          ${bar("Perf", sc.performance)}
-          ${bar("Cam", sc.camera)}
-          ${bar("Batt", sc.battery)}
-          ${bar("Disp", sc.display)}
-        </div>`;
-      if (d.image_url) {
-        const img = new Image();
-        img.src = d.image_url; img.alt = d.name; img.loading = "lazy";
-        img.className = "thumb-img";
-        img.onload = () => card.querySelector(".thumb").appendChild(img);
-      }
-      card.addEventListener("click", () => {
-        resSel.value = "smartphones";
-        slugIn.value = d.slug;
-        run("smartphones", d.slug);
-        document.getElementById("playground").scrollIntoView({ behavior: "smooth" });
-      });
-      return card;
-    }
-
-    (async () => {
-      const cards = document.getElementById("cards");
-      try {
-        const items = await loadList("smartphones");
-        const have = new Set(items.map((i) => i.slug));
-        let slugs = PREFERRED.filter((s) => have.has(s));
-        for (const it of items) { if (slugs.length >= 6) break; if (!slugs.includes(it.slug)) slugs.push(it.slug); }
-        const details = await Promise.all(
-          slugs.slice(0, 6).map((s) => getJSON(`v1/smartphones/${s}/index.json`).catch(() => null))
-        );
-        cards.innerHTML = "";
-        details.filter(Boolean).forEach((d) => cards.appendChild(deviceCard(d)));
-        if (!cards.children.length) cards.innerHTML = '<p class="muted">Build the dataset to see featured devices.</p>';
-      } catch {
-        cards.innerHTML = '<p class="muted">Build the dataset to see featured devices.</p>';
-      }
-    })();
   </script>
 
   <style is:global>
@@ -375,7 +283,6 @@ const ghUrl = "https://github.com/Seungpyo1007/TechAPI";
     .grad { background:linear-gradient(95deg,var(--accent),var(--accent2)); -webkit-background-clip:text; background-clip:text; color:transparent; }
     .muted { color:var(--muted); }
 
-    /* background grid + glow */
     .bg-grid { position:fixed; inset:0; z-index:-1; pointer-events:none;
       background:
         radial-gradient(900px 420px at 50% -8%, rgba(91,157,255,.16), transparent 70%),
@@ -384,7 +291,6 @@ const ghUrl = "https://github.com/Seungpyo1007/TechAPI";
         linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px) 0 0/44px 44px,
         linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px) 0 0/44px 44px; }
 
-    /* nav */
     .nav { position:sticky; top:0; z-index:20; backdrop-filter:blur(10px);
       background:rgba(10,13,20,.72); border-bottom:1px solid var(--border); }
     .nav-inner { display:flex; align-items:center; justify-content:space-between; height:58px; }
@@ -393,14 +299,14 @@ const ghUrl = "https://github.com/Seungpyo1007/TechAPI";
     .nav-links { display:flex; gap:20px; align-items:center; font-size:14px; }
     .nav-links a { color:var(--muted); } .nav-links a:hover { color:var(--fg); }
     .nav-gh { color:var(--fg)!important; }
-    @media(max-width:560px){ .nav-links a:not(.nav-gh){ display:none; } }
+    @media(max-width:760px){ .nav-links a:not(.nav-gh){ display:none; } }
 
-    /* hero */
     .hero { padding:72px 0 40px; text-align:center; }
     .pill { display:inline-block; font-size:13px; padding:6px 14px; border:1px solid var(--border2);
       border-radius:999px; color:var(--muted); background:var(--panel2); }
     .hero h1 { font-size:clamp(34px,6vw,58px); line-height:1.05; margin:20px 0 0; font-weight:800; }
-    .tagline { color:var(--muted); font-size:clamp(16px,2.2vw,19px); max-width:640px; margin:18px auto 0; }
+    .hero h1 .grad { text-decoration:none; }
+    .tagline { color:var(--muted); font-size:clamp(16px,2.2vw,19px); max-width:680px; margin:18px auto 0; }
     .cta { margin-top:28px; display:flex; gap:12px; justify-content:center; flex-wrap:wrap; }
     .btn { padding:11px 20px; border-radius:11px; font-weight:600; font-size:15px; cursor:pointer;
       border:1px solid var(--border2); color:var(--fg); background:var(--panel); transition:.15s; }
@@ -413,24 +319,13 @@ const ghUrl = "https://github.com/Seungpyo1007/TechAPI";
     .stat .l { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.6px; margin-top:2px; }
     .stat.skeleton .n { color:var(--muted); background:none; -webkit-text-fill-color:var(--muted); }
 
-    /* sections */
     section { padding:46px 0; border-top:1px solid var(--border); }
     .sec-head { margin-bottom:22px; }
     .sec-head h2 { font-size:26px; margin:0; }
     .sec-sub { color:var(--muted); margin:6px 0 0; font-size:15px; }
-    .sec-sub code, .hiw code, footer code { background:var(--panel2); padding:1px 6px; border-radius:6px; border:1px solid var(--border); font-size:.9em; }
+    .sec-sub code, .hiw code, footer code, .flow code { background:var(--panel2); padding:1px 6px; border-radius:6px; border:1px solid var(--border); font-size:.9em; }
 
-    /* playground */
     .pg { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
-    .pg-controls { display:flex; gap:14px; padding:18px; flex-wrap:wrap; align-items:flex-end; border-bottom:1px solid var(--border); }
-    .field { display:flex; flex-direction:column; gap:6px; } .field.grow { flex:1; min-width:200px; }
-    .field label { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
-    .field.btns { flex-direction:row; align-items:flex-end; }
-    .select-wrap select, .field input { background:var(--panel2); border:1px solid var(--border2); color:var(--fg);
-      border-radius:10px; padding:11px 13px; font-size:15px; font-family:ui-monospace,monospace; width:100%; }
-    .field input:focus, .select-wrap select:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(91,157,255,.18); }
-    .field.btns .btn { padding:11px 18px; }
-    #pg-random { font-size:18px; padding:9px 13px; }
     .pg-reqline { display:flex; align-items:center; gap:10px; padding:12px 18px; background:var(--panel2);
       border-bottom:1px solid var(--border); font-family:ui-monospace,monospace; font-size:14px; flex-wrap:wrap; }
     .pg-reqline .spacer { flex:1; }
@@ -439,42 +334,29 @@ const ghUrl = "https://github.com/Seungpyo1007/TechAPI";
     .status.ok { color:var(--green); background:rgba(126,231,135,.12); }
     .status.err { color:var(--red); background:rgba(255,123,138,.12); }
     .status.pending { color:var(--amber); }
-    .copy { background:var(--panel); border:1px solid var(--border2); color:var(--muted); font-size:12px;
-      padding:5px 11px; border-radius:8px; cursor:pointer; } .copy:hover { color:var(--fg); border-color:var(--accent); }
     .pg-out { margin:0; padding:18px; max-height:440px; overflow:auto; background:var(--panel2); }
     .pg-out code { font-size:13px; line-height:1.55; white-space:pre; }
     .j-key { color:#8fbcff; } .j-str { color:var(--green); } .j-num { color:var(--amber); }
     .j-bool { color:#c792ea; } .j-null { color:var(--muted); }
 
-    /* featured cards */
-    .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(290px,1fr)); gap:16px; }
-    .card { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:18px; cursor:pointer; transition:.16s; }
-    .card:hover { transform:translateY(-3px); border-color:var(--accent); box-shadow:0 10px 30px rgba(0,0,0,.35); }
-    .card-skel { height:188px; border-radius:var(--radius); background:linear-gradient(100deg,var(--panel),var(--panel2),var(--panel)); background-size:200% 100%; animation:sh 1.3s infinite; }
-    @keyframes sh { to { background-position:-200% 0; } }
-    .card-top { display:flex; align-items:center; gap:13px; }
-    .thumb { position:relative; width:54px; height:54px; flex:none; border-radius:13px; overflow:hidden;
-      background:linear-gradient(135deg,rgba(91,157,255,.25),rgba(139,92,246,.25)); display:grid; place-items:center; }
-    .thumb-fallback { font-weight:800; font-size:22px; color:#fff; }
-    .thumb-img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
-    .card-id { flex:1; min-width:0; }
-    .card-brand { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
-    .card-name { font-weight:700; font-size:17px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .card-soc { font-size:12.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .ring { --p:0; width:50px; height:50px; flex:none; border-radius:50%; display:grid; place-items:center; position:relative;
-      background:conic-gradient(var(--accent) calc(var(--p)*1%), var(--border2) 0); }
-    .ring::before { content:""; position:absolute; inset:4px; border-radius:50%; background:var(--panel); }
-    .ring span { position:relative; font-weight:800; font-size:15px; line-height:1; }
-    .ring small { position:relative; font-size:8px; color:var(--muted); text-transform:uppercase; }
-    .chips { display:flex; flex-wrap:wrap; gap:6px; margin:14px 0 12px; }
-    .chip { font-size:12px; padding:3px 9px; border-radius:999px; background:var(--panel2); border:1px solid var(--border); color:var(--muted); }
-    .bars { display:grid; gap:7px; }
-    .sb { display:flex; align-items:center; gap:9px; font-size:12px; }
-    .sb-l { width:34px; color:var(--muted); } .sb-v { width:30px; text-align:right; color:var(--fg); font-variant-numeric:tabular-nums; }
-    .sb-track { flex:1; height:6px; border-radius:999px; background:var(--border2); overflow:hidden; }
-    .sb-fill { display:block; height:100%; border-radius:999px; background:linear-gradient(90deg,var(--accent),var(--accent2)); }
+    .hiw { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; }
+    .hiw-card { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:20px; }
+    .hiw-card h3 { margin:0 0 6px; font-size:17px; } .hiw-card p { margin:0 0 12px; color:var(--muted); font-size:14px; }
+    .pillar { display:flex; flex-direction:column; gap:8px; }
+    .pillar-row { display:flex; justify-content:space-between; align-items:center; }
+    .pillar.pending { border-style:dashed; }
+    .pillar .badge { font-size:11px; padding:2px 8px; border-radius:999px; background:var(--panel2); color:var(--amber); border:1px solid var(--border2); text-transform:uppercase; letter-spacing:.4px; }
+    .pillar .cmd { display:block; background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:8px 11px; font-size:13px; color:var(--green); }
+    .pillar .more { font-size:13px; color:var(--accent); align-self:flex-start; }
 
-    /* endpoints */
+    .flow { display:flex; gap:18px; align-items:stretch; flex-wrap:wrap; }
+    .flow-card { flex:1; min-width:220px; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:18px; }
+    .flow-head { font-weight:700; font-size:15px; margin-bottom:10px; color:var(--fg); }
+    .flow-body { font-size:14px; color:var(--muted); line-height:1.8; }
+    .flow-arrow { display:flex; flex-direction:column; align-items:center; justify-content:center; min-width:120px; padding:14px 0; gap:4px; }
+    .flow-arrow-line { font-size:30px; color:var(--accent); line-height:1; }
+    .flow-arrow-label { font-size:11px; color:var(--fg); text-transform:uppercase; letter-spacing:.5px; }
+
     ul.ep { list-style:none; padding:0; margin:0; display:grid; gap:8px; }
     ul.ep a { display:flex; align-items:center; gap:12px; background:var(--panel); border:1px solid var(--border);
       border-radius:10px; padding:11px 15px; color:var(--fg); transition:.14s; }
@@ -482,13 +364,6 @@ const ghUrl = "https://github.com/Seungpyo1007/TechAPI";
     .ep-path { font-family:ui-monospace,monospace; font-size:14px; }
     .ep-desc { margin-left:auto; color:var(--muted); font-size:13px; }
     @media(max-width:560px){ .ep-desc{ display:none; } }
-
-    /* how it works */
-    .hiw { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; }
-    .hiw-card { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:20px; }
-    .hiw-n { width:34px; height:34px; border-radius:9px; display:grid; place-items:center; font-weight:800;
-      background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff; margin-bottom:10px; }
-    .hiw-card h3 { margin:0 0 6px; font-size:16px; } .hiw-card p { margin:0; color:var(--muted); font-size:14px; }
 
     footer { padding:48px 22px; text-align:center; color:var(--muted); font-size:14px; border-top:1px solid var(--border); }
     footer p { margin:6px 0; } footer strong { color:var(--fg); }
