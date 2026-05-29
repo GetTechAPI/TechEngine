@@ -1,0 +1,61 @@
+name: coverage-report
+
+# Weekly: pull upstream catalogs, diff vs the curated TechAPI dataset, post
+# the gap list as a sticky issue (auto-updates the existing one each run).
+on:
+  schedule:
+    - cron: "23 6 * * 1"   # Mondays 06:23 UTC, after refresh-data (06:17)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: GetTechAPI/TechAPI
+          path: TechAPI
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -e .
+
+      - name: Build coverage report
+        env:
+          TECHAPI_DATA_DIR: ${{ github.workspace }}/TechAPI/data
+        run: python -m app.coverage --output coverage-report.md
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage-report.md
+
+      # Sticky issue: search for an open issue with the well-known title and
+      # update it; create one if missing. Defaults to this repo; if a PAT
+      # scoped to TechAPI is provided as TECHAPI_PR_TOKEN, posts there instead.
+      - name: Sync sticky coverage issue
+        env:
+          GH_TOKEN: ${{ secrets.TECHAPI_PR_TOKEN || secrets.GITHUB_TOKEN }}
+          TARGET_REPO: ${{ secrets.TECHAPI_PR_TOKEN && 'GetTechAPI/TechAPI' || github.repository }}
+        run: |
+          set -euo pipefail
+          TITLE="Coverage gaps (auto-generated)"
+          BODY="$(cat coverage-report.md)"
+          NUMBER=$(gh issue list --repo "$TARGET_REPO" --state open \
+            --search "in:title \"$TITLE\"" --json number --jq '.[0].number // empty')
+          if [ -z "${NUMBER:-}" ]; then
+            gh issue create --repo "$TARGET_REPO" --title "$TITLE" --body "$BODY"
+          else
+            gh issue edit "$NUMBER" --repo "$TARGET_REPO" --body "$BODY"
+          fi
