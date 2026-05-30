@@ -19,6 +19,10 @@ _MEMORY_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(GB|MB)\b", re.IGNORECASE)
 _BUS_RE = re.compile(r"(\d{2,4})\s*-?\s*bit\b", re.IGNORECASE)
 _PCIE_RE = re.compile(r"PCI[-\s]?[Ee]?\s*(?:Gen\s*)?(\d(?:\.\d)?)", re.IGNORECASE)
 _TDP_RE = re.compile(r"(\d{1,4})(?:\s*/\s*\d{1,4})?\s*W\b", re.IGNORECASE)
+_RAM_RE = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*(GB|MB)\b", re.IGNORECASE)
+_BATTERY_RE = re.compile(r"(\d{3,5})\s*m\s*A\s*h\b", re.IGNORECASE)
+_WEIGHT_RE = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*g\b")
+_OS_VERSION_RE = re.compile(r"\b(\d{1,2}(?:\.\d+)?)\b")
 
 _ISO_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
 _NUMERIC_DATE_RE = re.compile(r"^(\d{4})/(\d{2})/(\d{2})$")
@@ -195,6 +199,80 @@ def guess_gpu_segment(name: str) -> str:
     if any(token in lowered for token in enterprise_tokens):
         return "enterprise"
     return "consumer"
+
+
+def parse_ram_gb(text: str) -> int | None:
+    """``"8 GB"`` → ``8``; ``"512 MB"`` → ``None`` (sub-GB ignored).
+
+    Picks the largest value when the text lists multiple options like
+    ``"6/8/12 GB"`` to reflect the flagship configuration.
+    """
+    if not text:
+        return None
+    values: list[int] = []
+    for match in _RAM_RE.finditer(text):
+        amount = float(match.group(1))
+        unit = match.group(2).lower()
+        if unit == "gb" and amount >= 1:
+            values.append(int(amount))
+    return max(values) if values else None
+
+
+def parse_battery_mah(text: str) -> int | None:
+    """``"5,000 mAh"`` → ``5000``; rejects values outside [500, 12000]."""
+    if not text:
+        return None
+    match = _BATTERY_RE.search(text.replace(",", ""))
+    if not match:
+        return None
+    value = int(match.group(1))
+    return value if 500 <= value <= 12000 else None
+
+
+def parse_weight_g(text: str) -> int | None:
+    """``"232 g"`` → ``232``; rejects values outside [50, 500]."""
+    if not text:
+        return None
+    match = _WEIGHT_RE.search(text.replace(",", ""))
+    if not match:
+        return None
+    value = int(float(match.group(1)))
+    return value if 50 <= value <= 500 else None
+
+
+def guess_os(text: str, *, brand: str = "") -> str | None:
+    """Best-effort OS string from a Wikipedia smartphone row.
+
+    Recognizes Android/iOS/iPadOS/HarmonyOS/Windows; falls back to inferring
+    ``"iOS"`` for Apple brand, ``"Android"`` for everyone else, when the
+    text is non-empty but does not name an OS.
+    """
+    if not text:
+        return None
+    lowered = text.lower()
+    # OS names first; OEM-skin names are fallback because rows usually print
+    # the OS *and* the skin together (e.g. "Android 14, One UI 6.1") and the
+    # underlying OS is the schema-relevant value.
+    for token, label in (
+        ("ipados", "iPadOS"),
+        ("ios", "iOS"),
+        ("android", "Android"),
+        ("harmonyos", "HarmonyOS"),
+        ("windows phone", "Windows Phone"),
+        ("windows", "Windows"),
+        ("hyperos", "HyperOS"),
+        ("oxygenos", "OxygenOS"),
+        ("oneui", "One UI"),
+        ("one ui", "One UI"),
+    ):
+        if token in lowered:
+            version = _OS_VERSION_RE.search(text)
+            return f"{label} {version.group(1)}" if version else label
+    if brand == "apple":
+        return "iOS"
+    if brand:
+        return "Android"
+    return None
 
 
 def guess_cpu_segment(name: str) -> str:

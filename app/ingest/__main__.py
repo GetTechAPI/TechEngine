@@ -22,10 +22,12 @@ from .pipeline import run
 from .sources.base import IngestCandidate, IngestSource
 from .sources.wikipedia_cpu import WikipediaCpuIngest
 from .sources.wikipedia_gpu import WikipediaGpuIngest
+from .sources.wikipedia_smartphone import WikipediaSmartphoneIngest
 
 SOURCES_BY_CATEGORY: dict[str, list[IngestSource]] = {
     "cpu": [WikipediaCpuIngest()],
     "gpu": [WikipediaGpuIngest()],
+    "smartphone": [WikipediaSmartphoneIngest()],
 }
 
 
