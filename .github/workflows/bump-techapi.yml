@@ -1,0 +1,58 @@
+name: bump-techapi
+
+# Reverse of notify-techapi: advance THIS repo's TechAPI submodule pointer to
+# TechAPI's latest main. Triggered by a repository_dispatch (`techapi-updated`)
+# that TechAPI's notify-engine.yml sends on a real data/site change, or run
+# manually. Keeps the "TechAPI @ <sha>" browsing link from going stale.
+#
+# Loop-safe by construction:
+#   * the bump commit is pushed with the default GITHUB_TOKEN, and pushes made
+#     by GITHUB_TOKEN do NOT trigger other workflows — so notify-techapi never
+#     fires on it and there is no ping-pong back to TechAPI;
+#   * TechAPI's notify-engine.yml must `paths-ignore` its own TechEngine gitlink
+#     so it doesn't dispatch on bump-only commits (sender-side guard);
+#   * the bump is idempotent — if the pointer already matches, it no-ops.
+on:
+  repository_dispatch:
+    types: [techapi-updated]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bump-techapi
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Bump TechAPI submodule pointer to TechAPI main
+        env:
+          PAYLOAD_SHA: ${{ github.event.client_payload.sha }}
+        run: |
+          set -euo pipefail
+          # Prefer the sha from the dispatch payload; fall back to remote main HEAD
+          # (covers manual runs and payload-less dispatches).
+          SHA="${PAYLOAD_SHA:-}"
+          if [ -z "$SHA" ]; then
+            SHA=$(git ls-remote https://github.com/Seungpyo1007/TechAPI.git refs/heads/main | awk '{print $1}')
+          fi
+          if [ -z "$SHA" ]; then
+            echo "::error::could not resolve TechAPI main sha"; exit 1
+          fi
+          CUR=$(git ls-tree HEAD TechAPI | awk '{print $3}')
+          if [ "$SHA" = "$CUR" ]; then
+            echo "TechAPI pointer already at ${SHA:0:7}; nothing to do."
+            exit 0
+          fi
+          git update-index --cacheinfo "160000,${SHA},TechAPI"
+          git config user.name "techengine-bot"
+          git config user.email "techengine-bot@users.noreply.github.com"
+          git commit -m "chore: bump TechAPI submodule to ${SHA:0:7}"
+          git push origin main
