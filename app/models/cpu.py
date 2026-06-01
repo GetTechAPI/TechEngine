@@ -51,10 +51,33 @@ class CPU(SQLModel, table=True):
     memory_support: str | None = None  # "DDR5-5600"
 
     # Benchmarks (raw, algorithm input only — ADR-006)
+    # Modern (current generation)
     cinebench_r23_single: int | None = None
     cinebench_r23_multi: int | None = None
+    # Cinebench 2024 — Maxon's current release (superseded R23, Redshift engine);
+    # much smaller scale (single ~100-140, multi ~hundreds-thousands).
+    cinebench_2024_single: int | None = None
+    cinebench_2024_multi: int | None = None
     geekbench_single: int | None = None
     geekbench_multi: int | None = None
+    # Legacy benchmark programs — added per maintainer request to score pre-R23 CPUs.
+    # Cinebench R15/R10 are integer scores; R11.5 reports small decimals (e.g. 1.52).
+    cinebench_r15_single: int | None = None
+    cinebench_r15_multi: int | None = None
+    cinebench_r11_5_single: float | None = None
+    cinebench_r11_5_multi: float | None = None
+    cinebench_r10_single: int | None = None
+    cinebench_r10_multi: int | None = None
+    # PassMark CPU Mark — single-thread rating + overall mark.
+    passmark_single: int | None = None
+    passmark_cpu_mark: int | None = None
+    # SPEC CPU2006 base rates (workstation/server era).
+    specint2006: float | None = None
+    specfp2006: float | None = None
+    # Classic synthetics for 1990s–2000s parts.
+    dhrystone_mips: float | None = None
+    whetstone_mflops: float | None = None
+    superpi_1m_sec: float | None = None  # SuperPI 1M time in seconds (lower is better)
 
     # Meta
     msrp_usd: int | None = None

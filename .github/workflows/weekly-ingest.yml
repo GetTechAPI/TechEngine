@@ -66,11 +66,38 @@ jobs:
             --summary ingest-summary.md \
             $DRAFTS_FLAG
 
+      # Variant-safe benchmark backfill on existing CPU records (PassMark).
+      # CPU-only; never overwrites, only fills nulls on exact heading matches.
+      # Non-fatal: a scrape hiccup must not sink the weekly ingest PR.
+      - name: Enrich benchmarks (PassMark, cpu only)
+        if: env.CATEGORY == 'cpu'
+        continue-on-error: true
+        env:
+          TECHAPI_DATA_DIR: ${{ github.workspace }}/TechAPI/data
+        run: |
+          python -m app.ingest.enrich \
+            --data-root TechAPI/data \
+            --limit "$LIMIT" \
+            --min-year 2008 \
+            --sleep 0.5 \
+            --summary enrich-summary.md
+
+      - name: Combine summaries for PR body
+        run: |
+          cp ingest-summary.md pr-body.md
+          if [ -f enrich-summary.md ]; then
+            printf '\n\n---\n\n' >> pr-body.md
+            cat enrich-summary.md >> pr-body.md
+          fi
+
       - name: Upload summary artifact
         uses: actions/upload-artifact@v4
         with:
           name: ingest-summary
-          path: ingest-summary.md
+          path: |
+            ingest-summary.md
+            enrich-summary.md
+            pr-body.md
 
       - name: Check whether ingest produced any additions
         id: changes
@@ -106,7 +133,7 @@ jobs:
           fi
           gh pr create \
             --title "feat(data/${CATEGORY}): weekly ingest" \
-            --body-file ../ingest-summary.md \
+            --body-file ../pr-body.md \
             --base main \
             --head "$BRANCH" \
             $DRAFT_FLAG

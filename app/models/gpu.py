@@ -44,6 +44,11 @@ class DiscreteGPU(SQLModel, table=True):
     # Benchmarks (open licenses only)
     blender_score: float | None = None
     timespy_score: int | None = None
+    passmark_g3d_mark: int | None = None  # PassMark G3D Mark (videocardbenchmark.net)
+    timespy_extreme_score: int | None = None  # 3DMark Time Spy Extreme (4K)
+    speedway_score: int | None = None  # 3DMark Speed Way (DX12 Ultimate / ray tracing)
+    octanebench_score: int | None = None  # OctaneBench (OctaneRender, NVIDIA/CUDA)
+    fp32_tflops: float | None = None  # Peak FP32 compute throughput
 
     # Meta
     verified: bool = False
