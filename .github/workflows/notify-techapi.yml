@@ -9,6 +9,12 @@ name: notify-techapi
 on:
   push:
     branches: [main]
+    # Don't ping TechAPI for commits that only move the TechAPI submodule pointer
+    # (bump-techapi.yml's own bumps): TechAPI doesn't need to track those, and
+    # skipping them keeps each real change to exactly one bump — symmetric with
+    # TechAPI's notify-engine.yml ignoring its TechEngine gitlink.
+    paths-ignore:
+      - TechAPI
 
 permissions:
   contents: read
