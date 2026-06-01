@@ -1,0 +1,27 @@
+name: notify-techapi
+
+# On every push to main, ping TechAPI so it bumps its TechEngine submodule
+# pointer to the new commit. The bump itself happens in TechAPI's bump-engine.yml
+# (triggered by this repository_dispatch); TechEngine only fires the signal.
+#
+# No loop: TechAPI's bump commit lands in TechAPI, never pushed back here.
+# Requires TECHAPI_TOKEN (Contents: write on Seungpyo1007/TechAPI) — already set.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch engine-updated to TechAPI
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.TECHAPI_TOKEN }}
+          repository: Seungpyo1007/TechAPI
+          event-type: engine-updated
+          client-payload: |
+            {"sha": "${{ github.sha }}", "ref": "${{ github.ref }}"}

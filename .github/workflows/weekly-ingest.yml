@@ -31,7 +31,7 @@ jobs:
       CATEGORY: ${{ inputs.category || 'cpu' }}
       LIMIT: ${{ inputs.limit || '50' }}
       INCLUDE_DRAFTS: ${{ inputs.include_drafts || 'false' }}
-      TECHAPI_PR_TOKEN: ${{ secrets.TECHAPI_PR_TOKEN }}
+      TECHAPI_TOKEN: ${{ secrets.TECHAPI_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -41,7 +41,7 @@ jobs:
         with:
           repository: Seungpyo1007/TechAPI
           path: TechAPI
-          token: ${{ secrets.TECHAPI_PR_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.TECHAPI_TOKEN || secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-python@v5
         with:
@@ -112,11 +112,11 @@ jobs:
       - name: Open PR against TechAPI
         if: steps.changes.outputs.has_changes == 'true'
         env:
-          GH_TOKEN: ${{ secrets.TECHAPI_PR_TOKEN }}
+          GH_TOKEN: ${{ secrets.TECHAPI_TOKEN }}
         run: |
           set -euo pipefail
           if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::warning::Ingest produced additions but TECHAPI_PR_TOKEN is unset; skipping PR. Summary attached as artifact."
+            echo "::warning::Ingest produced additions but TECHAPI_TOKEN is unset; skipping PR. Summary attached as artifact."
             exit 0
           fi
           cd TechAPI
