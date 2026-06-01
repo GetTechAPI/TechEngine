@@ -1,0 +1,167 @@
+name: weekly-refresh
+
+# Weekly automated data refresh:
+#   1. live-scrape benchmark sources into a TechAPI checkout
+#   2. gate on FULL-dataset integrity (schema + cross-source anomalies)
+#   3. regenerate the static v1 dump + openapi.json
+#   4. open a dated refresh PR against the public TechAPI repo
+#
+# TechEngine owns collection/validation/dump; TechAPI owns data/site/deploy.
+#
+# Token model: TechAPI is public, so the checkout uses the default GITHUB_TOKEN
+# (read-only) as a fallback — that lets the collect→validate→dump path run on
+# every push even when no PAT is configured. Only the cross-repo PR needs write
+# access, so just that step is guarded by `secrets.TECHAPI_TOKEN`. Add the PAT
+# (TechAPI Contents:write + Pull requests:write) as TECHAPI_TOKEN to enable PRs.
+on:
+  schedule:
+    - cron: "0 6 * * 1"   # Mondays 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      sleep:
+        description: "Seconds between scrape requests (politeness)"
+        type: string
+        default: "1.0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weekly-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    env:
+      SLEEP: ${{ inputs.sleep || '1.0' }}
+      TECHAPI_TOKEN: ${{ secrets.TECHAPI_TOKEN }}
+      # Validate/seed/dump all read the data tree from this env var.
+      TECHAPI_DATA_DIR: ${{ github.workspace }}/techapi/data
+    steps:
+      - name: Checkout TechEngine
+        uses: actions/checkout@v4
+
+      # Read-only with the default token when no PAT is set; the PAT (when
+      # present) lets peter-evans push the refresh branch back later.
+      - name: Checkout TechAPI
+        uses: actions/checkout@v4
+        with:
+          repository: Seungpyo1007/TechAPI
+          path: techapi
+          token: ${{ secrets.TECHAPI_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install TechEngine
+        run: pip install -e .
+
+      - name: Compute refresh date
+        id: meta
+        run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      # --- 1. Live collection (per-source; a flaky scrape must not sink the run) ---
+      - name: Enrich benchmarks (all sources)
+        run: |
+          set -uo pipefail
+          run_enrich() {
+            comp="$1"; src="$2"
+            echo "::group::enrich ${comp}/${src}"
+            if python -m app.ingest.enrich \
+                 --source "$src" --component "$comp" \
+                 --data-root ./techapi/data --sleep "$SLEEP" \
+                 --summary "enrich-${comp}-${src}.md"; then
+              :
+            else
+              echo "::warning::enrich source '${src}' (${comp}) failed; skipping"
+            fi
+            echo "::endgroup::"
+          }
+          for s in passmark cinebench-legacy cinebench-r23 cinebench-2024 \
+                   cinebench-nbc geekbench-nbc spec-cpu2006 topcpu-cpu; do
+            run_enrich cpu "$s"
+          done
+          for s in blender timespy passmark-gpu topcpu-gpu; do
+            run_enrich gpu "$s"
+          done
+
+      # --- 2. Integrity gate over the WHOLE dataset (new + existing) ---
+      # Either failure stops the job before the dump/PR, so contaminated data
+      # can never reach a refresh PR.
+      - name: Validate (schema / range / slug / FK)
+        run: python -m app.validate
+
+      - name: Integrity check (cross-source anomalies, strict gate)
+        run: python integrity_check.py ./techapi/data --strict
+
+      # --- 3. Static dump → site/public (what the Astro site fetches at runtime) ---
+      - name: Generate static dump
+        run: python -m app.dump --output ./techapi/site/public
+
+      # --- PR body: per-source enrich summaries + gate result ---
+      - name: Build PR body
+        run: |
+          {
+            echo "# Weekly data refresh — ${{ steps.meta.outputs.date }}"
+            echo
+            echo "Automated live re-scrape + full-dataset integrity gate + static dump."
+            echo
+            echo "## Validation"
+            echo "- \`app.validate\` (schema/range/slug/FK): **passed**"
+            echo "- \`integrity_check.py --strict\` (cross-source anomaly gate): **passed**"
+            echo
+            echo "## Enrichment summaries"
+            for f in enrich-*.md; do
+              [ -f "$f" ] || continue
+              echo
+              echo "<details><summary>$f</summary>"
+              echo
+              cat "$f"
+              echo
+              echo "</details>"
+            done
+          } > pr-body.md
+
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: refresh-${{ steps.meta.outputs.date }}
+          path: |
+            enrich-*.md
+            pr-body.md
+          if-no-files-found: ignore
+
+      # Fallback when no PAT: keep the regenerated dump so the work isn't lost.
+      - name: Upload dump artifact (no-token fallback)
+        if: env.TECHAPI_TOKEN == ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: dump-${{ steps.meta.outputs.date }}
+          path: |
+            techapi/site/public/v1
+            techapi/site/public/openapi.json
+          if-no-files-found: ignore
+
+      # --- 4. Dated branch + auto PR against TechAPI (only with a PAT) ---
+      - name: Create refresh PR
+        if: env.TECHAPI_TOKEN != ''
+        uses: peter-evans/create-pull-request@v6
+        with:
+          path: ./techapi
+          token: ${{ secrets.TECHAPI_TOKEN }}
+          branch: refresh/${{ steps.meta.outputs.date }}
+          base: main
+          add-paths: |
+            data
+            site/public/v1
+            site/public/openapi.json
+          commit-message: "chore(data): weekly refresh ${{ steps.meta.outputs.date }}"
+          title: "chore(data): weekly refresh ${{ steps.meta.outputs.date }}"
+          body-file: pr-body.md
+          committer: techengine-bot <techengine-bot@users.noreply.github.com>
+          author: techengine-bot <techengine-bot@users.noreply.github.com>
+          delete-branch: true
