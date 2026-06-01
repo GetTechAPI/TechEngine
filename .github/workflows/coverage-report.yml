@@ -41,21 +41,35 @@ jobs:
           name: coverage-report
           path: coverage-report.md
 
-      # Sticky issue: search for an open issue with the well-known title and
-      # update it; create one if missing. Defaults to this repo; if a PAT
-      # scoped to TechAPI is provided as TECHAPI_PR_TOKEN, posts there instead.
-      - name: Sync sticky coverage issue
+      # Sticky issue: keep one open issue with the well-known title per repo,
+      # updating it in place. Posts to BOTH TechEngine (default GITHUB_TOKEN) and
+      # TechAPI (TECHAPI_TOKEN). The TechAPI post is best-effort: it needs the PAT
+      # to carry Issues:write, so a missing permission warns instead of failing.
+      - name: Sync sticky coverage issue (TechEngine + TechAPI)
         env:
-          GH_TOKEN: ${{ secrets.TECHAPI_PR_TOKEN || secrets.GITHUB_TOKEN }}
-          TARGET_REPO: ${{ secrets.TECHAPI_PR_TOKEN && 'Seungpyo1007/TechAPI' || github.repository }}
+          SELF_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TECHAPI_TOKEN: ${{ secrets.TECHAPI_TOKEN }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           TITLE="Coverage gaps (auto-generated)"
           BODY="$(cat coverage-report.md)"
-          NUMBER=$(gh issue list --repo "$TARGET_REPO" --state open \
-            --search "in:title \"$TITLE\"" --json number --jq '.[0].number // empty')
-          if [ -z "${NUMBER:-}" ]; then
-            gh issue create --repo "$TARGET_REPO" --title "$TITLE" --body "$BODY"
-          else
-            gh issue edit "$NUMBER" --repo "$TARGET_REPO" --body "$BODY"
-          fi
+          sync_issue() {
+            repo="$1"; token="$2"
+            if [ -z "$token" ]; then
+              echo "::warning::no token for $repo; skipping coverage issue"
+              return 0
+            fi
+            NUMBER=$(GH_TOKEN="$token" gh issue list --repo "$repo" --state open \
+              --search "in:title \"$TITLE\"" --json number --jq '.[0].number // empty') || return 1
+            if [ -z "${NUMBER:-}" ]; then
+              GH_TOKEN="$token" gh issue create --repo "$repo" --title "$TITLE" --body "$BODY"
+            else
+              GH_TOKEN="$token" gh issue edit "$NUMBER" --repo "$repo" --body "$BODY"
+            fi
+          }
+          # TechEngine: default token has issues:write on this repo.
+          sync_issue "${{ github.repository }}" "$SELF_TOKEN" \
+            || echo "::warning::TechEngine coverage issue sync failed"
+          # TechAPI: best-effort — requires Issues:write on TECHAPI_TOKEN.
+          sync_issue "Seungpyo1007/TechAPI" "$TECHAPI_TOKEN" \
+            || echo "::warning::TechAPI coverage issue sync failed — TECHAPI_TOKEN likely lacks Issues:write"
