@@ -8,7 +8,6 @@ import zipfile
 
 from app.ingest.sources import blender, topcpu, videocardbenchmark
 
-
 # --- shared GPU name normalization (variant safety) ---------------------------
 
 
@@ -207,7 +206,9 @@ def test_videocardbenchmark_parses_g3d_and_variant_safe() -> None:
     assert videocardbenchmark.resolve(client, "GeForce 256")[0]["passmark_g3d_mark"] == 5
     # Variant safety: plain 3070 absent (only 3070 Ti present) → None.
     assert videocardbenchmark.resolve(client, "GeForce RTX 3070") is None
-    assert videocardbenchmark.resolve(client, "GeForce RTX 3070 Ti")[0]["passmark_g3d_mark"] == 23223
+    ti = videocardbenchmark.resolve(client, "GeForce RTX 3070 Ti")
+    assert ti is not None
+    assert ti[0]["passmark_g3d_mark"] == 23223
 
 
 def _gpu_row(name: str, score: str) -> str:
