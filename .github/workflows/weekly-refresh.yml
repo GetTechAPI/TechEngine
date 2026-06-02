@@ -162,6 +162,6 @@ jobs:
           commit-message: "chore(data): weekly refresh ${{ steps.meta.outputs.date }}"
           title: "chore(data): weekly refresh ${{ steps.meta.outputs.date }}"
           body-path: pr-body.md
-          committer: techengine-bot <techengine-bot@users.noreply.github.com>
-          author: techengine-bot <techengine-bot@users.noreply.github.com>
+          committer: TechEngineBot <289859915+TechEngineBot@users.noreply.github.com>
+          author: TechEngineBot <289859915+TechEngineBot@users.noreply.github.com>
           delete-branch: true
