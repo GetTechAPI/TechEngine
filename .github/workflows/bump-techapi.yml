@@ -41,7 +41,7 @@ jobs:
           # (covers manual runs and payload-less dispatches).
           SHA="${PAYLOAD_SHA:-}"
           if [ -z "$SHA" ]; then
-            SHA=$(git ls-remote https://github.com/Seungpyo1007/TechAPI.git refs/heads/main | awk '{print $1}')
+            SHA=$(git ls-remote https://github.com/GetTechAPI/TechAPI.git refs/heads/main | awk '{print $1}')
           fi
           if [ -z "$SHA" ]; then
             echo "::error::could not resolve TechAPI main sha"; exit 1

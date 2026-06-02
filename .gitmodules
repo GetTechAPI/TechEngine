@@ -1,4 +1,4 @@
 [submodule "TechAPI"]
 	path = TechAPI
-	url = https://github.com/Seungpyo1007/TechAPI.git
+	url = https://github.com/GetTechAPI/TechAPI.git
 	branch = main
