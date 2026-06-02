@@ -60,7 +60,9 @@ scripts/
   dump.py            DB → static JSON dump (replays API in-process) → ./dump
 tests/               unit/ + integration/ (conftest seeds a temp SQLite from data/)
 docs/                SPEC.md, DATA_PIPELINE.md, DEVELOPMENT.md
-.github/workflows/   test.yml, validate-data.yml, refresh-data.yml
+.github/workflows/   test.yml, validate-data.yml, weekly-refresh.yml, weekly-ingest.yml,
+                     coverage-report.yml, refresh-data.yml, notify-techapi.yml,
+                     bump-techapi.yml, deploy-pages.yml
 ```
 
 > Note: **data folders are singular** (`data/soc/…`) but **API routes are plural**
@@ -85,7 +87,7 @@ python -m app.dump               # generate ./dump/ static tree (gitignored)
 - **GPU activated** — model existed (§6.5); endpoints + data added.
 - **Data restructured** to singular names + brand subfolders (maintainer request).
 - **Static-dump pivot** — `app/dump.py` exports the API to a static JSON tree,
-  refreshed by GitHub Actions (`refresh-data.yml`).
+  refreshed weekly by GitHub Actions (`weekly-refresh.yml`).
 - **Scoring** is a Phase-0 reference-based approximation; Phase 1 → dataset-wide
   min-max (§8.4). Raw third-party benchmarks (Geekbench/AnTuTu/Cinebench/Time Spy)
   are stored as algorithm inputs but NOT exposed (ADR-006).

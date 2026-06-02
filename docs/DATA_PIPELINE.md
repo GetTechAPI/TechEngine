@@ -44,23 +44,32 @@ dump/v1/socs/…  /v1/gpus/…  /v1/cpus/…  /v1/brands/…
 A static consumer just fetches, e.g.
 `https://<host>/v1/smartphones/galaxy-s25/index.json`.
 
-## 3. Automated refresh (`.github/workflows/refresh-data.yml`)
+## 3. Automated refresh (`.github/workflows/weekly-refresh.yml`)
 
-A scheduled workflow (weekly cron + on `data/**` changes + manual) runs:
+The weekly pipeline (Monday cron + manual dispatch) runs the full cycle against
+a TechAPI checkout:
 
 ```
-validate seed data → generate dump → publish/commit dump if changed
+live-scrape benchmark sources → full-dataset integrity gate
+  (app.validate + integrity_check.py --strict) → regenerate static dump
+  → open a dated refresh PR against TechAPI
 ```
 
-This is the git-scraping pattern: GitHub runs and stores everything for free.
-The hosting target depends on the public/private decision (§5).
+The integrity gate re-checks the **whole** dataset every run (not just new
+rows), so a bad scrape can't slip a contaminated value past it. A lighter
+`refresh-data.yml` rebuilds the dump on engine (`app/**`) changes as a smoke
+test only. This is the git-scraping pattern — GitHub runs and stores everything
+for free — and the dated PR keeps every refresh reviewable before it lands. The
+hosting target depends on the public/private decision (§5).
 
 ## 4. Where the data comes from
 
-This repo contains only **curated, validated** records. Bulk collection and
-normalization happen **outside this repo**, through a separate internal pipeline,
-which publishes curated records here (by PR) after review (SPEC §9.3). This repo
-never needs scraping/browser dependencies.
+This repo serves **curated, validated** records, but collection now happens
+**in-repo**: `app/ingest` drafts new SKUs from upstream catalogs and
+`app/ingest/enrich` backfills benchmark columns from multiple sources
+(variant-safe, fill-only-nulls, never overwrites). Both run weekly and open PRs
+against TechAPI for human review before anything lands (SPEC §9.3). The curated
+dataset is a **subset, not exhaustive.**
 
 **Dataset layout (this repo).** Curated data uses singular folder names and is
 organised by brand: `data/brand/<slug>.json`, `data/soc/<manufacturer>/<slug>.json`,
