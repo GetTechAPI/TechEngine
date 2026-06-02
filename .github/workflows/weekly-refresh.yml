@@ -47,7 +47,7 @@ jobs:
       - name: Checkout TechAPI
         uses: actions/checkout@v4
         with:
-          repository: Seungpyo1007/TechAPI
+          repository: GetTechAPI/TechAPI
           path: techapi
           token: ${{ secrets.TECHAPI_TOKEN || secrets.GITHUB_TOKEN }}
 

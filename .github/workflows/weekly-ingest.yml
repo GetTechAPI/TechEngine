@@ -39,7 +39,7 @@ jobs:
       # fall back to the default token for read-only test runs.
       - uses: actions/checkout@v4
         with:
-          repository: Seungpyo1007/TechAPI
+          repository: GetTechAPI/TechAPI
           path: TechAPI
           token: ${{ secrets.TECHAPI_TOKEN || secrets.GITHUB_TOKEN }}
 

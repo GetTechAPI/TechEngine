@@ -23,7 +23,7 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          repository: Seungpyo1007/TechAPI
+          repository: GetTechAPI/TechAPI
           path: TechAPI
 
       - uses: actions/setup-python@v5
