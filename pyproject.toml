@@ -5,7 +5,7 @@ description = "Validation + ingestion engine for the TechAPI dataset"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
-authors = [{ name = "GetTechAPI Foundation (GTA)", email = "team@techapi.dev" }]
+authors = [{ name = "GTA Foundation", email = "team@techapi.dev" }]
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
