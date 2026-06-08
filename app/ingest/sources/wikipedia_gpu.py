@@ -37,6 +37,12 @@ PAGES: list[tuple[str, str, str]] = [
     ("intel", "List_of_Intel_graphics_processing_units", "Intel Graphics"),
 ]
 
+# Manufacturer keys are stored lowercase; these are their display forms used to
+# synthesize ``name`` when the model string omits the brand. Plain ``.upper()``
+# mangles "intel" → "INTEL" (an ingest casing artifact). NVIDIA and AMD are
+# genuinely all-caps so they get explicit entries rather than title-casing.
+_BRAND_DISPLAY: dict[str, str] = {"nvidia": "NVIDIA", "amd": "AMD", "intel": "Intel"}
+
 # Same matching strategy as CPU but with GPU-specific keyword sets.
 HEADER_RULES: dict[str, list[str]] = {
     "model": ["model", "card", "name"],
@@ -127,7 +133,8 @@ def _build_candidate(
     memory_type = (row.get("memory_type") or "").upper() or None
 
     segment = guess_gpu_segment(model)
-    name = model if model.lower().startswith(manufacturer) else f"{manufacturer.upper()} {model}"
+    brand = _BRAND_DISPLAY.get(manufacturer, manufacturer.title())
+    name = model if model.lower().startswith(manufacturer) else f"{brand} {model}"
 
     record: dict[str, object | None] = {
         "slug": slug,

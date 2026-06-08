@@ -37,6 +37,12 @@ PAGES: list[tuple[str, str]] = [
     ("xiaomi", "List_of_Xiaomi_smartphones"),
 ]
 
+# Brand keys are stored lowercase; these are their display forms used to
+# synthesize ``name`` when the model string omits the brand. ``.title()`` is a
+# fine default (samsung→Samsung) but mangles intercapped brands, so those get
+# explicit entries (oneplus→OnePlus, not "Oneplus").
+_BRAND_DISPLAY: dict[str, str] = {"oneplus": "OnePlus"}
+
 HEADER_RULES: dict[str, list[str]] = {
     "model": ["model", "name"],
     "release_date": ["released", "release", "launched", "launch", "date"],
@@ -163,7 +169,7 @@ def _build_candidate(
     name = (
         model
         if model.lower().startswith(brand) or model.lower().startswith(brand.upper())
-        else f"{brand.title()} {model}"
+        else f"{_BRAND_DISPLAY.get(brand, brand.title())} {model}"
     )
 
     record: dict[str, object | None] = {

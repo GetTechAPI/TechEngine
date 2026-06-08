@@ -43,6 +43,12 @@ PAGES: list[tuple[str, str, str]] = [
     ("amd", "List_of_AMD_Threadripper_processors", "AMD Threadripper"),
 ]
 
+# Manufacturer keys are stored lowercase; these are their display forms used to
+# synthesize ``name`` when the model string omits the brand. Plain ``.upper()``
+# mangles "intel" → "INTEL" (an ingest casing artifact); AMD is genuinely
+# all-caps so it gets an explicit entry rather than title-casing.
+_BRAND_DISPLAY: dict[str, str] = {"intel": "Intel", "amd": "AMD"}
+
 # Lowercased header tokens → canonical field name. Order matters: the first
 # matching fragment per cell wins (so a "Cores/Threads" column maps to
 # ``cores`` rather than ``threads``).
@@ -139,7 +145,8 @@ def _build_candidate(
     process_node = row.get("process_node") or None
 
     segment = guess_cpu_segment(model)
-    name = model if model.lower().startswith(manufacturer) else f"{manufacturer.upper()} {model}"
+    brand = _BRAND_DISPLAY.get(manufacturer, manufacturer.title())
+    name = model if model.lower().startswith(manufacturer) else f"{brand} {model}"
 
     record: dict[str, object | None] = {
         "slug": slug,
