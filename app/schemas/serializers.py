@@ -126,6 +126,7 @@ def gpu_read(gpu: DiscreteGPU, manufacturer: Brand) -> GPURead:
         boost_clock_mhz=gpu.boost_clock_mhz,
         tdp_w=gpu.tdp_w,
         pcie_version=gpu.pcie_version,
+        fp32_tflops=gpu.fp32_tflops,
         blender_score=gpu.blender_score,
         verified=gpu.verified,
         source_urls=gpu.source_urls,

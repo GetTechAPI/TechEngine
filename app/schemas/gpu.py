@@ -35,6 +35,7 @@ class GPURead(BaseModel):
     boost_clock_mhz: int
     tdp_w: int
     pcie_version: str
+    fp32_tflops: float | None = None
     blender_score: float | None = None
     verified: bool
     source_urls: list[str]
