@@ -242,6 +242,11 @@ def validate() -> list[str]:
 
 
 def run() -> int:
+    # The ✅/❌ status glyphs must not crash on legacy consoles (e.g. cp949).
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+    except Exception:
+        pass
     errors = validate()
     if errors:
         print(f"❌ Data validation failed ({len(errors)} issue(s)):")
