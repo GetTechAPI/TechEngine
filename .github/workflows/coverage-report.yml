@@ -1,10 +1,10 @@
 name: coverage-report
 
-# Weekly: pull upstream catalogs, diff vs the curated TechAPI dataset, post
+# Daily: pull upstream catalogs, diff vs the curated TechAPI dataset, post
 # the gap list as a sticky issue (auto-updates the existing one each run).
 on:
   schedule:
-    - cron: "23 6 * * 1"   # Mondays 06:23 UTC, after refresh-data (06:17)
+    - cron: "23 6 * * *"   # Daily 06:23 UTC, after weekly-refresh (06:00)
   workflow_dispatch:
 
 permissions:

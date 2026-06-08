@@ -1,6 +1,6 @@
 name: weekly-refresh
 
-# Weekly automated data refresh:
+# Daily automated data refresh:
 #   1. live-scrape benchmark sources into a TechAPI checkout
 #   2. gate on FULL-dataset integrity (schema + cross-source anomalies)
 #   3. regenerate the static v1 dump + openapi.json
@@ -15,7 +15,7 @@ name: weekly-refresh
 # (TechAPI Contents:write + Pull requests:write) as TECHAPI_TOKEN to enable PRs.
 on:
   schedule:
-    - cron: "0 6 * * 1"   # Mondays 06:00 UTC
+    - cron: "0 6 * * *"   # Daily 06:00 UTC
   workflow_dispatch:
     inputs:
       sleep:
@@ -105,7 +105,7 @@ jobs:
       - name: Build PR body
         run: |
           {
-            echo "# Weekly data refresh — ${{ steps.meta.outputs.date }}"
+            echo "# Daily data refresh — ${{ steps.meta.outputs.date }}"
             echo
             echo "Automated live re-scrape + full-dataset integrity gate + static dump."
             echo
@@ -159,8 +159,8 @@ jobs:
             data
             site/public/v1
             site/public/openapi.json
-          commit-message: "chore(data): weekly refresh ${{ steps.meta.outputs.date }}"
-          title: "chore(data): weekly refresh ${{ steps.meta.outputs.date }}"
+          commit-message: "chore(data): daily refresh ${{ steps.meta.outputs.date }}"
+          title: "chore(data): daily refresh ${{ steps.meta.outputs.date }}"
           body-path: pr-body.md
           committer: TechEngineBot <289859915+TechEngineBot@users.noreply.github.com>
           author: TechEngineBot <289859915+TechEngineBot@users.noreply.github.com>
