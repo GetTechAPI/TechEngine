@@ -47,11 +47,17 @@ jobs:
           path: coverage-report.md
 
       # Sticky issue: keep one open issue with the well-known title per repo,
-      # updating it in place. Posts to BOTH TechEngine (default GITHUB_TOKEN) and
-      # TechAPI (TECHAPI_TOKEN). The TechAPI post is best-effort: it needs the PAT
-      # to carry Issues:write, so a missing permission warns instead of failing.
+      # updating it in place. Posts to BOTH TechEngine and TechAPI.
+      #
+      # Authorship: a GitHub issue's author is the account behind the *token*
+      # (unlike a commit, it cannot be set via git config). To attribute the
+      # auto-generated issues to TechEngineBot, set a TechEngineBot PAT with
+      # Issues:write on both repos as the TECHENGINEBOT_TOKEN secret; the steps
+      # below prefer it. Without it they fall back to the default GITHUB_TOKEN
+      # (TechEngine, authored by github-actions) and TECHAPI_TOKEN (TechAPI).
       - name: Sync sticky coverage issue (TechEngine + TechAPI)
         env:
+          BOT_TOKEN: ${{ secrets.TECHENGINEBOT_TOKEN }}
           SELF_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TECHAPI_TOKEN: ${{ secrets.TECHAPI_TOKEN }}
         run: |
@@ -72,9 +78,10 @@ jobs:
               GH_TOKEN="$token" gh issue edit "$NUMBER" --repo "$repo" --body "$BODY"
             fi
           }
-          # TechEngine: default token has issues:write on this repo.
-          sync_issue "${{ github.repository }}" "$SELF_TOKEN" \
+          # Prefer the TechEngineBot PAT (so the issue is authored by the bot);
+          # fall back to the per-repo defaults when it is not configured.
+          sync_issue "${{ github.repository }}" "${BOT_TOKEN:-$SELF_TOKEN}" \
             || echo "::warning::TechEngine coverage issue sync failed"
-          # TechAPI: best-effort — requires Issues:write on TECHAPI_TOKEN.
-          sync_issue "GetTechAPI/TechAPI" "$TECHAPI_TOKEN" \
-            || echo "::warning::TechAPI coverage issue sync failed — TECHAPI_TOKEN likely lacks Issues:write"
+          # TechAPI: best-effort — requires Issues:write on the chosen token.
+          sync_issue "GetTechAPI/TechAPI" "${BOT_TOKEN:-$TECHAPI_TOKEN}" \
+            || echo "::warning::TechAPI coverage issue sync failed — token likely lacks Issues:write"
