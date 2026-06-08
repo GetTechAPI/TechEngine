@@ -1,10 +1,10 @@
 name: weekly-ingest
 
-# Daily: scrape upstream catalogs, draft missing SKUs into a TechAPI worktree,
+# Weekly: scrape upstream catalogs, draft missing SKUs into a TechAPI worktree,
 # open a PR for curator review.
 on:
   schedule:
-    - cron: "29 6 * * *"   # Daily 06:29 UTC, after coverage-report (06:23)
+    - cron: "29 6 * * 1"   # Mondays 06:29 UTC (weekly to keep curator review load sane)
   workflow_dispatch:
     inputs:
       category:
@@ -68,7 +68,7 @@ jobs:
 
       # Variant-safe benchmark backfill on existing CPU records (PassMark).
       # CPU-only; never overwrites, only fills nulls on exact heading matches.
-      # Non-fatal: a scrape hiccup must not sink the daily ingest PR.
+      # Non-fatal: a scrape hiccup must not sink the weekly ingest PR.
       - name: Enrich benchmarks (PassMark, cpu only)
         if: env.CATEGORY == 'cpu'
         continue-on-error: true
@@ -125,14 +125,14 @@ jobs:
           git config user.email "289859915+TechEngineBot@users.noreply.github.com"
           git checkout -b "$BRANCH"
           git add data/
-          git commit -m "feat(data/${CATEGORY}): daily ingest"
+          git commit -m "feat(data/${CATEGORY}): weekly ingest"
           git push -u origin "$BRANCH"
           DRAFT_FLAG=""
           if [ "$INCLUDE_DRAFTS" = "true" ]; then
             DRAFT_FLAG="--draft"
           fi
           gh pr create \
-            --title "feat(data/${CATEGORY}): daily ingest" \
+            --title "feat(data/${CATEGORY}): weekly ingest" \
             --body-file ../pr-body.md \
             --base main \
             --head "$BRANCH" \

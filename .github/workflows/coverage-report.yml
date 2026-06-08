@@ -4,12 +4,17 @@ name: coverage-report
 # the gap list as a sticky issue (auto-updates the existing one each run).
 on:
   schedule:
-    - cron: "23 6 * * *"   # Daily 06:23 UTC, after weekly-refresh (06:00)
+    - cron: "23 6 * * *"   # Daily 06:23 UTC (reads curated data/, so safe to run every day)
   workflow_dispatch:
 
 permissions:
   contents: read
   issues: write
+
+# Guard against a slow run overlapping the next day's scheduled run.
+concurrency:
+  group: coverage-report
+  cancel-in-progress: false
 
 jobs:
   report:

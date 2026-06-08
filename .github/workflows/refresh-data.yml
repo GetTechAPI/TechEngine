@@ -2,9 +2,9 @@ name: refresh-data
 
 # Dump smoke-test: when engine code (app/**) changes, rebuild the static dump
 # from the latest TechAPI data and validate it — a fast guard that `app.dump`
-# still generates end-to-end. The daily full refresh (enrich + integrity gate +
+# still generates end-to-end. The weekly full refresh (enrich + integrity gate +
 # dump + PR to TechAPI) lives in weekly-refresh.yml; this no longer runs on a
-# schedule, to avoid duplicating that scheduled run.
+# schedule, to avoid duplicating that weekly run.
 on:
   push:
     branches: [main]
