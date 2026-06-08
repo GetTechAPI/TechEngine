@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from ..normalize import slugify
+from ..normalize import is_probable_model_slug, slugify
 from .base import CoveragePoint
 from .wikipedia import fetch_wikipedia_html, wikitable_first_cells
 
@@ -36,7 +36,7 @@ class WikipediaGpu:
     def _extract(html: str, manufacturer: str, page: str) -> Iterator[CoveragePoint]:
         for raw_name in wikitable_first_cells(html):
             slug = slugify(raw_name, manufacturer=manufacturer)
-            if len(slug) < 4 or not any(c.isdigit() for c in slug):
+            if not is_probable_model_slug(slug):
                 continue
             yield CoveragePoint(
                 category="gpu",

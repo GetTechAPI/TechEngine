@@ -6,6 +6,7 @@ which returns prerendered HTML — easier to parse than wikitext and stable.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 
 import httpx
@@ -13,6 +14,10 @@ from bs4 import BeautifulSoup
 
 WIKI_REST_HTML = "https://en.wikipedia.org/api/rest_v1/page/html/{title}"
 USER_AGENT = "TechEngine-Coverage/0.1 (+https://github.com/GetTechAPI/TechEngine)"
+
+# Leftover footnote/reference markers (e.g. "[ 4 ]", "[c]") that survive as plain
+# text after <sup> nodes are stripped. They otherwise leak into slugs as "-4".
+_FOOTNOTE_RE = re.compile(r"\[[^\]]*\]")
 
 
 def fetch_wikipedia_html(page_title: str, *, timeout: float = 30.0) -> str:
@@ -38,6 +43,10 @@ def wikitable_first_cells(html: str) -> Iterator[str]:
             cell = row.find(["th", "td"])
             if not cell:
                 continue
-            text = cell.get_text(" ", strip=True)
+            # Drop Wikipedia reference/footnote markers (rendered as <sup>), which
+            # otherwise leak into the model name as "[4]" and pollute the slug.
+            for sup in cell.find_all("sup"):
+                sup.decompose()
+            text = _FOOTNOTE_RE.sub("", cell.get_text(" ", strip=True)).strip()
             if text:
                 yield text

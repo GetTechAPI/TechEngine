@@ -38,6 +38,22 @@ _MANUFACTURER_PREFIXES: dict[str, list[str]] = {
 _SEPARATOR_RE = re.compile(r"[^a-z0-9]+")
 _COLLAPSE_RE = re.compile(r"-+")
 
+# Decimal-derived artifacts like "1-25" (from a "1.25" clock cell) — two pure
+# numeric groups joined by a hyphen. Real CPU/GPU SKUs are a single numeric run
+# ("6276") or carry letters ("core-i9-14900k"), never bare "<digits>-<digits>".
+_DECIMAL_ARTIFACT_RE = re.compile(r"^\d+-\d+$")
+
+
+def is_probable_model_slug(slug: str, *, min_len: int = 4) -> bool:
+    """Heuristic: does ``slug`` look like a real CPU/GPU model (vs a stray cell)?
+
+    Rejects too-short slugs, slugs with no digit, and decimal-derived artifacts
+    such as ``"1-25"`` that come from non-model cells (clock speeds, footnotes).
+    """
+    if len(slug) < min_len or not any(c.isdigit() for c in slug):
+        return False
+    return not _DECIMAL_ARTIFACT_RE.match(slug)
+
 
 def slugify(name: str, manufacturer: str | None = None) -> str:
     """Normalize a vendor-style name to a kebab-case slug.
