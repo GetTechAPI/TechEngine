@@ -32,6 +32,7 @@ jobs:
       LIMIT: ${{ inputs.limit || '50' }}
       INCLUDE_DRAFTS: ${{ inputs.include_drafts || 'false' }}
       TECHAPI_TOKEN: ${{ secrets.TECHAPI_TOKEN }}
+      TECHAPI_WRITE_TOKEN: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -41,7 +42,7 @@ jobs:
         with:
           repository: GetTechAPI/TechAPI
           path: TechAPI
-          token: ${{ secrets.TECHAPI_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN || secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-python@v5
         with:
@@ -112,7 +113,7 @@ jobs:
       - name: Open PR against TechAPI
         if: steps.changes.outputs.has_changes == 'true'
         env:
-          GH_TOKEN: ${{ secrets.TECHAPI_TOKEN }}
+          GH_TOKEN: ${{ env.TECHAPI_WRITE_TOKEN }}
         run: |
           set -euo pipefail
           if [ -z "${GH_TOKEN:-}" ]; then

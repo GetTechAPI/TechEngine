@@ -11,8 +11,8 @@ name: weekly-refresh
 # Token model: TechAPI is public, so the checkout uses the default GITHUB_TOKEN
 # (read-only) as a fallback — that lets the collect→validate→dump path run on
 # every push even when no PAT is configured. Only the cross-repo PR needs write
-# access, so just that step is guarded by `secrets.TECHAPI_TOKEN`. Add the PAT
-# (TechAPI Contents:write + Pull requests:write) as TECHAPI_TOKEN to enable PRs.
+# access, so just that step is guarded by a PAT. Prefer TECHENGINEBOT_TOKEN
+# so PRs are authored by TechEngineBot; fall back to TECHAPI_TOKEN.
 on:
   schedule:
     - cron: "0 6 * * 1"   # Mondays 06:00 UTC (live scrape: weekly to respect upstream ToS/rate limits)
@@ -36,6 +36,7 @@ jobs:
     env:
       SLEEP: ${{ inputs.sleep || '1.0' }}
       TECHAPI_TOKEN: ${{ secrets.TECHAPI_TOKEN }}
+      TECHAPI_WRITE_TOKEN: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN }}
       # Validate/seed/dump all read the data tree from this env var.
       TECHAPI_DATA_DIR: ${{ github.workspace }}/techapi/data
     steps:
@@ -49,7 +50,7 @@ jobs:
         with:
           repository: GetTechAPI/TechAPI
           path: techapi
-          token: ${{ secrets.TECHAPI_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN || secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-python@v5
         with:
@@ -137,7 +138,7 @@ jobs:
 
       # Fallback when no PAT: keep the regenerated dump so the work isn't lost.
       - name: Upload dump artifact (no-token fallback)
-        if: env.TECHAPI_TOKEN == ''
+        if: env.TECHAPI_WRITE_TOKEN == ''
         uses: actions/upload-artifact@v4
         with:
           name: dump-${{ steps.meta.outputs.date }}
@@ -148,11 +149,11 @@ jobs:
 
       # --- 4. Dated branch + auto PR against TechAPI (only with a PAT) ---
       - name: Create refresh PR
-        if: env.TECHAPI_TOKEN != ''
+        if: env.TECHAPI_WRITE_TOKEN != ''
         uses: peter-evans/create-pull-request@v6
         with:
           path: ./techapi
-          token: ${{ secrets.TECHAPI_TOKEN }}
+          token: ${{ env.TECHAPI_WRITE_TOKEN }}
           branch: refresh/${{ steps.meta.outputs.date }}
           base: main
           add-paths: |
