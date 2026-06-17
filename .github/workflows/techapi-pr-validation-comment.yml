@@ -1,0 +1,153 @@
+name: techapi-pr-validation-comment
+
+# TechAPI data PRs can ask this repository to validate their head commit and
+# leave a curator-facing comment back on the PR. This keeps the PR owned by the
+# human contributor while TechEngineBot reports the engine verdict.
+on:
+  repository_dispatch:
+    types: [techapi-pr-validate]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "TechAPI PR number to comment on"
+        type: string
+        required: true
+      head_sha:
+        description: "TechAPI commit SHA to validate"
+        type: string
+        required: true
+      pr_url:
+        description: "TechAPI PR URL"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: techapi-pr-validation-${{ github.event.client_payload.pr_number || inputs.pr_number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      TECHAPI_COMMENT_TOKEN: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN }}
+      TECHAPI_PR_NUMBER: ${{ github.event.client_payload.pr_number || inputs.pr_number }}
+      TECHAPI_HEAD_SHA: ${{ github.event.client_payload.head_sha || inputs.head_sha }}
+      TECHAPI_HEAD_REF: ${{ github.event.client_payload.head_ref || '' }}
+      TECHAPI_PR_URL: ${{ github.event.client_payload.pr_url || inputs.pr_url }}
+      REQUESTED_BY: ${{ github.event.client_payload.requested_by || github.actor }}
+      TECHAPI_DATA_DIR: ${{ github.workspace }}/TechAPI/data
+    steps:
+      - name: Checkout TechEngine
+        uses: actions/checkout@v4
+
+      - name: Checkout TechAPI PR head
+        uses: actions/checkout@v4
+        with:
+          repository: GetTechAPI/TechAPI
+          ref: ${{ env.TECHAPI_HEAD_SHA }}
+          path: TechAPI
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install TechEngine
+        run: pip install -e .
+
+      - name: Validate TechAPI data
+        id: validate
+        shell: bash
+        run: |
+          set +e
+          {
+            echo "## app.validate"
+            python -m app.validate
+            echo "app_validate_status=$?"
+          } > validation.log 2>&1
+          app_status=$(grep "app_validate_status=" validation.log | tail -n 1 | cut -d= -f2)
+
+          {
+            echo
+            echo "## integrity_check.py --strict"
+            python integrity_check.py TechAPI/data --strict
+            echo "integrity_status=$?"
+          } >> validation.log 2>&1
+          integrity_status=$(grep "integrity_status=" validation.log | tail -n 1 | cut -d= -f2)
+
+          sed -i '/_status=/d' validation.log
+
+          status="success"
+          if [ "${app_status:-1}" != "0" ] || [ "${integrity_status:-1}" != "0" ]; then
+            status="failure"
+          fi
+
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "app_status=${app_status:-1}" >> "$GITHUB_OUTPUT"
+          echo "integrity_status=${integrity_status:-1}" >> "$GITHUB_OUTPUT"
+
+      - name: Build PR comment
+        shell: bash
+        run: |
+          short_sha="${TECHAPI_HEAD_SHA:0:7}"
+          result="PASS"
+          if [ "${{ steps.validate.outputs.status }}" != "success" ]; then
+            result="FAIL"
+          fi
+
+          {
+            echo "<!-- techengine-pr-validation -->"
+            echo "## TechEngine validation: ${result}"
+            echo
+            echo "- PR: #${TECHAPI_PR_NUMBER}"
+            echo "- Ref: \`${TECHAPI_HEAD_REF:-detached}\`"
+            echo "- Commit: \`${short_sha}\`"
+            echo "- Requested by: @${REQUESTED_BY}"
+            echo "- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            echo "| Check | Result |"
+            echo "| --- | --- |"
+            echo "| \`python -m app.validate\` | $([ "${{ steps.validate.outputs.app_status }}" = "0" ] && echo PASS || echo FAIL) |"
+            echo "| \`python integrity_check.py TechAPI/data --strict\` | $([ "${{ steps.validate.outputs.integrity_status }}" = "0" ] && echo PASS || echo FAIL) |"
+            echo
+            echo "<details><summary>Validation log</summary>"
+            echo
+            echo '```text'
+            tail -c 6000 validation.log
+            echo '```'
+            echo
+            echo "</details>"
+          } > comment.md
+
+      - name: Comment on TechAPI PR
+        if: env.TECHAPI_COMMENT_TOKEN != ''
+        env:
+          GH_TOKEN: ${{ env.TECHAPI_COMMENT_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          marker="<!-- techengine-pr-validation -->"
+          comment_id="$(gh api "repos/GetTechAPI/TechAPI/issues/${TECHAPI_PR_NUMBER}/comments" --paginate \
+            --jq ".[] | select(.body | contains(\"${marker}\")) | .id" | tail -n 1)"
+          jq -n --rawfile body comment.md '{body: $body}' > comment.json
+          if [ -n "$comment_id" ]; then
+            gh api "repos/GetTechAPI/TechAPI/issues/comments/${comment_id}" \
+              --method PATCH \
+              --input comment.json
+          else
+            gh api "repos/GetTechAPI/TechAPI/issues/${TECHAPI_PR_NUMBER}/comments" \
+              --method POST \
+              --input comment.json
+          fi
+
+      - name: Warn when comment token is unset
+        if: env.TECHAPI_COMMENT_TOKEN == ''
+        run: echo "::warning::TECHENGINEBOT_TOKEN/TECHAPI_TOKEN is not configured; validation ran but no PR comment was posted."
+
+      - name: Fail on validation errors
+        if: steps.validate.outputs.status != 'success'
+        run: exit 1
