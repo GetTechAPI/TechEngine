@@ -13,10 +13,11 @@ emits a Markdown summary (used by the weekly workflow as the PR body).
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from collections.abc import Iterator
 from pathlib import Path
+
+from app.data_root import get_data_root
 
 from .pipeline import run
 from .sources.base import IngestCandidate, IngestSource
@@ -32,10 +33,7 @@ SOURCES_BY_CATEGORY: dict[str, list[IngestSource]] = {
 
 
 def _default_data_root() -> Path:
-    explicit = os.environ.get("TECHAPI_DATA_DIR")
-    if explicit:
-        return Path(explicit)
-    return Path(__file__).resolve().parent.parent.parent.parent / "TechAPI" / "data"
+    return get_data_root()
 
 
 def _collect(category: str, limit: int | None) -> Iterator[IngestCandidate]:

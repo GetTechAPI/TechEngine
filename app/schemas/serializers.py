@@ -49,6 +49,7 @@ def brand_read(brand: Brand) -> BrandRead:
         founded_year=brand.founded_year,
         logo_url=brand.logo_url,
         website=brand.website,
+        source_urls=brand.source_urls,
         description_en=brand.description_en,
         description_ko=brand.description_ko,
         url=url_for("brands", brand.slug),

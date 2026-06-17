@@ -31,3 +31,32 @@ def test_date_checker_requires_iso_format() -> None:
     errors: list[str] = []
     validate._check_date("x.json", "Jan 1 2025", errors)
     assert errors
+
+
+def test_source_urls_checker_requires_non_empty_list() -> None:
+    errors: list[str] = []
+    validate._check_source_urls("x.json", {"source_urls": []}, errors)
+    assert errors
+
+
+def test_source_urls_checker_accepts_url_list() -> None:
+    errors: list[str] = []
+    validate._check_source_urls("x.json", {"source_urls": ["https://example.com"]}, errors)
+    assert errors == []
+
+
+def test_source_urls_checker_rejects_non_url_strings() -> None:
+    errors: list[str] = []
+    validate._check_source_urls("x.json", {"source_urls": ["example.com"]}, errors)
+    assert errors
+
+
+def test_brand_source_urls_are_required() -> None:
+    errors: list[str] = []
+    validate._check_required(
+        "brand/example.json",
+        {"slug": "example", "name": "Example", "country": "US", "categories": ["pc-oem"]},
+        validate.BRAND_REQUIRED,
+        errors,
+    )
+    assert any("source_urls" in error for error in errors)

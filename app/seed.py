@@ -16,13 +16,13 @@ the ``TECHAPI_DATA_DIR`` environment variable.
 from __future__ import annotations
 
 import json
-import os
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 from sqlmodel import Session, SQLModel, select
 
+from app.data_root import get_data_root
 from app.database import create_db_and_tables, engine
 from app.models.brand import Brand
 from app.models.cpu import CPU
@@ -30,8 +30,7 @@ from app.models.gpu import DiscreteGPU
 from app.models.smartphone import Smartphone
 from app.models.soc import SoC
 
-_DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "TechAPI" / "data"
-DATA_DIR = Path(os.environ.get("TECHAPI_DATA_DIR", _DEFAULT_DATA_DIR))
+DATA_DIR = get_data_root()
 
 
 def _load_dir(subdir: Path) -> list[dict[str, Any]]:

@@ -499,6 +499,7 @@ class Brand:
     founded_year: int | None
     logo_url: str | None
     website: str | None
+    source_urls: list[str]
     description_en: str | None
     description_ko: str | None
 ```

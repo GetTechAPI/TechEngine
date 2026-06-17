@@ -11,7 +11,7 @@ the public product: the API + a curated dataset + a static JSON dump.** It does
 **not** contain data-collection/scraping tooling (that is maintained separately;
 see "Data scope" below).
 
-## Current status (Phase 0 MVP — DONE and verified)
+## Current status
 
 - **Stack**: FastAPI, SQLModel, Pydantic v2, Python 3.12. DB defaults to SQLite
   (`DATABASE_URL`); Postgres 16 via `docker-compose.yml`.
@@ -21,12 +21,13 @@ see "Data scope" below).
 - **Formats**: list `{count,next,previous,results}` (§7.4); error
   `{error:{code,message,request_id,documentation_url}}` (§7.5); smartphone detail
   per SPEC appendix C (embeds brand+soc+manufacturer + computed `score`).
-- **Tests**: `pytest` → passing, ~98% coverage. `ruff` + `mypy app scripts` clean.
+- **Tests**: `pytest` is the canonical test runner. `ruff` + `mypy app scripts`
+  are the static gates in CI.
 - **NOT done**: cloud deploy (Railway/Fly need accounts) and public static hosting.
   Dockerfile + workflows written but not executed in the cloud.
 
-### Curated dataset (validated, what the API serves) — 365 records
-brand 19 · soc 72 · smartphone 184 · gpu 49 · cpu 41. **This is a curated subset,
+### Curated dataset (validated, what the API serves)
+brand 129 · soc 123 · smartphone 367 · gpu 330 · cpu 976. **This is a curated subset,
 NOT an exhaustive catalog of every device.** It is intentionally hand-verified;
 breadth is expanded out-of-band (see "Data scope").
 
@@ -49,11 +50,11 @@ app/                 FastAPI app
   routers/           meta, brands, socs, smartphones, gpus, cpus
   errors.py          §7.5 error envelope + handlers
 data/                CURATED SEED DATA — singular folder names, organised by brand:
-  brand/<slug>.json
-  soc/<manufacturer>/<slug>.json          e.g. soc/qualcomm/snapdragon-8-elite.json
-  smartphone/<brand>/<slug>.json          e.g. smartphone/samsung/galaxy-s25.json
-  gpu/<manufacturer>/<slug>.json
-  cpu/<manufacturer>/<year>/<slug>.json   e.g. cpu/intel/2023/core-i9-14900k.json (CPU also split by year)
+  brand/<country>/<slug>.json
+  soc/<manufacturer>/<year>/<slug>.json
+  smartphone/<brand>/<year>/<slug>.json
+  gpu/<manufacturer>/<year>/<segment>/<slug>.json
+  cpu/<manufacturer>/<year>/<segment>/<slug>.json
 scripts/
   seed.py            data/ → DB (recurses brand subfolders; coerces ISO dates)
   validate.py        schema/range/FK/slug checks (run in CI on data changes)
@@ -96,8 +97,9 @@ python -m app.dump               # generate ./dump/ static tree (gitignored)
 
 - **Commits**: Conventional Commits (`feat(api): …`, `data: …`, `docs: …`).
   Keep commit messages clean — no tool/AI attribution trailers. Commit/push only when asked.
-- **Data accuracy**: only real, sourced models (each record needs `source_urls`).
-  Do not fabricate unsourced "all devices" data (SPEC §1.6).
+- **Data accuracy**: only real, sourced models. All brand, device, and chip
+  records require `source_urls`. Do not fabricate unsourced "all devices" data
+  (SPEC §1.6).
 - 100% type hints; tests alongside code; new top-level data fields must match the
   SQLModel (seeder does `Model(**record)` — unknown keys break it).
 

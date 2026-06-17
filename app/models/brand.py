@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel
 
 
@@ -17,5 +18,6 @@ class Brand(SQLModel, table=True):
     founded_year: int | None = None
     logo_url: str | None = None
     website: str | None = None
+    source_urls: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     description_en: str | None = None
     description_ko: str | None = None

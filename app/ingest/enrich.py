@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
 from collections.abc import Callable
@@ -37,6 +36,8 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+
+from app.data_root import get_data_root
 
 from .sources import (
     blender,
@@ -107,10 +108,7 @@ class EnrichResult:
 
 
 def _default_data_root() -> Path:
-    explicit = os.environ.get("TECHAPI_DATA_DIR")
-    if explicit:
-        return Path(explicit)
-    return Path(__file__).resolve().parent.parent.parent.parent / "TechAPI" / "data"
+    return get_data_root()
 
 
 def _candidates(cpu_root: Path, manufacturer: str | None) -> list[Path]:

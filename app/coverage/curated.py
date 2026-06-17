@@ -1,20 +1,19 @@
 """Read curated TechAPI slugs from disk.
 
 Resolves the dataset location the same way as ``app.validate`` / ``app.seed``:
-``TECHAPI_DATA_DIR`` env var, falling back to ``../TechAPI/data`` next to this
-repo.
+``TECHAPI_DATA_DIR`` env var, falling back to the local TechAPI checkout.
 """
 
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
+
+from app.data_root import get_data_root
 
 
 def data_dir() -> Path:
-    default = Path(__file__).resolve().parent.parent.parent.parent / "TechAPI" / "data"
-    return Path(os.environ.get("TECHAPI_DATA_DIR", default))
+    return get_data_root()
 
 
 def curated_slugs(category: str, manufacturer: str | None = None) -> set[str]:

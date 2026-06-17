@@ -4,26 +4,25 @@ Checks: required fields, slug convention (§14.1), value ranges/units (§14.3),
 and foreign-key integrity by slug. Run with ``python -m app.validate``;
 exits non-zero on the first failure set (used by CI ``validate-data.yml``).
 
-``DATA_DIR`` defaults to ``../TechAPI/data`` (sibling checkout) but can be
-overridden via the ``TECHAPI_DATA_DIR`` environment variable when running
-inside CI where TechAPI is checked out to a different path.
+``DATA_DIR`` defaults to the nearest TechAPI data checkout and can be
+overridden via the ``TECHAPI_DATA_DIR`` environment variable.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import re
 import sys
 from pathlib import Path
 from typing import Any
 
-_DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "TechAPI" / "data"
-DATA_DIR = Path(os.environ.get("TECHAPI_DATA_DIR", _DEFAULT_DATA_DIR))
+from app.data_root import get_data_root
+
+DATA_DIR = get_data_root()
 
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
-BRAND_REQUIRED = {"slug", "name", "country", "categories"}
+BRAND_REQUIRED = {"slug", "name", "country", "categories", "source_urls"}
 BRAND_CATEGORIES = {
     "smartphone-oem",
     "soc-designer",
@@ -84,7 +83,7 @@ def _load(subdir: str) -> list[tuple[str, dict[str, Any]]]:
     if not path.exists():
         return []
     return [
-        (str(f.relative_to(DATA_DIR)), json.loads(f.read_text(encoding="utf-8")))
+        (str(f.relative_to(DATA_DIR)), json.loads(f.read_text(encoding="utf-8-sig")))
         for f in sorted(path.rglob("*.json"))  # recurse into brand subfolders
     ]
 
@@ -133,6 +132,14 @@ def _check_unique_slugs(
             seen[slug] = fname
 
 
+def _check_source_urls(name: str, record: dict[str, Any], errors: list[str]) -> None:
+    urls = record.get("source_urls")
+    if not isinstance(urls, list) or not urls or not all(
+        isinstance(url, str) and url.startswith(("http://", "https://")) for url in urls
+    ):
+        errors.append(f"{name}: source_urls must be a non-empty list of http(s) URL strings")
+
+
 def validate() -> list[str]:
     errors: list[str] = []
 
@@ -156,6 +163,7 @@ def validate() -> list[str]:
 
     for fname, rec in brands:
         _check_required(fname, rec, BRAND_REQUIRED, errors)
+        _check_source_urls(fname, rec, errors)
         _check_slug(fname, rec.get("slug"), errors)
         if "founded_year" in rec:
             _check_range(fname, "founded_year", rec["founded_year"], 1800, 2100, errors)
@@ -188,6 +196,7 @@ def validate() -> list[str]:
 
     for fname, rec in socs:
         _check_required(fname, rec, SOC_REQUIRED, errors)
+        _check_source_urls(fname, rec, errors)
         _check_slug(fname, rec.get("slug"), errors)
         if "release_date" in rec:
             _check_date(fname, rec["release_date"], errors)
@@ -197,6 +206,7 @@ def validate() -> list[str]:
 
     for fname, rec in phones:
         _check_required(fname, rec, PHONE_REQUIRED, errors)
+        _check_source_urls(fname, rec, errors)
         _check_slug(fname, rec.get("slug"), errors)
         if "release_date" in rec:
             _check_date(fname, rec["release_date"], errors)
@@ -212,6 +222,7 @@ def validate() -> list[str]:
 
     for fname, rec in gpus:
         _check_required(fname, rec, GPU_REQUIRED, errors)
+        _check_source_urls(fname, rec, errors)
         _check_slug(fname, rec.get("slug"), errors)
         if "release_date" in rec:
             _check_date(fname, rec["release_date"], errors)
@@ -225,6 +236,7 @@ def validate() -> list[str]:
     valid_segments = {"desktop", "laptop", "hedt", "server"}
     for fname, rec in cpus:
         _check_required(fname, rec, CPU_REQUIRED, errors)
+        _check_source_urls(fname, rec, errors)
         _check_slug(fname, rec.get("slug"), errors)
         if "release_date" in rec:
             _check_date(fname, rec["release_date"], errors)

@@ -17,6 +17,7 @@ def test_get_brand_detail(client: TestClient) -> None:
     assert body["slug"] == "samsung"
     assert body["country"] == "KR"
     assert body["url"] == "/v1/brands/samsung"
+    assert body["source_urls"] == ["https://www.samsung.com"]
 
 
 def test_unknown_brand_returns_404_envelope(client: TestClient) -> None:

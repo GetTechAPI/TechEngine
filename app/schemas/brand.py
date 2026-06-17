@@ -25,6 +25,7 @@ class BrandRead(BaseModel):
     founded_year: int | None = None
     logo_url: str | None = None
     website: str | None = None
+    source_urls: list[str]
     description_en: str | None = None
     description_ko: str | None = None
     url: str
