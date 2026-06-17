@@ -55,4 +55,5 @@ jobs:
           git config user.name "TechEngineBot"
           git config user.email "289859915+TechEngineBot@users.noreply.github.com"
           git commit -m "chore: bump TechAPI submodule to ${SHA:0:7}"
-          git push origin main
+          git pull --rebase origin main
+          git push origin HEAD:main
