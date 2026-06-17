@@ -106,7 +106,7 @@ jobs:
           import hashlib
           import json
           import re
-          from collections import Counter, defaultdict
+          from collections import Counter
           from pathlib import Path
           from typing import Any
 
@@ -193,11 +193,11 @@ jobs:
                       warnings.append("boost clock below base clock")
               return [f"{category}: {rel}: {warning}" for warning in warnings]
 
-          lines: list[str] = []
-          lines.append("## Data summary")
-          lines.append("")
-          lines.append("| Category | Total | Verified | Unverified | Missing verified | Verified % |")
-          lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
+          stats_lines: list[str] = []
+          stats_lines.append("## Data summary")
+          stats_lines.append("")
+          stats_lines.append("| Category | Total | Verified | Unverified | Missing verified | Verified % |")
+          stats_lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
 
           total_all = verified_all = unverified_all = missing_verified_all = 0
           by_category: dict[str, dict[str, int]] = {}
@@ -225,23 +225,24 @@ jobs:
               verified_all += verified
               unverified_all += unverified
               missing_verified_all += missing_verified
-              lines.append(
+              stats_lines.append(
                   f"| {category} | {total} | {verified} | {unverified} | {missing_verified} | {pct} |"
               )
           tracked_all = verified_all + unverified_all
           pct_all = f"{(verified_all / tracked_all * 100):.1f}%" if tracked_all else "n/a"
-          lines.append(
+          stats_lines.append(
               f"| **all** | **{total_all}** | **{verified_all}** | **{unverified_all}** | "
               f"**{missing_verified_all}** | **{pct_all}** |"
           )
 
-          lines.append("")
-          lines.append("## PR data delta")
-          lines.append("")
-          lines.append("| Category | Added | Modified | Deleted | Added verified | Added unverified | Added Kaggle-sourced |")
-          lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
+          change_lines: list[str] = []
+          change_lines.append("## Changed data")
+          change_lines.append("")
+          change_lines.append("| Category | Added | Modified | Deleted | Added verified | Added unverified | Added Kaggle-sourced |")
+          change_lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
 
           all_added: list[tuple[str, str, Path]] = []
+          changed_by_category: dict[str, dict[str, list[str]]] = {}
           for category in CATEGORIES:
               head = rel_jsons(HEAD, category)
               base = rel_jsons(BASE, category)
@@ -250,6 +251,11 @@ jobs:
               modified_keys = sorted(
                   key for key in set(head) & set(base) if digest(head[key]) != digest(base[key])
               )
+              changed_by_category[category] = {
+                  "added": added_keys,
+                  "modified": modified_keys,
+                  "deleted": deleted_keys,
+              }
               added_verified = added_unverified = added_kaggle = 0
               for key in added_keys:
                   record = load_json(head[key])
@@ -260,14 +266,43 @@ jobs:
                       added_unverified += 1
                   if has_kaggle_source(record):
                       added_kaggle += 1
-              lines.append(
+              change_lines.append(
                   f"| {category} | {len(added_keys)} | {len(modified_keys)} | {len(deleted_keys)} | "
                   f"{added_verified} | {added_unverified} | {added_kaggle} |"
               )
 
-          lines.append("")
-          lines.append("## Heuristic review")
-          lines.append("")
+          def display_record(root: Path, rel: str) -> str:
+              record = load_json(root / rel)
+              name = record.get("name")
+              label = name if isinstance(name, str) and name else rel
+              return f"`{rel}` - {label}"
+
+          def append_examples(title: str, root: Path, keys: list[str], limit: int = 15) -> None:
+              if not keys:
+                  return
+              change_lines.append("")
+              change_lines.append(f"### {title}")
+              for rel in keys[:limit]:
+                  change_lines.append(f"- {display_record(root, rel)}")
+              if len(keys) > limit:
+                  change_lines.append(f"- ... {len(keys) - limit} more")
+
+          change_lines.append("")
+          change_lines.append("## Changed record examples")
+          for category, changes in changed_by_category.items():
+              append_examples(f"{category} added", HEAD, changes["added"])
+              append_examples(f"{category} modified", HEAD, changes["modified"])
+              append_examples(f"{category} deleted", BASE, changes["deleted"])
+          if not any(
+              changes["added"] or changes["modified"] or changes["deleted"]
+              for changes in changed_by_category.values()
+          ):
+              change_lines.append("")
+              change_lines.append("- No data file changes detected.")
+
+          change_lines.append("")
+          change_lines.append("## Heuristic review")
+          change_lines.append("")
           warnings: list[str] = []
           manufacturer_counter: Counter[str] = Counter()
           source_counter: Counter[str] = Counter()
@@ -285,20 +320,21 @@ jobs:
 
           if manufacturer_counter:
               top = ", ".join(f"{name}: {count}" for name, count in manufacturer_counter.most_common(8))
-              lines.append(f"- Added records by manufacturer/brand: {top}")
+              change_lines.append(f"- Added records by manufacturer/brand: {top}")
           if source_counter:
               top = ", ".join(f"{name}: {count}" for name, count in source_counter.most_common())
-              lines.append(f"- Added records by source class: {top}")
+              change_lines.append(f"- Added records by source class: {top}")
 
           if warnings:
-              lines.append(f"- Heuristic warnings: {len(warnings)} total; showing first {min(MAX_WARNINGS, len(warnings))}.")
-              lines.append("")
+              change_lines.append(f"- Heuristic warnings: {len(warnings)} total; showing first {min(MAX_WARNINGS, len(warnings))}.")
+              change_lines.append("")
               for warning in warnings[:MAX_WARNINGS]:
-                  lines.append(f"  - {warning}")
+                  change_lines.append(f"  - {warning}")
           else:
-              lines.append("- Heuristic warnings: none found.")
+              change_lines.append("- Heuristic warnings: none found.")
 
-          Path("quality-summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+          Path("change-review.md").write_text("\n".join(change_lines) + "\n", encoding="utf-8")
+          Path("data-stats.md").write_text("\n".join(stats_lines) + "\n", encoding="utf-8")
           PY
 
       - name: Build PR comment
@@ -381,7 +417,7 @@ jobs:
 
           {
             echo "<!-- techengine-pr-validation -->"
-            echo "## TechEngine validation: ${result}"
+            echo "## TechEngine change review: ${result}"
             echo
             echo "- PR: #${TECHAPI_PR_NUMBER}"
             echo "- Ref: \`${TECHAPI_HEAD_REF:-detached}\`"
@@ -394,10 +430,22 @@ jobs:
             echo "| \`python -m app.validate\` | $([ "${{ steps.validate.outputs.app_status }}" = "0" ] && echo PASS || echo FAIL) |"
             echo "| \`python integrity_check.py TechAPI/data --strict\` | $([ "${{ steps.validate.outputs.integrity_status }}" = "0" ] && echo PASS || echo FAIL) |"
             echo
-            cat quality-summary.md
+            cat change-review.md
+          } > change-comment.md
+
+          {
+            echo "<!-- techengine-pr-validation-stats -->"
+            echo "## TechEngine validation stats: ${result}"
+            echo
+            echo "- PR: #${TECHAPI_PR_NUMBER}"
+            echo "- Ref: \`${TECHAPI_HEAD_REF:-detached}\`"
+            echo "- Commit: \`${short_sha}\`"
+            echo "- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            cat data-stats.md
             echo
             cat validation-notes.md
-          } > comment.md
+          } > stats-comment.md
 
       - name: Comment on TechAPI PR
         if: env.TECHAPI_COMMENT_TOKEN != ''
@@ -406,19 +454,27 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          marker="<!-- techengine-pr-validation -->"
-          comment_id="$(gh api "repos/GetTechAPI/TechAPI/issues/${TECHAPI_PR_NUMBER}/comments" --paginate \
-            --jq ".[] | select(.body | contains(\"${marker}\")) | .id" | tail -n 1)"
-          jq -n --rawfile body comment.md '{body: $body}' > comment.json
-          if [ -n "$comment_id" ]; then
-            gh api "repos/GetTechAPI/TechAPI/issues/comments/${comment_id}" \
-              --method PATCH \
-              --input comment.json
-          else
-            gh api "repos/GetTechAPI/TechAPI/issues/${TECHAPI_PR_NUMBER}/comments" \
-              --method POST \
-              --input comment.json
-          fi
+          upsert_comment() {
+            local marker="$1"
+            local body_file="$2"
+            local payload_file="$3"
+            local comment_id
+            comment_id="$(gh api "repos/GetTechAPI/TechAPI/issues/${TECHAPI_PR_NUMBER}/comments" --paginate \
+              --jq ".[] | select(.body | contains(\"${marker}\")) | .id" | tail -n 1)"
+            jq -n --rawfile body "$body_file" '{body: $body}' > "$payload_file"
+            if [ -n "$comment_id" ]; then
+              gh api "repos/GetTechAPI/TechAPI/issues/comments/${comment_id}" \
+                --method PATCH \
+                --input "$payload_file"
+            else
+              gh api "repos/GetTechAPI/TechAPI/issues/${TECHAPI_PR_NUMBER}/comments" \
+                --method POST \
+                --input "$payload_file"
+            fi
+          }
+
+          upsert_comment "<!-- techengine-pr-validation -->" change-comment.md change-comment.json
+          upsert_comment "<!-- techengine-pr-validation-stats -->" stats-comment.md stats-comment.json
 
       - name: Warn when comment token is unset
         if: env.TECHAPI_COMMENT_TOKEN == ''
