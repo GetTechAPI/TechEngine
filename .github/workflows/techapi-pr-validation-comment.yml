@@ -196,33 +196,44 @@ jobs:
           lines: list[str] = []
           lines.append("## Data summary")
           lines.append("")
-          lines.append("| Category | Total | Verified | Unverified | Verified % |")
-          lines.append("| --- | ---: | ---: | ---: | ---: |")
+          lines.append("| Category | Total | Verified | Unverified | Missing verified | Verified % |")
+          lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
 
-          total_all = verified_all = unverified_all = 0
+          total_all = verified_all = unverified_all = missing_verified_all = 0
           by_category: dict[str, dict[str, int]] = {}
           for category in CATEGORIES:
               paths = rel_jsons(HEAD, category)
-              verified = unverified = 0
+              verified = unverified = missing_verified = 0
               for path in paths.values():
                   value = verified_value(load_json(path))
                   if value is True:
                       verified += 1
                   elif value is False:
                       unverified += 1
+                  else:
+                      missing_verified += 1
               total = len(paths)
-              pct = f"{(verified / total * 100):.1f}%" if total else "0.0%"
+              tracked = verified + unverified
+              pct = f"{(verified / tracked * 100):.1f}%" if tracked else "n/a"
               by_category[category] = {
                   "total": total,
                   "verified": verified,
                   "unverified": unverified,
+                  "missing_verified": missing_verified,
               }
               total_all += total
               verified_all += verified
               unverified_all += unverified
-              lines.append(f"| {category} | {total} | {verified} | {unverified} | {pct} |")
-          pct_all = f"{(verified_all / total_all * 100):.1f}%" if total_all else "0.0%"
-          lines.append(f"| **all** | **{total_all}** | **{verified_all}** | **{unverified_all}** | **{pct_all}** |")
+              missing_verified_all += missing_verified
+              lines.append(
+                  f"| {category} | {total} | {verified} | {unverified} | {missing_verified} | {pct} |"
+              )
+          tracked_all = verified_all + unverified_all
+          pct_all = f"{(verified_all / tracked_all * 100):.1f}%" if tracked_all else "n/a"
+          lines.append(
+              f"| **all** | **{total_all}** | **{verified_all}** | **{unverified_all}** | "
+              f"**{missing_verified_all}** | **{pct_all}** |"
+          )
 
           lines.append("")
           lines.append("## PR data delta")
