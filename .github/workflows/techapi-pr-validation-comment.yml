@@ -310,6 +310,75 @@ jobs:
             result="FAIL"
           fi
 
+          VALIDATION_STATUS="${{ steps.validate.outputs.status }}" python - <<'PY'
+          from __future__ import annotations
+
+          import os
+          from pathlib import Path
+
+          log_path = Path("validation.log")
+          log = log_path.read_text(encoding="utf-8", errors="replace")
+          lines = log.splitlines()
+          failed = os.environ.get("VALIDATION_STATUS") != "success"
+
+          section_counts: dict[str, int] = {}
+          current_section: str | None = None
+          key_lines: list[str] = []
+          hard_lines: list[str] = []
+
+          for line in lines:
+              if line.startswith("## ") or line.startswith("loaded ") or "integrity gate:" in line:
+                  key_lines.append(line)
+              if line.startswith("### "):
+                  current_section = line.removeprefix("### ").strip()
+                  section_counts[current_section] = 0
+                  continue
+              if current_section and line.startswith("  "):
+                  section_counts[current_section] += 1
+                  if any(token in line for token in ("DUP ", "slug!=file", " > ")):
+                      hard_lines.append(line)
+
+          out: list[str] = []
+          out.append("## Validation notes")
+          out.append("")
+          out.append("- Full advisory outlier listings are suppressed on successful runs because they are dataset-wide and mostly stable between PRs.")
+          out.append("- Failure runs still include a detailed log excerpt for debugging.")
+          if key_lines:
+              out.append("")
+              out.append("Key output:")
+              out.append("")
+              out.append("```text")
+              out.extend(key_lines)
+              out.append("```")
+          if section_counts:
+              out.append("")
+              out.append("| Integrity section | Flagged lines |")
+              out.append("| --- | ---: |")
+              for name, count in section_counts.items():
+                  out.append(f"| {name} | {count} |")
+          if hard_lines:
+              out.append("")
+              out.append("Potential blocking lines:")
+              out.append("")
+              out.append("```text")
+              out.extend(hard_lines[:80])
+              if len(hard_lines) > 80:
+                  out.append(f"... {len(hard_lines) - 80} more")
+              out.append("```")
+          if failed:
+              out.append("")
+              out.append("<details><summary>Detailed validation log excerpt</summary>")
+              out.append("")
+              out.append("```text")
+              excerpt = log[-12000:] if len(log) > 12000 else log
+              out.append(excerpt.rstrip())
+              out.append("```")
+              out.append("")
+              out.append("</details>")
+
+          Path("validation-notes.md").write_text("\n".join(out) + "\n", encoding="utf-8")
+          PY
+
           {
             echo "<!-- techengine-pr-validation -->"
             echo "## TechEngine validation: ${result}"
@@ -327,13 +396,7 @@ jobs:
             echo
             cat quality-summary.md
             echo
-            echo "<details><summary>Validation log</summary>"
-            echo
-            echo '```text'
-            tail -c 6000 validation.log
-            echo '```'
-            echo
-            echo "</details>"
+            cat validation-notes.md
           } > comment.md
 
       - name: Comment on TechAPI PR
