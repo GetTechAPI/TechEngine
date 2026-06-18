@@ -293,8 +293,8 @@ jobs:
           stats_lines: list[str] = []
           stats_lines.append("## Data summary")
           stats_lines.append("")
-          stats_lines.append("| Category | Total | Verified | Unverified | Missing verified | Verified % |")
-          stats_lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
+          stats_lines.append("| Category | Total | Verified | Unverified | Missing verified | Tracked | Verified % of tracked |")
+          stats_lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
 
           total_all = verified_all = unverified_all = missing_verified_all = 0
           by_category: dict[str, dict[str, int]] = {}
@@ -327,14 +327,14 @@ jobs:
               unverified_all += unverified
               missing_verified_all += missing_verified
               stats_lines.append(
-                  f"| {category} | {total} | {verified} | {unverified} | {missing_verified} | {pct} |"
+                  f"| {category} | {total} | {verified} | {unverified} | {missing_verified} | {tracked} | {pct} |"
               )
           tracked_all = verified_all + unverified_all
           pct_all_value = verified_all / tracked_all * 100 if tracked_all else None
           pct_all = f"{pct_all_value:.1f}%" if pct_all_value is not None else "n/a"
           stats_lines.append(
               f"| **all** | **{total_all}** | **{verified_all}** | **{unverified_all}** | "
-              f"**{missing_verified_all}** | **{pct_all}** |"
+              f"**{missing_verified_all}** | **{tracked_all}** | **{pct_all}** |"
           )
           if pct_all_value is not None and pct_all_value < LOW_VERIFIED_WARNING_PCT:
               low_verified_categories.append(("all", pct_all_value, verified_all, tracked_all))
@@ -349,7 +349,10 @@ jobs:
               stats_lines.append("")
               stats_lines.append("> [!WARNING]")
               stats_lines.append(
-                  f"> Verified coverage is below {LOW_VERIFIED_WARNING_PCT:.0f}% for {coverage_list}."
+                  f"> Tracked verified coverage is below {LOW_VERIFIED_WARNING_PCT:.0f}% for {coverage_list}."
+              )
+              stats_lines.append(
+                  "> Tracked coverage excludes records missing the `verified` field; see the `Missing verified` column for those records."
               )
               stats_lines.append(
                   "> This does not fail validation. Keep imported records `verified: false` until "
