@@ -154,6 +154,27 @@ jobs:
           def digest(path: Path) -> str:
               return hashlib.sha256(path.read_bytes()).hexdigest()
 
+          def rel_site_files(root: Path) -> dict[str, Path]:
+              site = root / "site"
+              if not site.exists():
+                  return {}
+              wanted_files = {"site/package.json", "site/package-lock.json"}
+              files: dict[str, Path] = {}
+              for path in sorted(site.rglob("*")):
+                  if not path.is_file():
+                      continue
+                  rel = str(path.relative_to(root)).replace("\\", "/")
+                  if (
+                      rel.startswith("site/src/")
+                      or rel.startswith("site/public/")
+                      or rel in wanted_files
+                      or re.match(r"site/astro\.config\.[cm]?[jt]s$", rel)
+                  ):
+                      if rel.startswith("site/public/v1/") or rel == "site/public/openapi.json":
+                          continue
+                      files[rel] = path
+              return files
+
           def verified_value(record: dict[str, Any]) -> bool | None:
               value = record.get("verified")
               return value if isinstance(value, bool) else None
@@ -324,6 +345,37 @@ jobs:
               change_lines.append("")
               change_lines.append("- No data file changes detected.")
 
+          site_lines: list[str] = []
+          site_lines.append("## Changed site")
+          site_lines.append("")
+          head_site = rel_site_files(Path("TechAPI"))
+          base_site = rel_site_files(Path("TechAPI-main"))
+          site_added = sorted(set(head_site) - set(base_site))
+          site_deleted = sorted(set(base_site) - set(head_site))
+          site_modified = sorted(
+              key for key in set(head_site) & set(base_site) if digest(head_site[key]) != digest(base_site[key])
+          )
+          site_lines.append("| Area | Added | Modified | Deleted |")
+          site_lines.append("| --- | ---: | ---: | ---: |")
+          site_lines.append(f"| homepage/site | {len(site_added)} | {len(site_modified)} | {len(site_deleted)} |")
+          if site_added or site_modified or site_deleted:
+              def append_site_examples(title: str, keys: list[str], limit: int = 20) -> None:
+                  if not keys:
+                      return
+                  site_lines.append("")
+                  site_lines.append(f"### {title}")
+                  for rel in keys[:limit]:
+                      site_lines.append(f"- `{rel}`")
+                  if len(keys) > limit:
+                      site_lines.append(f"- ... {len(keys) - limit} more")
+
+              append_site_examples("Added site files", site_added)
+              append_site_examples("Modified site files", site_modified)
+              append_site_examples("Deleted site files", site_deleted)
+          else:
+              site_lines.append("")
+              site_lines.append("- No homepage/site file changes detected.")
+
           change_lines.append("")
           change_lines.append("## Heuristic review")
           change_lines.append("")
@@ -358,6 +410,7 @@ jobs:
               change_lines.append("- Heuristic warnings: none found.")
 
           Path("change-review.md").write_text("\n".join(change_lines) + "\n", encoding="utf-8")
+          Path("site-change-review.md").write_text("\n".join(site_lines) + "\n", encoding="utf-8")
           Path("data-stats.md").write_text("\n".join(stats_lines) + "\n", encoding="utf-8")
           PY
 
@@ -481,6 +534,8 @@ jobs:
             echo "| \`cd TechAPI/site && npm ci && npm run build\` | $([ "${{ steps.site_build.outputs.status }}" = "0" ] && echo PASS || echo FAIL) |"
             echo
             cat change-review.md
+            echo
+            cat site-change-review.md
           } > change-comment.md
 
           {
