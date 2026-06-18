@@ -288,6 +288,8 @@ jobs:
                       warnings.append("boost clock below base clock")
               return [f"{category}: {rel}: {warning}" for warning in warnings]
 
+          LOW_VERIFIED_WARNING_PCT = 50.0
+
           stats_lines: list[str] = []
           stats_lines.append("## Data summary")
           stats_lines.append("")
@@ -296,6 +298,7 @@ jobs:
 
           total_all = verified_all = unverified_all = missing_verified_all = 0
           by_category: dict[str, dict[str, int]] = {}
+          low_verified_categories: list[tuple[str, float, int, int]] = []
           for category in CATEGORIES:
               paths = rel_jsons(HEAD, category)
               verified = unverified = missing_verified = 0
@@ -309,7 +312,10 @@ jobs:
                       missing_verified += 1
               total = len(paths)
               tracked = verified + unverified
-              pct = f"{(verified / tracked * 100):.1f}%" if tracked else "n/a"
+              pct_value = verified / tracked * 100 if tracked else None
+              pct = f"{pct_value:.1f}%" if pct_value is not None else "n/a"
+              if pct_value is not None and pct_value < LOW_VERIFIED_WARNING_PCT:
+                  low_verified_categories.append((category, pct_value, verified, tracked))
               by_category[category] = {
                   "total": total,
                   "verified": verified,
@@ -324,11 +330,32 @@ jobs:
                   f"| {category} | {total} | {verified} | {unverified} | {missing_verified} | {pct} |"
               )
           tracked_all = verified_all + unverified_all
-          pct_all = f"{(verified_all / tracked_all * 100):.1f}%" if tracked_all else "n/a"
+          pct_all_value = verified_all / tracked_all * 100 if tracked_all else None
+          pct_all = f"{pct_all_value:.1f}%" if pct_all_value is not None else "n/a"
           stats_lines.append(
               f"| **all** | **{total_all}** | **{verified_all}** | **{unverified_all}** | "
               f"**{missing_verified_all}** | **{pct_all}** |"
           )
+          if pct_all_value is not None and pct_all_value < LOW_VERIFIED_WARNING_PCT:
+              low_verified_categories.append(("all", pct_all_value, verified_all, tracked_all))
+          if low_verified_categories:
+              low_verified_categories.sort(key=lambda item: item[1])
+              coverage_list = ", ".join(
+                  f"{category} {pct:.1f}% ({verified}/{tracked})"
+                  for category, pct, verified, tracked in low_verified_categories[:8]
+              )
+              if len(low_verified_categories) > 8:
+                  coverage_list += f", and {len(low_verified_categories) - 8} more"
+              stats_lines.append("")
+              stats_lines.append("> [!WARNING]")
+              stats_lines.append(
+                  f"> Verified coverage is below {LOW_VERIFIED_WARNING_PCT:.0f}% for {coverage_list}."
+              )
+              stats_lines.append(
+                  "> This does not fail validation. Keep imported records `verified: false` until "
+                  "manual audit, but treat this as follow-up verification work before relying on "
+                  "the affected categories as curated data."
+              )
 
           change_lines: list[str] = []
           change_lines.append("## Changed data")
