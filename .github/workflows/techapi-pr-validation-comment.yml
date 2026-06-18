@@ -64,7 +64,56 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - name: Detect TechAPI homepage changes
+        id: site_changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          from __future__ import annotations
+
+          import hashlib
+          import re
+          from pathlib import Path
+
+          def digest(path: Path) -> str:
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          def rel_site_files(root: Path) -> dict[str, Path]:
+              site = root / "site"
+              if not site.exists():
+                  return {}
+              wanted_files = {"site/package.json", "site/package-lock.json"}
+              files: dict[str, Path] = {}
+              for path in sorted(site.rglob("*")):
+                  if not path.is_file():
+                      continue
+                  rel = str(path.relative_to(root)).replace("\\", "/")
+                  if (
+                      rel.startswith("site/src/")
+                      or rel.startswith("site/public/")
+                      or rel in wanted_files
+                      or re.match(r"site/astro\.config\.[cm]?[jt]s$", rel)
+                  ):
+                      if rel.startswith("site/public/v1/") or rel == "site/public/openapi.json":
+                          continue
+                      files[rel] = path
+              return files
+
+          head = rel_site_files(Path("TechAPI"))
+          base = rel_site_files(Path("TechAPI-main"))
+          added = sorted(set(head) - set(base))
+          deleted = sorted(set(base) - set(head))
+          modified = sorted(key for key in set(head) & set(base) if digest(head[key]) != digest(base[key]))
+          has_changes = bool(added or modified or deleted)
+          print(f"changed={'true' if has_changes else 'false'}")
+          print(f"added={len(added)}")
+          print(f"modified={len(modified)}")
+          print(f"deleted={len(deleted)}")
+          PY
+
       - uses: actions/setup-node@v4
+        if: steps.site_changes.outputs.changed == 'true'
         with:
           node-version: "22"
           cache: npm
@@ -105,6 +154,7 @@ jobs:
           echo "integrity_status=${integrity_status:-1}" >> "$GITHUB_OUTPUT"
 
       - name: Build TechAPI homepage
+        if: steps.site_changes.outputs.changed == 'true'
         id: site_build
         shell: bash
         run: |
@@ -419,11 +469,13 @@ jobs:
         run: |
           short_sha="${TECHAPI_HEAD_SHA:0:7}"
           result="PASS"
-          if [ "${{ steps.validate.outputs.status }}" != "success" ] || [ "${{ steps.site_build.outputs.status }}" != "0" ]; then
+          site_changed="${{ steps.site_changes.outputs.changed }}"
+          site_build_status="${{ steps.site_build.outputs.status }}"
+          if [ "${{ steps.validate.outputs.status }}" != "success" ] || { [ "${site_changed}" = "true" ] && [ "${site_build_status}" != "0" ]; }; then
             result="FAIL"
           fi
 
-          VALIDATION_STATUS="${{ steps.validate.outputs.status }}" SITE_BUILD_STATUS="${{ steps.site_build.outputs.status }}" python - <<'PY'
+          VALIDATION_STATUS="${{ steps.validate.outputs.status }}" SITE_CHANGED="${{ steps.site_changes.outputs.changed }}" SITE_BUILD_STATUS="${{ steps.site_build.outputs.status }}" python - <<'PY'
           from __future__ import annotations
 
           import os
@@ -434,7 +486,8 @@ jobs:
           log = log_path.read_text(encoding="utf-8", errors="replace")
           lines = log.splitlines()
           failed = os.environ.get("VALIDATION_STATUS") != "success"
-          site_failed = os.environ.get("SITE_BUILD_STATUS") != "0"
+          site_changed = os.environ.get("SITE_CHANGED") == "true"
+          site_failed = site_changed and os.environ.get("SITE_BUILD_STATUS") != "0"
 
           section_counts: dict[str, int] = {}
           current_section: str | None = None
@@ -491,28 +544,29 @@ jobs:
               out.append("")
               out.append("</details>")
 
-          site_log_path = Path("site-build.log")
-          site_log = site_log_path.read_text(encoding="utf-8", errors="replace") if site_log_path.exists() else ""
-          site_log = re.sub(r"\x1b\[[0-9;]*m", "", site_log)
-          if site_failed:
-              out.append("")
-              out.append("<details><summary>Detailed homepage build log excerpt</summary>")
-              out.append("")
-              out.append("```text")
-              excerpt = site_log[-12000:] if len(site_log) > 12000 else site_log
-              out.append(excerpt.rstrip())
-              out.append("```")
-              out.append("")
-              out.append("</details>")
-          elif site_log:
-              summary = [line for line in site_log.splitlines() if "Complete!" in line or "page(s) built" in line]
-              if summary:
+          if site_changed:
+              site_log_path = Path("site-build.log")
+              site_log = site_log_path.read_text(encoding="utf-8", errors="replace") if site_log_path.exists() else ""
+              site_log = re.sub(r"\x1b\[[0-9;]*m", "", site_log)
+              if site_failed:
                   out.append("")
-                  out.append("Homepage build:")
+                  out.append("<details><summary>Detailed homepage build log excerpt</summary>")
                   out.append("")
                   out.append("```text")
-                  out.extend(summary[-4:])
+                  excerpt = site_log[-12000:] if len(site_log) > 12000 else site_log
+                  out.append(excerpt.rstrip())
                   out.append("```")
+                  out.append("")
+                  out.append("</details>")
+              elif site_log:
+                  summary = [line for line in site_log.splitlines() if "Complete!" in line or "page(s) built" in line]
+                  if summary:
+                      out.append("")
+                      out.append("Homepage build:")
+                      out.append("")
+                      out.append("```text")
+                      out.extend(summary[-4:])
+                      out.append("```")
 
           Path("validation-notes.md").write_text("\n".join(out) + "\n", encoding="utf-8")
           PY
@@ -531,11 +585,15 @@ jobs:
             echo "| --- | --- |"
             echo "| \`python -m app.validate\` | $([ "${{ steps.validate.outputs.app_status }}" = "0" ] && echo PASS || echo FAIL) |"
             echo "| \`python integrity_check.py TechAPI/data --strict\` | $([ "${{ steps.validate.outputs.integrity_status }}" = "0" ] && echo PASS || echo FAIL) |"
-            echo "| \`cd TechAPI/site && npm ci && npm run build\` | $([ "${{ steps.site_build.outputs.status }}" = "0" ] && echo PASS || echo FAIL) |"
+            if [ "${site_changed}" = "true" ]; then
+              echo "| \`cd TechAPI/site && npm ci && npm run build\` | $([ "${site_build_status}" = "0" ] && echo PASS || echo FAIL) |"
+            fi
             echo
             cat change-review.md
-            echo
-            cat site-change-review.md
+            if [ "${site_changed}" = "true" ]; then
+              echo
+              cat site-change-review.md
+            fi
           } > change-comment.md
 
           {
@@ -586,5 +644,5 @@ jobs:
         run: echo "::warning::TECHENGINEBOT_TOKEN/TECHAPI_TOKEN is not configured; validation ran but no PR comment was posted."
 
       - name: Fail on validation errors
-        if: steps.validate.outputs.status != 'success' || steps.site_build.outputs.status != '0'
+        if: steps.validate.outputs.status != 'success' || (steps.site_changes.outputs.changed == 'true' && steps.site_build.outputs.status != '0')
         run: exit 1
