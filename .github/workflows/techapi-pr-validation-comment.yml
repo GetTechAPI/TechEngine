@@ -40,6 +40,7 @@ jobs:
       TECHAPI_PR_URL: ${{ github.event.client_payload.pr_url || inputs.pr_url }}
       REQUESTED_BY: ${{ github.event.client_payload.requested_by || github.actor }}
       TECHAPI_DATA_DIR: ${{ github.workspace }}/TechAPI/data
+      TECHAPI_SITE_DIR: ${{ github.workspace }}/TechAPI/site
     steps:
       - name: Checkout TechEngine
         uses: actions/checkout@v4
@@ -62,6 +63,12 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: TechAPI/site/package-lock.json
 
       - name: Install TechEngine
         run: pip install -e .
@@ -96,6 +103,23 @@ jobs:
           echo "status=$status" >> "$GITHUB_OUTPUT"
           echo "app_status=${app_status:-1}" >> "$GITHUB_OUTPUT"
           echo "integrity_status=${integrity_status:-1}" >> "$GITHUB_OUTPUT"
+
+      - name: Build TechAPI homepage
+        id: site_build
+        shell: bash
+        run: |
+          set +e
+          site_build_log="${GITHUB_WORKSPACE}/site-build.log"
+          {
+            echo "## TechAPI homepage build"
+            cd "${TECHAPI_SITE_DIR}"
+            npm ci
+            npm run build
+            echo "site_build_status=$?"
+          } > "${site_build_log}" 2>&1
+          site_build_status=$(grep "site_build_status=" "${site_build_log}" | tail -n 1 | cut -d= -f2)
+          sed -i '/site_build_status=/d' "${site_build_log}"
+          echo "status=${site_build_status:-1}" >> "$GITHUB_OUTPUT"
 
       - name: Build data quality summary
         shell: bash
@@ -342,20 +366,22 @@ jobs:
         run: |
           short_sha="${TECHAPI_HEAD_SHA:0:7}"
           result="PASS"
-          if [ "${{ steps.validate.outputs.status }}" != "success" ]; then
+          if [ "${{ steps.validate.outputs.status }}" != "success" ] || [ "${{ steps.site_build.outputs.status }}" != "0" ]; then
             result="FAIL"
           fi
 
-          VALIDATION_STATUS="${{ steps.validate.outputs.status }}" python - <<'PY'
+          VALIDATION_STATUS="${{ steps.validate.outputs.status }}" SITE_BUILD_STATUS="${{ steps.site_build.outputs.status }}" python - <<'PY'
           from __future__ import annotations
 
           import os
+          import re
           from pathlib import Path
 
           log_path = Path("validation.log")
           log = log_path.read_text(encoding="utf-8", errors="replace")
           lines = log.splitlines()
           failed = os.environ.get("VALIDATION_STATUS") != "success"
+          site_failed = os.environ.get("SITE_BUILD_STATUS") != "0"
 
           section_counts: dict[str, int] = {}
           current_section: str | None = None
@@ -412,6 +438,29 @@ jobs:
               out.append("")
               out.append("</details>")
 
+          site_log_path = Path("site-build.log")
+          site_log = site_log_path.read_text(encoding="utf-8", errors="replace") if site_log_path.exists() else ""
+          site_log = re.sub(r"\x1b\[[0-9;]*m", "", site_log)
+          if site_failed:
+              out.append("")
+              out.append("<details><summary>Detailed homepage build log excerpt</summary>")
+              out.append("")
+              out.append("```text")
+              excerpt = site_log[-12000:] if len(site_log) > 12000 else site_log
+              out.append(excerpt.rstrip())
+              out.append("```")
+              out.append("")
+              out.append("</details>")
+          elif site_log:
+              summary = [line for line in site_log.splitlines() if "Complete!" in line or "page(s) built" in line]
+              if summary:
+                  out.append("")
+                  out.append("Homepage build:")
+                  out.append("")
+                  out.append("```text")
+                  out.extend(summary[-4:])
+                  out.append("```")
+
           Path("validation-notes.md").write_text("\n".join(out) + "\n", encoding="utf-8")
           PY
 
@@ -429,6 +478,7 @@ jobs:
             echo "| --- | --- |"
             echo "| \`python -m app.validate\` | $([ "${{ steps.validate.outputs.app_status }}" = "0" ] && echo PASS || echo FAIL) |"
             echo "| \`python integrity_check.py TechAPI/data --strict\` | $([ "${{ steps.validate.outputs.integrity_status }}" = "0" ] && echo PASS || echo FAIL) |"
+            echo "| \`cd TechAPI/site && npm ci && npm run build\` | $([ "${{ steps.site_build.outputs.status }}" = "0" ] && echo PASS || echo FAIL) |"
             echo
             cat change-review.md
           } > change-comment.md
@@ -481,5 +531,5 @@ jobs:
         run: echo "::warning::TECHENGINEBOT_TOKEN/TECHAPI_TOKEN is not configured; validation ran but no PR comment was posted."
 
       - name: Fail on validation errors
-        if: steps.validate.outputs.status != 'success'
+        if: steps.validate.outputs.status != 'success' || steps.site_build.outputs.status != '0'
         run: exit 1
