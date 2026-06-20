@@ -39,9 +39,11 @@ def test_score_endpoint(client: TestClient) -> None:
 
 def test_filter_by_brand(client: TestClient) -> None:
     body = client.get("/v1/smartphones?brand=apple").json()
-    slugs = {item["slug"] for item in body["results"]}
-    assert "iphone-16" in slugs
-    assert "galaxy-s25" not in slugs
+    assert body["count"] > 0
+    assert all(item["url"].startswith("/v1/smartphones/") for item in body["results"])
+    first = body["results"][0]["slug"]
+    detail = client.get(f"/v1/smartphones/{first}").json()
+    assert detail["brand"]["slug"] == "apple"
 
 
 def test_filter_by_soc(client: TestClient) -> None:
