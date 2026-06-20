@@ -31,6 +31,6 @@ def test_unknown_soc_404(client: TestClient) -> None:
 
 
 def test_soc_smartphones_relation(client: TestClient) -> None:
-    body = client.get("/v1/socs/snapdragon-8-elite/smartphones").json()
+    body = client.get("/v1/socs/snapdragon-8-elite/smartphones?limit=100").json()
     slugs = {item["slug"] for item in body["results"]}
     assert {"galaxy-s25", "oneplus-13"} <= slugs

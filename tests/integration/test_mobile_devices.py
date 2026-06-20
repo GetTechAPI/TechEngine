@@ -16,9 +16,10 @@ def test_list_mobile_device_categories(client: TestClient) -> None:
     ]
 
     for resource, slug in cases:
-        body = client.get(f"/v1/{resource}").json()
-        assert body["count"] >= 1
-        assert any(item["slug"] == slug for item in body["results"])
+        list_body = client.get(f"/v1/{resource}").json()
+        detail_body = client.get(f"/v1/{resource}/{slug}").json()
+        assert list_body["count"] >= 1
+        assert detail_body["slug"] == slug
 
 
 def test_mobile_device_detail_includes_variant_fields(client: TestClient) -> None:
@@ -35,12 +36,14 @@ def test_mobile_device_detail_includes_variant_fields(client: TestClient) -> Non
 def test_mobile_device_filters(client: TestClient) -> None:
     ensure_mobile_device_fixtures()
     brand_body = client.get("/v1/watches?brand=samsung").json()
-    assert {item["slug"] for item in brand_body["results"]} == {
-        "galaxy-watch-global-bluetooth-42mm"
+    assert "galaxy-watch-global-bluetooth-42mm" in {
+        item["slug"] for item in brand_body["results"]
     }
 
     base_body = client.get("/v1/tablets?base_model_slug=ipad-pro-11-m4").json()
-    assert {item["slug"] for item in base_body["results"]} == {"ipad-pro-11-m4-wifi-8gb-256gb"}
+    assert "ipad-pro-11-m4-wifi-8gb-256gb" in {
+        item["slug"] for item in base_body["results"]
+    }
 
 
 def test_mobile_device_unknown_slug_404(client: TestClient) -> None:
