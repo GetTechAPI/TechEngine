@@ -1,40 +1,28 @@
-"""Smartphone response schemas (§6.4, appendix C)."""
+"""Response schemas for tablets, watches, and PDAs."""
 
 from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.schemas.brand import BrandSummary
 from app.schemas.soc import SoCSummary
 
 
-class ScoreRead(BaseModel):
-    """Computed scores (§8)."""
-
-    algorithm_version: str
-    overall: float | None = None
-    performance: float | None = None
-    camera: float | None = None
-    battery: float | None = None
-    display: float | None = None
-    value: float | None = None
-
-
-class SmartphoneRead(BaseModel):
-    """Full smartphone detail response (appendix C)."""
+class MobileDeviceRead(BaseModel):
+    """Full mobile device detail response."""
 
     id: int
     slug: str
     base_model_slug: str | None = None
     name: str
     brand: BrandSummary
-    soc: SoCSummary
+    soc: SoCSummary | None = None
     release_date: date
     msrp_usd: int | None = None
-    ram_gb: int
+    ram_gb: float
     storage_options_gb: list[int]
     variant: dict[str, Any]
     display: dict[str, Any]
@@ -49,9 +37,9 @@ class SmartphoneRead(BaseModel):
     os_version: str | None = None
     connectivity: dict[str, Any]
     image_url: str | None = None
-    images: list[str] = []
-    score: ScoreRead
+    images: list[str] = Field(default_factory=list)
     verified: bool
     source_urls: list[str]
     created_at: datetime
     updated_at: datetime
+    url: str

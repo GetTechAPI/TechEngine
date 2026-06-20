@@ -27,6 +27,7 @@ from app.database import create_db_and_tables, engine
 from app.models.brand import Brand
 from app.models.cpu import CPU
 from app.models.gpu import DiscreteGPU
+from app.models.mobile_device import PDA, Tablet, Watch
 from app.models.smartphone import Smartphone
 from app.models.soc import SoC
 
@@ -53,7 +54,16 @@ def _existing_slugs(session: Session, model: type[SQLModel]) -> set[str]:
 
 def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
     """Idempotently insert seed data. Returns counts of newly inserted rows."""
-    counts = {"brands": 0, "socs": 0, "smartphones": 0, "gpus": 0, "cpus": 0}
+    counts = {
+        "brands": 0,
+        "socs": 0,
+        "smartphones": 0,
+        "tablets": 0,
+        "watches": 0,
+        "pdas": 0,
+        "gpus": 0,
+        "cpus": 0,
+    }
 
     # --- Brands ---
     brand_slugs = _existing_slugs(session, Brand)
@@ -106,6 +116,33 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
         session.add(Smartphone(brand_id=brand_id, soc_id=soc_id, **record))
         counts["smartphones"] += 1
     session.commit()
+
+    def seed_mobile_devices(subdir: str, model: type[SQLModel], count_key: str) -> None:
+        device_slugs = _existing_slugs(session, model)
+        for record in _load_dir(data_dir / subdir):
+            if record["slug"] in device_slugs:
+                continue
+            brand_slug = record.pop("brand")
+            soc_slug = record.pop("soc", None)
+            brand_id = brand_id_by_slug.get(brand_slug)
+            soc_id = soc_id_by_slug.get(soc_slug) if soc_slug else None
+            if brand_id is None:
+                raise ValueError(
+                    f"{subdir.rstrip('s').title()} '{record['slug']}' "
+                    f"references unknown brand '{brand_slug}'"
+                )
+            if soc_slug and soc_id is None:
+                raise ValueError(
+                    f"{subdir.rstrip('s').title()} '{record['slug']}' "
+                    f"references unknown SoC '{soc_slug}'"
+                )
+            session.add(model(brand_id=brand_id, soc_id=soc_id, **record))
+            counts[count_key] += 1
+        session.commit()
+
+    seed_mobile_devices("tablet", Tablet, "tablets")
+    seed_mobile_devices("watch", Watch, "watches")
+    seed_mobile_devices("pda", PDA, "pdas")
 
     # --- Discrete GPUs ---
     gpu_slugs = _existing_slugs(session, DiscreteGPU)
