@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "dump"
 
 # Collections that expose list + detail endpoints.
-COLLECTIONS = ["brands", "socs", "smartphones", "gpus", "cpus"]
+COLLECTIONS = ["brands", "socs", "smartphones", "tablets", "watches", "pdas", "gpus", "cpus"]
 PAGE_LIMIT = 100  # API max page size (§7.3)
 
 
@@ -42,12 +42,16 @@ def _fetch_all(client: TestClient, resource: str) -> tuple[int, list[dict[str, A
     return count, items
 
 
-def generate(client: TestClient, output_dir: Path = OUTPUT_DIR) -> dict[str, int]:
+def generate(
+    client: TestClient,
+    output_dir: Path = OUTPUT_DIR,
+    collections: list[str] | None = None,
+) -> dict[str, int]:
     """Write the full static dump. Returns the number of detail files per collection."""
     counts: dict[str, int] = {}
     manifest: dict[str, object] = {"version": "v1", "collections": {}}
 
-    for resource in COLLECTIONS:
+    for resource in collections or COLLECTIONS:
         count, items = _fetch_all(client, resource)
         # Combined list file (un-paginated, convenient for static consumers).
         _write_json(

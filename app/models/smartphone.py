@@ -20,6 +20,7 @@ class Smartphone(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     slug: str = Field(index=True, unique=True)
+    base_model_slug: str | None = Field(default=None, index=True)
     name: str
     brand_id: int = Field(foreign_key="brands.id", index=True)
     soc_id: int = Field(foreign_key="socs.id", index=True)
@@ -30,6 +31,7 @@ class Smartphone(SQLModel, table=True):
     # Memory
     ram_gb: int
     storage_options_gb: list[int] = Field(default_factory=list, sa_column=Column(JSON))
+    variant: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
 
     # Display — {size_inch, resolution, refresh_hz, type, brightness_nits, ppi}
     display: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))

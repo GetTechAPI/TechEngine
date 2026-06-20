@@ -6,12 +6,14 @@ from app.config import settings
 from app.models.brand import Brand
 from app.models.cpu import CPU
 from app.models.gpu import DiscreteGPU
+from app.models.mobile_device import MobileDeviceFields
 from app.models.smartphone import Smartphone
 from app.models.soc import SoC
 from app.schemas.brand import BrandRead, BrandSummary
 from app.schemas.common import ManufacturerRef, ResourceRef
 from app.schemas.cpu import CPURead
 from app.schemas.gpu import GPURead
+from app.schemas.mobile_device import MobileDeviceRead
 from app.schemas.smartphone import ScoreRead, SmartphoneRead
 from app.schemas.soc import SoCManufacturer, SoCRead, SoCSummary
 from app.services.scoring import Scores
@@ -182,6 +184,7 @@ def smartphone_read(
     return SmartphoneRead(
         id=phone.id,
         slug=phone.slug,
+        base_model_slug=phone.base_model_slug,
         name=phone.name,
         brand=brand_summary(brand),
         soc=soc_summary(soc, soc_manufacturer),
@@ -189,6 +192,7 @@ def smartphone_read(
         msrp_usd=phone.msrp_usd,
         ram_gb=phone.ram_gb,
         storage_options_gb=phone.storage_options_gb,
+        variant=phone.variant,
         display=phone.display,
         cameras=phone.cameras,
         battery_mah=phone.battery_mah,
@@ -215,4 +219,45 @@ def smartphone_read(
         source_urls=phone.source_urls,
         created_at=phone.created_at,
         updated_at=phone.updated_at,
+    )
+
+
+def mobile_device_read(
+    resource: str,
+    device: MobileDeviceFields,
+    brand: Brand,
+    soc: SoC | None,
+    soc_manufacturer: Brand | None,
+) -> MobileDeviceRead:
+    assert device.id is not None
+    return MobileDeviceRead(
+        id=device.id,
+        slug=device.slug,
+        base_model_slug=device.base_model_slug,
+        name=device.name,
+        brand=brand_summary(brand),
+        soc=soc_summary(soc, soc_manufacturer) if soc and soc_manufacturer else None,
+        release_date=device.release_date,
+        msrp_usd=device.msrp_usd,
+        ram_gb=device.ram_gb,
+        storage_options_gb=device.storage_options_gb,
+        variant=device.variant,
+        display=device.display,
+        cameras=device.cameras,
+        battery_mah=device.battery_mah,
+        charging_wired_w=device.charging_wired_w,
+        charging_wireless_w=device.charging_wireless_w,
+        weight_g=device.weight_g,
+        dimensions=device.dimensions,
+        ip_rating=device.ip_rating,
+        os=device.os,
+        os_version=device.os_version,
+        connectivity=device.connectivity,
+        image_url=device.image_url,
+        images=device.images,
+        verified=device.verified,
+        source_urls=device.source_urls,
+        created_at=device.created_at,
+        updated_at=device.updated_at,
+        url=url_for(resource, device.slug),
     )
