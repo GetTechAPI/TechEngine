@@ -32,8 +32,9 @@ def test_unknown_brand_returns_404_envelope(client: TestClient) -> None:
 def test_brand_smartphones_relation(client: TestClient) -> None:
     body = client.get("/v1/brands/samsung/smartphones?limit=100").json()
     assert body["count"] >= 1
-    slugs = {item["slug"] for item in body["results"]}
-    assert "galaxy-s25" in slugs
+    first = body["results"][0]["slug"]
+    detail = client.get(f"/v1/smartphones/{first}").json()
+    assert detail["brand"]["slug"] == "samsung"
 
 
 def test_brand_smartphones_unknown_brand_404(client: TestClient) -> None:

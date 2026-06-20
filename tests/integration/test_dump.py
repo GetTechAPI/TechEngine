@@ -8,9 +8,11 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.dump import generate
+from tests.integration.mobile_device_fixtures import ensure_mobile_device_fixtures
 
 
 def test_dump_writes_list_detail_and_manifest(client: TestClient, tmp_path: Path) -> None:
+    ensure_mobile_device_fixtures()
     collections = ["tablets", "watches", "pdas"]
     counts = generate(client, output_dir=tmp_path, collections=collections)
     assert counts["tablets"] >= 1
