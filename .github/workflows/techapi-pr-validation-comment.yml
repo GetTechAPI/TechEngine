@@ -186,7 +186,16 @@ jobs:
 
           HEAD = Path("TechAPI/data")
           BASE = Path("TechAPI-main/data")
-          CATEGORIES = ("brand", "soc", "smartphone", "gpu", "cpu")
+          CATEGORIES = (
+              "brand",
+              "soc",
+              "smartphone",
+              "tablet",
+              "watch",
+              "pda",
+              "gpu",
+              "cpu",
+          )
           MAX_WARNINGS = 20
 
           def load_json(path: Path) -> dict[str, Any]:
