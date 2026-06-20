@@ -175,7 +175,9 @@ def _check_variant_path(
         errors.append(f"{fname}: lives in brand '{brand}' but brand='{rec.get('brand')}'")
     release_year = str(rec.get("release_date", ""))[:4]
     if release_year and year != release_year:
-        errors.append(f"{fname}: lives in year '{year}' but release_date starts with '{release_year}'")
+        errors.append(
+            f"{fname}: lives in year '{year}' but release_date starts with '{release_year}'"
+        )
     if rec.get("base_model_slug") and rec.get("base_model_slug") != base_model_slug:
         errors.append(
             f"{fname}: lives under base '{base_model_slug}' but "

@@ -30,7 +30,9 @@ def test_mobile_device_detail_includes_variant_fields(client: TestClient) -> Non
 
 def test_mobile_device_filters(client: TestClient) -> None:
     brand_body = client.get("/v1/watches?brand=samsung").json()
-    assert {item["slug"] for item in brand_body["results"]} == {"galaxy-watch-global-bluetooth-42mm"}
+    assert {item["slug"] for item in brand_body["results"]} == {
+        "galaxy-watch-global-bluetooth-42mm"
+    }
 
     base_body = client.get("/v1/tablets?base_model_slug=ipad-pro-11-m4").json()
     assert {item["slug"] for item in base_body["results"]} == {"ipad-pro-11-m4-wifi-8gb-256gb"}
