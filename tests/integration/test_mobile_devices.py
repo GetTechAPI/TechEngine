@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from tests.integration.mobile_device_fixtures import ensure_mobile_device_fixtures
+
 
 def test_list_mobile_device_categories(client: TestClient) -> None:
+    ensure_mobile_device_fixtures()
     cases = [
         ("tablets", "ipad-pro-11-m4-wifi-8gb-256gb"),
         ("watches", "galaxy-watch-global-bluetooth-42mm"),
@@ -19,6 +22,7 @@ def test_list_mobile_device_categories(client: TestClient) -> None:
 
 
 def test_mobile_device_detail_includes_variant_fields(client: TestClient) -> None:
+    ensure_mobile_device_fixtures()
     body = client.get("/v1/tablets/ipad-pro-11-m4-wifi-8gb-256gb").json()
     assert body["slug"] == "ipad-pro-11-m4-wifi-8gb-256gb"
     assert body["base_model_slug"] == "ipad-pro-11-m4"
@@ -29,6 +33,7 @@ def test_mobile_device_detail_includes_variant_fields(client: TestClient) -> Non
 
 
 def test_mobile_device_filters(client: TestClient) -> None:
+    ensure_mobile_device_fixtures()
     brand_body = client.get("/v1/watches?brand=samsung").json()
     assert {item["slug"] for item in brand_body["results"]} == {
         "galaxy-watch-global-bluetooth-42mm"
@@ -39,6 +44,7 @@ def test_mobile_device_filters(client: TestClient) -> None:
 
 
 def test_mobile_device_unknown_slug_404(client: TestClient) -> None:
+    ensure_mobile_device_fixtures()
     response = client.get("/v1/pdas/nope")
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "NOT_FOUND"
