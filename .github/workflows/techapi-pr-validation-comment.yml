@@ -174,12 +174,14 @@ jobs:
       - name: Build data quality summary
         shell: bash
         run: |
+          git -C TechAPI fetch --no-tags --depth=1 origin main
           python - <<'PY'
           from __future__ import annotations
 
           import hashlib
           import json
           import re
+          import subprocess
           from collections import Counter
           from pathlib import Path
           from typing import Any
@@ -212,6 +214,44 @@ jobs:
 
           def digest(path: Path) -> str:
               return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          def changed_data_from_git() -> dict[str, dict[str, list[str]]]:
+              changes = {
+                  category: {"added": [], "modified": [], "deleted": []}
+                  for category in CATEGORIES
+              }
+              output = subprocess.check_output(
+                  [
+                      "git",
+                      "-C",
+                      "TechAPI",
+                      "diff",
+                      "--name-status",
+                      "--no-renames",
+                      "FETCH_HEAD",
+                      "HEAD",
+                      "--",
+                      "data",
+                  ],
+                  text=True,
+              )
+              status_map = {"A": "added", "M": "modified", "D": "deleted"}
+              for line in output.splitlines():
+                  parts = line.split("\t")
+                  if len(parts) < 2:
+                      continue
+                  bucket = status_map.get(parts[0][:1])
+                  path = parts[1]
+                  if bucket is None or not path.startswith("data/") or not path.endswith(".json"):
+                      continue
+                  rel = path.removeprefix("data/").replace("\\", "/")
+                  category = rel.split("/", 1)[0]
+                  if category in changes:
+                      changes[category][bucket].append(rel)
+              for category_changes in changes.values():
+                  for paths in category_changes.values():
+                      paths.sort()
+              return changes
 
           def rel_site_files(root: Path) -> dict[str, Path]:
               site = root / "site"
@@ -376,24 +416,16 @@ jobs:
           change_lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
 
           all_added: list[tuple[str, str, Path]] = []
-          changed_by_category: dict[str, dict[str, list[str]]] = {}
+          changed_by_category = changed_data_from_git()
           for category in CATEGORIES:
-              head = rel_jsons(HEAD, category)
-              base = rel_jsons(BASE, category)
-              added_keys = sorted(set(head) - set(base))
-              deleted_keys = sorted(set(base) - set(head))
-              modified_keys = sorted(
-                  key for key in set(head) & set(base) if digest(head[key]) != digest(base[key])
-              )
-              changed_by_category[category] = {
-                  "added": added_keys,
-                  "modified": modified_keys,
-                  "deleted": deleted_keys,
-              }
+              added_keys = changed_by_category[category]["added"]
+              modified_keys = changed_by_category[category]["modified"]
+              deleted_keys = changed_by_category[category]["deleted"]
               added_verified = added_unverified = added_kaggle = 0
               for key in added_keys:
-                  record = load_json(head[key])
-                  all_added.append((category, key, head[key]))
+                  path = HEAD / key
+                  record = load_json(path)
+                  all_added.append((category, key, path))
                   if verified_value(record) is True:
                       added_verified += 1
                   elif verified_value(record) is False:
