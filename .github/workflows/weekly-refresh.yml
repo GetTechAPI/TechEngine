@@ -107,7 +107,7 @@ jobs:
       - name: Verification band report (Tier 0)
         run: |
           cd techapi
-          python -m app.verify score --no-cache > ../verify-report.txt 2>&1 || true
+          python -m app.verify score --no-cache --format md > ../verify-report.md 2>&1 || true
 
       # --- 3. Static dump → site/public (what the Astro site fetches at runtime) ---
       - name: Generate static dump
@@ -127,9 +127,7 @@ jobs:
             echo
             echo "## Verification (Tier 0 existence/trust)"
             echo
-            echo '```text'
-            cat verify-report.txt 2>/dev/null || echo "(verifier unavailable)"
-            echo '```'
+            cat verify-report.md 2>/dev/null || echo "_verifier unavailable._"
             echo
             echo "## Enrichment summaries"
             for f in enrich-*.md; do
