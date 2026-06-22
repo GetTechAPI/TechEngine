@@ -54,10 +54,12 @@ jobs:
           {
             echo 'report<<VERIFY_EOF'
             echo "### Changed records in this PR"
-            python -m app.verify score --changed --no-cache || echo "(app.verify unavailable on this ref)"
+            echo ""
+            python -m app.verify score --changed --no-cache --format md || echo "_app.verify unavailable on this ref._"
             echo ""
             echo "### Full-dataset baseline"
-            python -m app.verify score --no-cache || true
+            echo ""
+            python -m app.verify score --no-cache --format md || true
             echo VERIFY_EOF
           } >> "$GITHUB_OUTPUT"
 
@@ -80,9 +82,7 @@ jobs:
               '',
               `Requested by @${by} via \`/verify\` · scored by \`app.verify\`, posted by **TechEngineBot**. Informational only — the structural gate (\`app.validate\`) is separate.`,
               '',
-              '```text',
               report,
-              '```',
             ].join('\n');
             const owner = 'GetTechAPI';
             const repo = 'TechAPI';
