@@ -32,7 +32,27 @@ jobs:
       TECHAPI_PR_NUMBER: ${{ github.event.client_payload.pr_number || inputs.pr_number }}
       TECHAPI_HEAD_SHA: ${{ github.event.client_payload.head_sha || inputs.head_sha }}
       REQUESTED_BY: ${{ github.event.client_payload.requested_by || github.actor }}
+      TECHAPI_COMMENT_ID: ${{ github.event.client_payload.comment_id }}
     steps:
+      # Acknowledge the /verify command as TechEngineBot (the bot holds the token;
+      # the relay side must not react, or it looks like the requester self-reacting).
+      - name: Acknowledge command (TechEngineBot 👀)
+        if: env.TECHAPI_COMMENT_TOKEN != '' && env.TECHAPI_COMMENT_ID != ''
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN }}
+          script: |
+            const comment_id = Number(process.env.TECHAPI_COMMENT_ID);
+            if (comment_id) {
+              try {
+                await github.rest.reactions.createForIssueComment({
+                  owner: 'GetTechAPI', repo: 'TechAPI', comment_id, content: 'eyes',
+                });
+              } catch (e) { core.info(`reaction skipped: ${e.message}`); }
+            }
+        env:
+          TECHAPI_COMMENT_ID: ${{ github.event.client_payload.comment_id }}
+
       - name: Checkout TechAPI PR head
         uses: actions/checkout@v4
         with:
