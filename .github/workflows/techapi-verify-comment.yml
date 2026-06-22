@@ -66,20 +66,17 @@ jobs:
           python-version: "3.12"
 
       # app.verify is a stdlib-only TechAPI module; run it from the checkout.
-      - name: Run Tier 0 verification
+      # `pr` runs all tiers (0 offline score, 1 source-URL liveness, 2 external
+      # cross-reference, 3 promotion DRY-RUN) over the PR's changed records, plus
+      # a full-dataset Tier 0 baseline. Network tiers are capped and never write.
+      - name: Run all-tiers verification
         id: verify
         run: |
           cd TechAPI
           git fetch origin main --depth=1 || true
           {
             echo 'report<<VERIFY_EOF'
-            echo "### Changed records in this PR"
-            echo ""
-            python -m app.verify score --changed --no-cache --format md || echo "_app.verify unavailable on this ref._"
-            echo ""
-            echo "### Full-dataset baseline"
-            echo ""
-            python -m app.verify score --no-cache --format md || true
+            python -m app.verify pr || echo "_app.verify unavailable on this ref._"
             echo VERIFY_EOF
           } >> "$GITHUB_OUTPUT"
 
@@ -96,13 +93,12 @@ jobs:
             const marker = '<!-- techengine-verify-command -->';
             const report = (process.env.REPORT || '').trim() || '(no output)';
             const by = process.env.REQUESTED_BY || 'someone';
+            // `pr` already emits its own H2 heading + tier sections; just frame it.
             const body = [
               marker,
-              '## 🔎 Data verification — Tier 0 (on demand)',
-              '',
-              `Requested by @${by} via \`/verify\` · scored by \`app.verify\`, posted by **TechEngineBot**. Informational only — the structural gate (\`app.validate\`) is separate.`,
-              '',
               report,
+              '',
+              `<sub>Requested by @${by} via \`/verify\` · scored by \`app.verify\`, posted by **TechEngineBot**. Informational only — the structural gate (\`app.validate\`) is separate; Tier 3 here is dry-run.</sub>`,
             ].join('\n');
             const owner = 'GetTechAPI';
             const repo = 'TechAPI';
