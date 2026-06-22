@@ -20,7 +20,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: techapi-verify-${{ github.event.client_payload.pr_number || inputs.pr_number }}
+  group: techapi-verify-${{ github.event.client_payload.pr_number || inputs.pr_number }}-${{ github.event.client_payload.mode || 'all' }}
   cancel-in-progress: true
 
 jobs:
@@ -33,6 +33,9 @@ jobs:
       TECHAPI_HEAD_SHA: ${{ github.event.client_payload.head_sha || inputs.head_sha }}
       REQUESTED_BY: ${{ github.event.client_payload.requested_by || github.actor }}
       TECHAPI_COMMENT_ID: ${{ github.event.client_payload.comment_id }}
+      # "tier0" = auto PR report (relayed by TechAPI verify-report.yml); else the
+      # on-demand /verify all-tiers run.
+      MODE: ${{ github.event.client_payload.mode || 'all' }}
     steps:
       # Acknowledge the /verify command as TechEngineBot (the bot holds the token;
       # the relay side must not react, or it looks like the requester self-reacting).
@@ -66,17 +69,26 @@ jobs:
           python-version: "3.12"
 
       # app.verify is a stdlib-only TechAPI module; run it from the checkout.
-      # `pr` runs all tiers (0 offline score, 1 source-URL liveness, 2 external
-      # cross-reference, 3 promotion DRY-RUN) over the PR's changed records, plus
-      # a full-dataset Tier 0 baseline. Network tiers are capped and never write.
-      - name: Run all-tiers verification
+      # mode=tier0 (auto PR report): fast offline Tier 0 only (changed + baseline).
+      # mode=all (/verify on demand): `pr` runs Tiers 0-3 (3 = promotion DRY-RUN).
+      - name: Run verification
         id: verify
         run: |
           cd TechAPI
           git fetch origin main --depth=1 || true
           {
             echo 'report<<VERIFY_EOF'
-            python -m app.verify pr || echo "_app.verify unavailable on this ref._"
+            if [ "${MODE}" = "tier0" ]; then
+              echo "### Changed records in this PR"
+              echo ""
+              python -m app.verify score --changed --no-cache --format md || echo "_app.verify unavailable on this ref._"
+              echo ""
+              echo "### Full-dataset baseline"
+              echo ""
+              python -m app.verify score --no-cache --format md || true
+            else
+              python -m app.verify pr || echo "_app.verify unavailable on this ref._"
+            fi
             echo VERIFY_EOF
           } >> "$GITHUB_OUTPUT"
 
@@ -87,19 +99,26 @@ jobs:
           REPORT: ${{ steps.verify.outputs.report }}
           PR_NUMBER: ${{ env.TECHAPI_PR_NUMBER }}
           REQUESTED_BY: ${{ env.REQUESTED_BY }}
+          MODE: ${{ env.MODE }}
         with:
           github-token: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN }}
           script: |
-            const marker = '<!-- techengine-verify-command -->';
             const report = (process.env.REPORT || '').trim() || '(no output)';
             const by = process.env.REQUESTED_BY || 'someone';
-            // `pr` already emits its own H2 heading + tier sections; just frame it.
-            const body = [
-              marker,
-              report,
-              '',
-              `<sub>Requested by @${by} via \`/verify\` · scored by \`app.verify\`, posted by **TechEngineBot**. Informational only — the structural gate (\`app.validate\`) is separate; Tier 3 here is dry-run.</sub>`,
-            ].join('\n');
+            const isTier0 = (process.env.MODE || 'all') === 'tier0';
+            // Auto report and on-demand /verify use distinct marked comments.
+            const marker = isTier0
+              ? '<!-- techengine-verify-report -->'
+              : '<!-- techengine-verify-command -->';
+            const head = isTier0
+              ? ['## 🔎 Data verification — Tier 0 (offline existence/trust)', '',
+                 'Scored by `app.verify`; posted by **TechEngineBot**. Informational only — the structural gate (`app.validate`) is separate and authoritative for merge.', '',
+                 report]
+              : [report];  // `pr` emits its own H2 heading + tier sections
+            const footer = isTier0
+              ? '<sub>green = authoritative source + complete + consistent · yellow = plausible, needs confirmation · red = sparse/weak source or a hard contradiction. Promotion to `verified` runs in the scheduled `verify-network` workflow.</sub>'
+              : `<sub>Requested by @${by} via \`/verify\` · scored by \`app.verify\`, posted by **TechEngineBot**. Informational only — the structural gate (\`app.validate\`) is separate; Tier 3 here is dry-run.</sub>`;
+            const body = [marker, ...head, '', footer].join('\n');
             const owner = 'GetTechAPI';
             const repo = 'TechAPI';
             const issue_number = Number(process.env.PR_NUMBER);
