@@ -1,0 +1,102 @@
+name: techapi-verify-comment
+
+# On-demand Tier 0 data verification for a TechAPI PR. Triggered by an English
+# command comment (`/verify`) on the PR, relayed here as a repository_dispatch by
+# TechAPI's verify-command.yml. Checks out the PR head, runs TechAPI's app.verify,
+# and posts the green/yellow/red band report back on the PR as TechEngineBot.
+on:
+  repository_dispatch:
+    types: [techapi-verify]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "TechAPI PR number to verify + comment on"
+        required: true
+      head_sha:
+        description: "TechAPI commit SHA to verify"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: techapi-verify-${{ github.event.client_payload.pr_number || inputs.pr_number }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONIOENCODING: utf-8
+      TECHAPI_COMMENT_TOKEN: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN }}
+      TECHAPI_PR_NUMBER: ${{ github.event.client_payload.pr_number || inputs.pr_number }}
+      TECHAPI_HEAD_SHA: ${{ github.event.client_payload.head_sha || inputs.head_sha }}
+      REQUESTED_BY: ${{ github.event.client_payload.requested_by || github.actor }}
+    steps:
+      - name: Checkout TechAPI PR head
+        uses: actions/checkout@v4
+        with:
+          repository: GetTechAPI/TechAPI
+          ref: ${{ env.TECHAPI_HEAD_SHA }}
+          path: TechAPI
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # app.verify is a stdlib-only TechAPI module; run it from the checkout.
+      - name: Run Tier 0 verification
+        id: verify
+        run: |
+          cd TechAPI
+          git fetch origin main --depth=1 || true
+          {
+            echo 'report<<VERIFY_EOF'
+            echo "### Changed records in this PR"
+            python -m app.verify score --changed --no-cache || echo "(app.verify unavailable on this ref)"
+            echo ""
+            echo "### Full-dataset baseline"
+            python -m app.verify score --no-cache || true
+            echo VERIFY_EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post verification comment (TechEngineBot)
+        if: env.TECHAPI_COMMENT_TOKEN != ''
+        uses: actions/github-script@v7
+        env:
+          REPORT: ${{ steps.verify.outputs.report }}
+          PR_NUMBER: ${{ env.TECHAPI_PR_NUMBER }}
+          REQUESTED_BY: ${{ env.REQUESTED_BY }}
+        with:
+          github-token: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN }}
+          script: |
+            const marker = '<!-- techengine-verify-command -->';
+            const report = (process.env.REPORT || '').trim() || '(no output)';
+            const by = process.env.REQUESTED_BY || 'someone';
+            const body = [
+              marker,
+              '## 🔎 Data verification — Tier 0 (on demand)',
+              '',
+              `Requested by @${by} via \`/verify\` · scored by \`app.verify\`, posted by **TechEngineBot**. Informational only — the structural gate (\`app.validate\`) is separate.`,
+              '',
+              '```text',
+              report,
+              '```',
+            ].join('\n');
+            const owner = 'GetTechAPI';
+            const repo = 'TechAPI';
+            const issue_number = Number(process.env.PR_NUMBER);
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+      - name: Dormant when no bot token
+        if: env.TECHAPI_COMMENT_TOKEN == ''
+        run: echo "::warning::No TECHENGINEBOT_TOKEN/TECHAPI_TOKEN; verification ran but no comment was posted."
