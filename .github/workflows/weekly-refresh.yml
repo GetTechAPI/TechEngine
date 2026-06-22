@@ -98,6 +98,17 @@ jobs:
       - name: Integrity check (cross-source anomalies, strict gate)
         run: python integrity_check.py ./techapi/data --strict
 
+      # --- 2b. Tier 0 existence/trust verification (informational, never gates) ---
+      # TechAPI's app.verify scores every record green/yellow/red (authoritative
+      # source + completeness + cross-field consistency). Folded into the weekly PR
+      # so curators see the dataset's verification health alongside the integrity
+      # gate. Run from the TechAPI checkout (app.verify is a TechAPI, stdlib-only
+      # module); never fails the run.
+      - name: Verification band report (Tier 0)
+        run: |
+          cd techapi
+          python -m app.verify score --no-cache > ../verify-report.txt 2>&1 || true
+
       # --- 3. Static dump → site/public (what the Astro site fetches at runtime) ---
       - name: Generate static dump
         run: python -m app.dump --output ./techapi/site/public
@@ -113,6 +124,12 @@ jobs:
             echo "## Validation"
             echo "- \`app.validate\` (schema/range/slug/FK): **passed**"
             echo "- \`integrity_check.py --strict\` (cross-source anomaly gate): **passed**"
+            echo
+            echo "## Verification (Tier 0 existence/trust)"
+            echo
+            echo '```text'
+            cat verify-report.txt 2>/dev/null || echo "(verifier unavailable)"
+            echo '```'
             echo
             echo "## Enrichment summaries"
             for f in enrich-*.md; do
