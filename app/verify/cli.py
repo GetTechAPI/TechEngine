@@ -15,8 +15,12 @@ import argparse
 import json
 import subprocess
 from collections import Counter, defaultdict
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
+
+from app.validate import DATA_DIR
 
 from . import crossref, http_check, ledger, offline, promote
 from .common import (
@@ -50,7 +54,6 @@ def _changed_data_slugs() -> set[str]:
     package lives in TechAPI (data alongside) or TechEngine (data in a separate
     TechAPI checkout pointed at by TECHAPI_DATA_DIR).
     """
-    from .common import DATA_DIR
     try:
         out = subprocess.run(
             ["git", "diff", "--name-only", "origin/main", "HEAD", "--", "data/"],
@@ -73,7 +76,7 @@ def _iter_selected(
     unverified_only: bool,
     changed: set[str] | None,
     limit: int | None,
-):
+) -> Iterator[Record]:
     count = 0
     for cat in categories:
         for rec in records[cat]:
@@ -101,8 +104,8 @@ def cmd_score(args: argparse.Namespace) -> int:
     write_cache = full_scope and not args.no_cache
 
     # category -> band -> count
-    hist: dict[str, Counter] = defaultdict(Counter)
-    hard_flags: Counter = Counter()
+    hist: dict[str, Counter[str]] = defaultdict(Counter)
+    hard_flags: Counter[str] = Counter()
     entries = []
     scored = 0
 
@@ -133,7 +136,9 @@ def cmd_score(args: argparse.Namespace) -> int:
     return 0
 
 
-def _print_histogram(hist, scored, hard_flags, wrote_cache) -> None:
+def _print_histogram(
+    hist: dict[str, Counter[str]], scored: int, hard_flags: Counter[str], wrote_cache: bool
+) -> None:
     print(f"Tier 0 offline score — {scored} record(s)\n")
     header = f"{'category':<12} {'green':>8} {'yellow':>8} {'red':>8} {'total':>8}"
     print(header)
@@ -185,7 +190,7 @@ def _band_bar(green: int, yellow: int, red: int, width: int = 12) -> str:
     return "🟩" * counts["🟩"] + "🟨" * counts["🟨"] + "🟥" * counts["🟥"]
 
 
-def _print_markdown(hist, scored, hard_flags) -> None:
+def _print_markdown(hist: dict[str, Counter[str]], scored: int, hard_flags: Counter[str]) -> None:
     """Readable PR-comment report: a Mermaid pie of the overall band split (GitHub
     renders it natively) + a per-category table with a proportional colored bar."""
     if scored == 0:
@@ -247,7 +252,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     _, _, soc_release = foreign_key_sets(records)
     now_year = offline.now_year_today()
 
-    by_category: dict[str, dict] = {}
+    by_category: dict[str, dict[str, Any]] = {}
     tot = ver = g = y = r = 0
     for cat in CATEGORIES:
         ct = cv = cg = cy = cr = 0
@@ -309,8 +314,8 @@ def cmd_report(args: argparse.Namespace) -> int:
     if not SCORES_PATH.exists():
         print("no scores cache — run `python -m app.verify score` first")
         return 0
-    hist: dict[str, Counter] = defaultdict(Counter)
-    hard_flags: Counter = Counter()
+    hist: dict[str, Counter[str]] = defaultdict(Counter)
+    hard_flags: Counter[str] = Counter()
     for entry in ledger.iter_entries(SCORES_PATH):
         cat = entry.get("category")
         t0 = entry.get("tier0", {})
@@ -324,7 +329,7 @@ def cmd_report(args: argparse.Namespace) -> int:
     _print_histogram(hist, scored, hard_flags, wrote_cache=False)
 
     # Promotion decisions live in the git-tracked ledger.
-    promoted: Counter = Counter()
+    promoted: Counter[str] = Counter()
     for (cat, _slug), entry in ledger.latest_by_key().items():
         if entry.get("decision") == "promote":
             promoted[cat] += 1
@@ -335,7 +340,10 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
-def _ranked_unverified(records, soc_release, now_year, categories):
+def _ranked_unverified(
+    records: dict[str, list[Record]], soc_release: dict[str, str], now_year: int,
+    categories: tuple[str, ...],
+) -> list[Record]:
     """Unverified records of the given categories, scored, highest-confidence first."""
     scored = []
     for cat in categories:
@@ -394,7 +402,7 @@ def cmd_check_urls(args: argparse.Namespace) -> int:
     return 0
 
 
-def _summarize_cache(cache, targets) -> None:
+def _summarize_cache(cache: dict[str, dict[str, Any]], targets: list[str]) -> None:
     from collections import Counter
     alive = sum(1 for u in targets if cache.get(u, {}).get("alive"))
     dead = sum(1 for u in targets if u in cache and not cache[u].get("alive"))
@@ -438,7 +446,7 @@ def cmd_crossref(args: argparse.Namespace) -> int:
             "exact_heading": res.exact_heading, "matched_url": res.matched_url,
         })
     if new_entries:
-        cache.update({(e["category"], e["slug"]): e for e in new_entries})
+        cache.update({(str(e["category"]), str(e["slug"])): e for e in new_entries})
         ledger.replace_all(list(cache.values()), promote.CROSSREF_CACHE_PATH)
 
     print(f"crossref: examined {len(targets)} record(s)")
@@ -556,7 +564,7 @@ def cmd_pr(args: argparse.Namespace) -> int:
         urls = sorted({u for r, _ in scored
                        for u in r.data.get("source_urls", []) if isinstance(u, str)})
         ts = _now_iso()
-        url_cache: dict[str, dict] = {}
+        url_cache: dict[str, dict[str, Any]] = {}
         try:
             for res in http_check.check_urls(urls, min_interval=0.5):
                 url_cache[res.url] = http_check.result_to_entry(res, ts)
@@ -616,8 +624,8 @@ def cmd_pr(args: argparse.Namespace) -> int:
             print()
 
     # Full-dataset Tier 0 baseline (always).
-    hist: dict[str, Counter] = defaultdict(Counter)
-    hard_flags: Counter = Counter()
+    hist: dict[str, Counter[str]] = defaultdict(Counter)
+    hard_flags: Counter[str] = Counter()
     scored_n = 0
     for cat in CATEGORIES:
         for rec in records[cat]:
@@ -696,4 +704,5 @@ def main(argv: list[str] | None = None) -> int:
     configure_stdout()
     parser = build_parser()
     args = parser.parse_args(argv)
-    return args.func(args)
+    result: int = args.func(args)
+    return result
