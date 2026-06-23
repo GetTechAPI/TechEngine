@@ -15,7 +15,7 @@ import argparse
 import json
 import subprocess
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from . import crossref, http_check, ledger, offline, promote
@@ -35,7 +35,7 @@ BANDS = ("green", "yellow", "red")
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _changed_data_slugs() -> set[str]:
@@ -364,7 +364,7 @@ def cmd_check_urls(args: argparse.Namespace) -> int:
     targets = http_check.dedupe_urls(urls)
 
     cache = http_check.load_cache()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if args.recheck:
         todo = targets
     else:
