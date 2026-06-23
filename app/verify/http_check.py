@@ -14,7 +14,7 @@ import threading
 import time
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, NamedTuple
 from urllib.parse import urlparse
 from urllib.request import Request, build_opener
@@ -188,7 +188,7 @@ def load_cache(path=URL_CACHE_PATH) -> dict[str, dict[str, Any]]:
 
 def _parse_ts(ts: str) -> datetime | None:
     try:
-        return datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        return datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
     except Exception:
         return None
 
