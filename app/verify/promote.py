@@ -99,7 +99,7 @@ def write_verified_true(abs_path: Path) -> bool:
     return True
 
 
-def load_crossref_cache(path=CROSSREF_CACHE_PATH) -> dict[tuple[str, str], dict[str, Any]]:
+def load_crossref_cache(path: Path = CROSSREF_CACHE_PATH) -> dict[tuple[str, str], dict[str, Any]]:
     from . import ledger
     out: dict[tuple[str, str], dict[str, Any]] = {}
     for e in ledger.iter_entries(path):
