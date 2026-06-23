@@ -83,7 +83,11 @@ def test_flip_only_touches_verified_token():
     # Exactly one line changed; inline array preserved verbatim.
     assert '"verified": true,' in out
     assert '"storage_options_gb": [64, 128, 256],' in out
-    diff = [(a, b) for a, b in zip(SEED.splitlines(), out.splitlines()) if a != b]
+    diff = [
+        (a, b)
+        for a, b in zip(SEED.splitlines(), out.splitlines(), strict=False)
+        if a != b
+    ]
     assert diff == [('  "verified": false,', '  "verified": true,')]
 
 
