@@ -9,7 +9,7 @@ learned discriminator of "is this a real, documented part?".
 
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 from urllib.parse import urlparse
 
 # Tier 1 — primary/manufacturer + top reference encyclopaedias. A live T1 source
