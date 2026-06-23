@@ -667,7 +667,8 @@ def build_parser() -> argparse.ArgumentParser:
     cu.add_argument("--max", type=int, default=500, help="number of frontier records to target")
     cu.add_argument("--workers", type=int, default=8, help="concurrent HTTP workers")
     cu.add_argument("--min-interval", type=float, default=1.0, help="seconds between hits per host")
-    cu.add_argument("--ttl-days", type=int, default=http_check.DEFAULT_TTL_DAYS, help="cache freshness")
+    cu.add_argument("--ttl-days", type=int, default=http_check.DEFAULT_TTL_DAYS,
+                    help="cache freshness")
     cu.add_argument("--recheck", action="store_true", help="ignore cache freshness")
     cu.set_defaults(func=cmd_check_urls)
 
@@ -680,7 +681,8 @@ def build_parser() -> argparse.ArgumentParser:
     pm = sub.add_parser("promote", help="Tier 3: hybrid escalation + verified write-back")
     pm.add_argument("--category", nargs="*", choices=CATEGORIES, help="limit to categories")
     pm.add_argument("--max", type=int, default=None, help="cap number promoted")
-    pm.add_argument("--apply", action="store_true", help="actually flip verified (default: dry-run)")
+    pm.add_argument("--apply", action="store_true",
+                    help="actually flip verified (default: dry-run)")
     pm.set_defaults(func=cmd_promote)
 
     pr = sub.add_parser("pr", help="all-tiers (0-3) markdown report for a PR's changed records")
