@@ -15,6 +15,7 @@ import time
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, NamedTuple
 from urllib.parse import urlparse
 from urllib.request import Request, build_opener
@@ -182,7 +183,7 @@ def check_urls(
 # --- cache -----------------------------------------------------------------------
 
 
-def load_cache(path=URL_CACHE_PATH) -> dict[str, dict[str, Any]]:
+def load_cache(path: Path = URL_CACHE_PATH) -> dict[str, dict[str, Any]]:
     return {e["url"]: e for e in ledger.iter_entries(path) if isinstance(e.get("url"), str)}
 
 
@@ -200,7 +201,7 @@ def is_fresh(entry: dict[str, Any], now: datetime, ttl_days: int) -> bool:
     return (now - ts).days < ttl_days
 
 
-def save_cache(cache: dict[str, dict[str, Any]], path=URL_CACHE_PATH) -> None:
+def save_cache(cache: dict[str, dict[str, Any]], path: Path = URL_CACHE_PATH) -> None:
     ledger.replace_all(list(cache.values()), path)
 
 
