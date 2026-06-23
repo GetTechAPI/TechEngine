@@ -58,7 +58,17 @@ testpaths = ["tests"]
 addopts = "-q"
 asyncio_mode = "auto"
 pythonpath = ["."]
+markers = [
+    "slow: full-dataset scans (deselect with -m 'not slow')",
+]
 
 [tool.coverage.run]
 source = ["app"]
-omit = ["app/main.py"]
+omit = [
+    "app/main.py",
+    # verify CLI orchestration is integration-tested (score/pr smoke), not unit-
+    # tested line-by-line; the verify logic modules (signals/offline/promote/...)
+    # are unit-covered.
+    "app/verify/cli.py",
+    "app/verify/__main__.py",
+]
