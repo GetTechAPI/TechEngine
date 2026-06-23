@@ -1,5 +1,7 @@
 """Tier 1 liveness tests — fully offline via a fake opener."""
 
+from datetime import UTC
+
 from app.verify import http_check
 from app.verify.http_check import CheckResult
 
@@ -75,8 +77,8 @@ def test_dedupe_by_host_and_path():
 
 
 def test_cache_freshness():
-    from datetime import datetime, timezone
-    now = datetime(2026, 6, 22, tzinfo=timezone.utc)
+    from datetime import datetime
+    now = datetime(2026, 6, 22, tzinfo=UTC)
     fresh = {"checked_at": "2026-06-20T00:00:00Z"}
     stale = {"checked_at": "2026-01-01T00:00:00Z"}
     assert http_check.is_fresh(fresh, now, ttl_days=30)
