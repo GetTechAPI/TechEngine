@@ -12,8 +12,9 @@ pure and the CLI controls the clock.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from .common import LEDGER_PATH, ensure_verify_dirs
 
