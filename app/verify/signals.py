@@ -101,9 +101,12 @@ def cpu_signals(rec: dict[str, Any], now_year: int) -> list[Signal]:
         _cmp_ge("threads_ge_cores", rec.get("threads"), rec.get("cores"), hard=True),
         _cmp_ge("boost_ge_base", rec.get("boost_clock_ghz"), rec.get("base_clock_ghz"), hard=True),
         _cmp_ge("max_tdp_ge_tdp", rec.get("max_tdp_w"), rec.get("tdp_w"), hard=False),
-        _cmp_ge("passmark_multi_ge_single", rec.get("passmark_cpu_mark"), rec.get("passmark_single"), hard=False),
-        _cmp_ge("cb23_multi_ge_single", rec.get("cinebench_r23_multi"), rec.get("cinebench_r23_single"), hard=False),
-        _cmp_ge("gb_multi_ge_single", rec.get("geekbench_multi"), rec.get("geekbench_single"), hard=False),
+        _cmp_ge("passmark_multi_ge_single", rec.get("passmark_cpu_mark"),
+                rec.get("passmark_single"), hard=False),
+        _cmp_ge("cb23_multi_ge_single", rec.get("cinebench_r23_multi"),
+                rec.get("cinebench_r23_single"), hard=False),
+        _cmp_ge("gb_multi_ge_single", rec.get("geekbench_multi"),
+                rec.get("geekbench_single"), hard=False),
         _release_not_future(rec, now_year),
     ]
     # p_cores + e_cores == cores (hybrid parts), only when both core splits given.
@@ -127,7 +130,10 @@ def gpu_signals(rec: dict[str, Any], now_year: int) -> list[Signal]:
     elif mfr in {"amd", "intel"}:
         has_core = _num(rec.get("stream_processors")) is not None
     else:
-        has_core = _num(rec.get("cuda_cores")) is not None or _num(rec.get("stream_processors")) is not None
+        has_core = (
+            _num(rec.get("cuda_cores")) is not None
+            or _num(rec.get("stream_processors")) is not None
+        )
     out.append(Signal("vendor_core_field", "pass" if has_core else "fail", hard=False))
     # RT / Tensor cores only plausible on post-2018 (Turing / RDNA2) parts.
     y = _year_of(rec.get("release_date"))
@@ -147,7 +153,8 @@ def _ppi_signal(display: dict[str, Any]) -> Signal:
         return Signal("ppi_consistent", "na", hard=False)
     w, h = res
     computed = math.hypot(w, h) / size
-    return Signal("ppi_consistent", "pass" if abs(computed - ppi) <= 0.15 * ppi else "fail", hard=False)
+    ok = abs(computed - ppi) <= 0.15 * ppi
+    return Signal("ppi_consistent", "pass" if ok else "fail", hard=False)
 
 
 def _storage_signal(rec: dict[str, Any]) -> Signal:
@@ -206,7 +213,8 @@ def mobile_signals(
     dev_year = _year_of(rec.get("release_date"))
     soc_year = _year_of(soc_release.get(soc)) if isinstance(soc, str) else None
     if dev_year is not None and soc_year is not None:
-        out.append(Signal("soc_not_after_device", "pass" if soc_year <= dev_year else "fail", hard=False))
+        ok = soc_year <= dev_year
+        out.append(Signal("soc_not_after_device", "pass" if ok else "fail", hard=False))
     else:
         out.append(Signal("soc_not_after_device", "na", hard=False))
     return out
@@ -224,7 +232,11 @@ def soc_signals(rec: dict[str, Any], now_year: int) -> list[Signal]:
         out.append(Signal("process_nm_era", "na", hard=False))
     gpu_name = rec.get("gpu_name")
     out.append(
-        Signal("gpu_name_present", "pass" if isinstance(gpu_name, str) and gpu_name.strip() else "fail", hard=False)
+        Signal(
+            "gpu_name_present",
+            "pass" if isinstance(gpu_name, str) and gpu_name.strip() else "fail",
+            hard=False,
+        )
     )
     return out
 
