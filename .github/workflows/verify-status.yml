@@ -1,0 +1,61 @@
+name: verify-status
+
+# Keep TechAPI's data/_verify/status.json (the verification-state aggregate: how
+# many records are verified + Tier 0 bands per category) current. Runs in
+# TechEngine against a TechAPI checkout and commits the refreshed file back to
+# TechAPI main as TechEngineBot. Fires when TechAPI main changes (relayed by
+# TechAPI's notify-engine -> techapi-updated) and daily as a backstop. The
+# "commit only if changed" guard means the status commit can't loop.
+on:
+  repository_dispatch:
+    types: [techapi-updated]
+  schedule:
+    - cron: "30 5 * * *"   # daily 05:30 UTC backstop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-status
+  cancel-in-progress: false
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONIOENCODING: utf-8
+      TECHAPI_DATA_DIR: ${{ github.workspace }}/TechAPI/data
+    steps:
+      - name: Checkout TechEngine
+        uses: actions/checkout@v4
+
+      - name: Checkout TechAPI
+        uses: actions/checkout@v4
+        with:
+          repository: GetTechAPI/TechAPI
+          path: TechAPI
+          token: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install TechEngine
+        run: pip install -e .
+
+      - name: Regenerate verification status aggregate
+        run: python -m app.verify status --output TechAPI/data/_verify/status.json
+
+      - name: Commit to TechAPI if changed (TechEngineBot)
+        run: |
+          cd TechAPI
+          git add data/_verify/status.json
+          if git diff --cached --quiet; then
+            echo "verification status unchanged"; exit 0
+          fi
+          git config user.name "TechEngineBot"
+          git config user.email "289859915+TechEngineBot@users.noreply.github.com"
+          git commit -m "chore(verify): refresh verification status aggregate"
+          git push origin HEAD:main
