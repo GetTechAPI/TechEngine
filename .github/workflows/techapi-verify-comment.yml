@@ -56,6 +56,9 @@ jobs:
         env:
           TECHAPI_COMMENT_ID: ${{ github.event.client_payload.comment_id }}
 
+      - name: Checkout TechEngine
+        uses: actions/checkout@v4
+
       - name: Checkout TechAPI PR head
         uses: actions/checkout@v4
         with:
@@ -67,15 +70,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
 
-      # app.verify is a stdlib-only TechAPI module; run it from the checkout.
-      # mode=tier0 (auto PR report): fast offline Tier 0 only (changed + baseline).
-      # mode=all (/verify on demand): `pr` runs Tiers 0-3 (3 = promotion DRY-RUN).
+      - name: Install TechEngine
+        run: pip install -e .
+
+      # app.verify now lives in TechEngine; run it from the engine root with
+      # TECHAPI_DATA_DIR pointing at the TechAPI checkout (its `_changed_data_slugs`
+      # runs git inside that data repo). mode=tier0 = fast offline Tier 0 (auto PR
+      # report); mode=all = `pr` Tiers 0-3 (3 = promotion DRY-RUN).
       - name: Run verification
         id: verify
+        env:
+          TECHAPI_DATA_DIR: ${{ github.workspace }}/TechAPI/data
         run: |
-          cd TechAPI
-          git fetch origin main --depth=1 || true
+          git -C TechAPI fetch origin main --depth=1 || true
           {
             echo 'report<<VERIFY_EOF'
             if [ "${MODE}" = "tier0" ]; then
