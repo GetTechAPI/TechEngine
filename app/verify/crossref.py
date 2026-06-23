@@ -109,7 +109,7 @@ def crossref_record(
 # --- concrete fetchers (network; not exercised by unit tests) --------------------
 
 
-def _wikidata_claim_year(entity: dict) -> int | None:
+def _wikidata_claim_year(entity: dict[str, Any]) -> int | None:
     """First year from inception (P571) or publication date (P577) claims."""
     claims = entity.get("claims", {})
     for prop in ("P571", "P577"):
@@ -136,10 +136,11 @@ class WikidataFetcher:
         self.timeout = timeout
         self.limit = limit
 
-    def _get(self, url: str) -> dict:
+    def _get(self, url: str) -> dict[str, Any]:
         req = Request(url, headers={"User-Agent": self.UA})
         with urlopen(req, timeout=self.timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            data: dict[str, Any] = json.loads(resp.read().decode("utf-8"))
+            return data
 
     def search(self, name: str) -> list[Candidate]:
         try:
