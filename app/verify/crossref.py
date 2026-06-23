@@ -161,7 +161,9 @@ class WikidataFetcher:
             qid = h.get("id")
             label = h.get("label") or h.get("match", {}).get("text", "")
             year = _wikidata_claim_year(ent.get(qid, {})) if qid else None
-            out.append(Candidate(title=label, url=f"https://www.wikidata.org/wiki/{qid}", year=year))
+            out.append(
+                Candidate(title=label, url=f"https://www.wikidata.org/wiki/{qid}", year=year)
+            )
         return out
 
 
