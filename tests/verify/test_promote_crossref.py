@@ -113,38 +113,30 @@ def test_write_back_atomic_lf_preserved():
 # --- promotion decision ----------------------------------------------------------
 
 
-def test_green_with_live_t1_promotes():
-    cache = {"https://en.wikipedia.org/wiki/X": {"alive": True}}
+def test_green_promotes():
+    # green = passed the offline inspection -> verified. The live-source state no
+    # longer gates (green already requires a cited authoritative source).
+    d = promote.decide(band="green", source_urls=[], url_cache={}, crossref_decision=None)
+    assert d.promote and d.reason == "green"
+
+
+def test_green_promotes_regardless_of_source_liveness():
+    # Even with a dead / unchecked source, a green record promotes.
+    cache = {"https://www.phonedb.net/x": {"alive": False}}
     d = promote.decide(
-        band="green", source_urls=["https://en.wikipedia.org/wiki/X"],
+        band="green", source_urls=["https://www.phonedb.net/x"],
         url_cache=cache, crossref_decision=None,
     )
-    assert d.promote and d.reason == "green+live-source"
+    assert d.promote and d.reason == "green"
 
 
-def test_green_with_live_t2_promotes():
-    # A reputable T2 spec/benchmark DB (cpubenchmark) that is alive also promotes.
-    cache = {"https://www.cpubenchmark.net/cpu.php?id=1": {"alive": True}}
-    d = promote.decide(
-        band="green", source_urls=["https://www.cpubenchmark.net/cpu.php?id=1"],
-        url_cache=cache, crossref_decision=None,
-    )
-    assert d.promote and d.reason == "green+live-source"
-
-
-def test_green_with_only_t3_source_held():
-    # kaggle (T3) alive is NOT enough to promote even if green.
-    cache = {"https://www.kaggle.com/x": {"alive": True}}
-    d = promote.decide(
-        band="green", source_urls=["https://www.kaggle.com/x"],
-        url_cache=cache, crossref_decision=None,
-    )
+def test_yellow_without_confirm_holds():
+    d = promote.decide(band="yellow", source_urls=[], url_cache={}, crossref_decision=None)
     assert not d.promote
 
 
-def test_green_without_live_source_blocked():
-    d = promote.decide(band="green", source_urls=["https://en.wikipedia.org/wiki/X"],
-                       url_cache={}, crossref_decision=None)
+def test_red_holds():
+    d = promote.decide(band="red", source_urls=[], url_cache={}, crossref_decision=None)
     assert not d.promote
 
 
@@ -154,18 +146,10 @@ def test_yellow_with_crossref_confirm_promotes():
 
 
 def test_crossref_contradict_vetoes_even_green():
-    # Reality veto: a green record with a live source is NOT promoted if an
-    # authoritative source contradicts its specs.
-    cache = {"https://en.wikipedia.org/wiki/X": {"alive": True}}
+    # Reality veto: a green record is NOT promoted if an authoritative external
+    # source contradicts its specs (release-year mismatch).
     d = promote.decide(
         band="green", source_urls=["https://en.wikipedia.org/wiki/X"],
-        url_cache=cache, crossref_decision="contradict",
+        url_cache={}, crossref_decision="contradict",
     )
     assert not d.promote and d.reason == "crossref-contradict"
-
-
-def test_dead_t1_does_not_promote():
-    cache = {"https://en.wikipedia.org/wiki/X": {"alive": False}}
-    d = promote.decide(band="green", source_urls=["https://en.wikipedia.org/wiki/X"],
-                       url_cache=cache, crossref_decision=None)
-    assert not d.promote
