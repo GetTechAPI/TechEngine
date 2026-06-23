@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Any, Callable, Iterable, NamedTuple
+from typing import Any, NamedTuple
 from urllib.parse import urlparse
 from urllib.request import Request, build_opener
 
