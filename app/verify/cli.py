@@ -296,12 +296,27 @@ def cmd_status(args: argparse.Namespace) -> int:
         },
         "by_category": by_category,
     }
+    out = args.output or (VERIFY_DIR / "status.json")
+    # Idempotence: only `generated_at` changes between runs when the verification
+    # numbers are unchanged. Preserve the previous timestamp so the file stays
+    # byte-identical — otherwise every run rewrites it, commits, and (via the
+    # techapi-updated dispatch) re-triggers verify-status in an endless loop.
+    if not args.stdout and out.exists():
+        try:
+            prev = json.loads(out.read_text(encoding="utf-8"))
+            unchanged = {k: v for k, v in status.items() if k != "generated_at"} == {
+                k: v for k, v in prev.items() if k != "generated_at"
+            }
+            if unchanged and isinstance(prev.get("generated_at"), str):
+                status["generated_at"] = prev["generated_at"]
+        except (OSError, ValueError):
+            pass
+
     blob = json.dumps(status, indent=2, ensure_ascii=False) + "\n"
 
     if args.stdout:
         print(blob, end="")
     else:
-        out = args.output or (VERIFY_DIR / "status.json")
         ensure_verify_dirs()
         out.write_text(blob, encoding="utf-8")
         print(f"wrote verification status: {out}  "
