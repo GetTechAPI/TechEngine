@@ -10,13 +10,13 @@ from app.models.mobile_device import MobileDeviceFields
 from app.models.smartphone import Smartphone
 from app.models.soc import SoC
 from app.schemas.brand import BrandRead, BrandSummary
-from app.schemas.common import ManufacturerRef, ResourceRef
-from app.schemas.cpu import CPURead
-from app.schemas.gpu import GPURead
+from app.schemas.common import HybridRead, ManufacturerRef, ResourceRef
+from app.schemas.cpu import CPURead, CPUScoreRead
+from app.schemas.gpu import GPURead, GPUScoreRead
 from app.schemas.mobile_device import MobileDeviceRead
 from app.schemas.smartphone import ScoreRead, SmartphoneRead
-from app.schemas.soc import SoCManufacturer, SoCRead, SoCSummary
-from app.services.scoring import Scores
+from app.schemas.soc import SoCManufacturer, SoCRead, SoCScoreRead, SoCSummary
+from app.services.scoring import CPUScore, GPUScore, Hybrid, PhoneScore, SoCScore
 
 PREFIX = settings.api_version_prefix
 
@@ -24,6 +24,55 @@ PREFIX = settings.api_version_prefix
 def url_for(resource: str, slug: str) -> str:
     """Build a versioned resource URL, e.g. ``/v1/smartphones/galaxy-s25``."""
     return f"{PREFIX}/{resource}/{slug}"
+
+
+def _hybrid(hybrid: Hybrid) -> HybridRead:
+    return HybridRead(
+        index=hybrid.index,
+        percentile=hybrid.percentile,
+        tier=hybrid.tier,
+        era=hybrid.era,
+        source=hybrid.source,
+    )
+
+
+def cpu_score_read(score: CPUScore) -> CPUScoreRead:
+    return CPUScoreRead(
+        algorithm_version=score.algorithm_version,
+        overall=score.overall,
+        single=_hybrid(score.single),
+        multi=_hybrid(score.multi),
+    )
+
+
+def gpu_score_read(score: GPUScore) -> GPUScoreRead:
+    return GPUScoreRead(
+        algorithm_version=score.algorithm_version,
+        overall=score.overall,
+        graphics=_hybrid(score.graphics),
+    )
+
+
+def soc_score_read(score: SoCScore) -> SoCScoreRead:
+    return SoCScoreRead(
+        algorithm_version=score.algorithm_version,
+        overall=score.overall,
+        cpu=_hybrid(score.cpu),
+        system=_hybrid(score.system),
+    )
+
+
+def phone_score_read(score: PhoneScore) -> ScoreRead:
+    return ScoreRead(
+        algorithm_version=score.algorithm_version,
+        overall=score.overall,
+        performance=score.performance,
+        camera=score.camera,
+        battery=score.battery,
+        display=score.display,
+        value=score.value,
+        perf=_hybrid(score.perf),
+    )
 
 
 def resource_ref(resource: str, slug: str, name: str) -> ResourceRef:
@@ -79,7 +128,7 @@ def soc_summary(soc: SoC, manufacturer: Brand) -> SoCSummary:
     )
 
 
-def soc_read(soc: SoC, manufacturer: Brand) -> SoCRead:
+def soc_read(soc: SoC, manufacturer: Brand, score: SoCScore) -> SoCRead:
     assert soc.id is not None
     return SoCRead(
         id=soc.id,
@@ -95,6 +144,7 @@ def soc_read(soc: SoC, manufacturer: Brand) -> SoCRead:
         gpu_clock_mhz=soc.gpu_clock_mhz,
         npu_tops=soc.npu_tops,
         modem=soc.modem,
+        score=soc_score_read(score),
         verified=soc.verified,
         source_urls=soc.source_urls,
         created_at=soc.created_at,
@@ -103,7 +153,7 @@ def soc_read(soc: SoC, manufacturer: Brand) -> SoCRead:
     )
 
 
-def gpu_read(gpu: DiscreteGPU, manufacturer: Brand) -> GPURead:
+def gpu_read(gpu: DiscreteGPU, manufacturer: Brand, score: GPUScore) -> GPURead:
     assert gpu.id is not None
     return GPURead(
         id=gpu.id,
@@ -131,13 +181,14 @@ def gpu_read(gpu: DiscreteGPU, manufacturer: Brand) -> GPURead:
         pcie_version=gpu.pcie_version,
         fp32_tflops=gpu.fp32_tflops,
         blender_score=gpu.blender_score,
+        score=gpu_score_read(score),
         verified=gpu.verified,
         source_urls=gpu.source_urls,
         url=url_for("gpus", gpu.slug),
     )
 
 
-def cpu_read(cpu: CPU, manufacturer: Brand) -> CPURead:
+def cpu_read(cpu: CPU, manufacturer: Brand, score: CPUScore) -> CPURead:
     assert cpu.id is not None
     return CPURead(
         id=cpu.id,
@@ -165,6 +216,7 @@ def cpu_read(cpu: CPU, manufacturer: Brand) -> CPURead:
         integrated_graphics=cpu.integrated_graphics,
         memory_support=cpu.memory_support,
         msrp_usd=cpu.msrp_usd,
+        score=cpu_score_read(score),
         verified=cpu.verified,
         source_urls=cpu.source_urls,
         created_at=cpu.created_at,
@@ -178,7 +230,7 @@ def smartphone_read(
     brand: Brand,
     soc: SoC,
     soc_manufacturer: Brand,
-    scores: Scores,
+    scores: PhoneScore,
 ) -> SmartphoneRead:
     assert phone.id is not None
     return SmartphoneRead(
@@ -206,15 +258,7 @@ def smartphone_read(
         connectivity=phone.connectivity,
         image_url=phone.image_url,
         images=phone.images,
-        score=ScoreRead(
-            algorithm_version=scores.algorithm_version,
-            overall=scores.overall,
-            performance=scores.performance,
-            camera=scores.camera,
-            battery=scores.battery,
-            display=scores.display,
-            value=scores.value,
-        ),
+        score=phone_score_read(scores),
         verified=phone.verified,
         source_urls=phone.source_urls,
         created_at=phone.created_at,

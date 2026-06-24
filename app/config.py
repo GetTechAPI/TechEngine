@@ -32,7 +32,8 @@ class Settings(BaseSettings):
 
     # Project metadata
     version: str = __version__
-    scoring_algorithm_version: str = "1.0.0"
+    scoring_algorithm_version: str = "2.0.0"
+    scoring_config_path: str = "./config/scoring.yaml"
 
     # Security
     secret_key: str = "change-me"

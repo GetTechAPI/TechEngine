@@ -14,8 +14,9 @@ from app.models.brand import Brand
 from app.models.cpu import CPU
 from app.routers.utils import build_ref_page
 from app.schemas.common import Page, ResourceRef
-from app.schemas.cpu import CPURead
-from app.schemas.serializers import cpu_read, resource_ref
+from app.schemas.cpu import CPURead, CPUScoreRead
+from app.schemas.serializers import cpu_read, cpu_score_read, resource_ref
+from app.services.scoring import get_dataset_stats, score_cpu
 
 router = APIRouter(prefix="/cpus", tags=["cpus"])
 
@@ -43,12 +44,24 @@ def list_cpus(
     )
 
 
-@router.get("/{slug}", summary="Get a CPU")
-def get_cpu(slug: str, session: SessionDep) -> CPURead:
+def _load_cpu(session: SessionDep, slug: str) -> tuple[CPU, Brand]:
     cpu = session.exec(select(CPU).where(CPU.slug == slug)).first()
     if cpu is None:
         raise not_found("CPU", slug)
     manufacturer = session.get(Brand, cpu.manufacturer_id)
     if manufacturer is None:  # pragma: no cover - guarded by FK + validation
         raise not_found("Brand", str(cpu.manufacturer_id))
-    return cpu_read(cpu, manufacturer)
+    return cpu, manufacturer
+
+
+@router.get("/{slug}", summary="Get a CPU")
+def get_cpu(slug: str, session: SessionDep) -> CPURead:
+    cpu, manufacturer = _load_cpu(session, slug)
+    score = score_cpu(cpu, stats=get_dataset_stats(session))
+    return cpu_read(cpu, manufacturer, score)
+
+
+@router.get("/{slug}/score", summary="Get a CPU's scores")
+def get_cpu_score(slug: str, session: SessionDep) -> CPUScoreRead:
+    cpu, _manufacturer = _load_cpu(session, slug)
+    return cpu_score_read(score_cpu(cpu, stats=get_dataset_stats(session)))

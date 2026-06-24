@@ -11,6 +11,17 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from app.schemas.common import HybridRead
+
+
+class SoCScoreRead(BaseModel):
+    """Computed SoC scores (§8): a blended CPU axis + a system (AnTuTu) axis."""
+
+    algorithm_version: str
+    overall: float | None = None
+    cpu: HybridRead
+    system: HybridRead
+
 
 class SoCManufacturer(BaseModel):
     """Manufacturer reference nested inside an embedded SoC (appendix C)."""
@@ -48,6 +59,7 @@ class SoCRead(BaseModel):
     gpu_clock_mhz: int | None = None
     npu_tops: float | None = None
     modem: str | None = None
+    score: SoCScoreRead
     verified: bool
     source_urls: list[str]
     created_at: datetime

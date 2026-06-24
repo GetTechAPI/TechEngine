@@ -12,8 +12,9 @@ from app.models.brand import Brand
 from app.models.gpu import DiscreteGPU
 from app.routers.utils import build_ref_page
 from app.schemas.common import Page, ResourceRef
-from app.schemas.gpu import GPURead
-from app.schemas.serializers import gpu_read, resource_ref
+from app.schemas.gpu import GPURead, GPUScoreRead
+from app.schemas.serializers import gpu_read, gpu_score_read, resource_ref
+from app.services.scoring import get_dataset_stats, score_gpu
 
 router = APIRouter(prefix="/gpus", tags=["gpus"])
 
@@ -31,12 +32,24 @@ def list_gpus(session: SessionDep, pagination: PaginationDep) -> Page[ResourceRe
     return build_ref_page(refs, count=count, path="/v1/gpus", pagination=pagination)
 
 
-@router.get("/{slug}", summary="Get a discrete GPU")
-def get_gpu(slug: str, session: SessionDep) -> GPURead:
+def _load_gpu(session: SessionDep, slug: str) -> tuple[DiscreteGPU, Brand]:
     gpu = session.exec(select(DiscreteGPU).where(DiscreteGPU.slug == slug)).first()
     if gpu is None:
         raise not_found("GPU", slug)
     manufacturer = session.get(Brand, gpu.manufacturer_id)
     if manufacturer is None:  # pragma: no cover - guarded by FK + validation
         raise not_found("Brand", str(gpu.manufacturer_id))
-    return gpu_read(gpu, manufacturer)
+    return gpu, manufacturer
+
+
+@router.get("/{slug}", summary="Get a discrete GPU")
+def get_gpu(slug: str, session: SessionDep) -> GPURead:
+    gpu, manufacturer = _load_gpu(session, slug)
+    score = score_gpu(gpu, stats=get_dataset_stats(session))
+    return gpu_read(gpu, manufacturer, score)
+
+
+@router.get("/{slug}/score", summary="Get a discrete GPU's scores")
+def get_gpu_score(slug: str, session: SessionDep) -> GPUScoreRead:
+    gpu, _manufacturer = _load_gpu(session, slug)
+    return gpu_score_read(score_gpu(gpu, stats=get_dataset_stats(session)))

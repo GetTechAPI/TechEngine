@@ -1,0 +1,103 @@
+# Scoring configuration (§8.2, ADR-013) — hybrid absolute(log) + within-era relative.
+#
+# reference_scales: per benchmark, the absolute [lo, hi] in RAW units used to map a
+#   value to a 0-100 "capability". `log: true` for benchmarks spanning orders of
+#   magnitude across eras; `invert: true` when smaller-is-better (time/process_nm/price).
+#   These are PINNED and versioned: re-calibrating (via `python -m app.services.scoring.calibrate`)
+#   requires bumping algorithm_version. Calibrated to dataset p01..p99.
+# chains: pick the FIRST present benchmark per dimension; normalize on its own scale.
+# era_bands / tiers: drive the within-generation relative percentile + letter tier.
+algorithm_version: "2.0.0"
+calibrated_at: "2026-06-24"
+calibration: "dataset p01-p99 (calibrate.py), log space where noted"
+
+reference_scales:
+  cpu:
+    cinebench_r23_single: { lo: 480, hi: 2380, log: true }
+    cinebench_r23_multi: { lo: 1900, hi: 180000, log: true }
+    geekbench_single: { lo: 590, hi: 3200, log: true }
+    geekbench_multi: { lo: 1900, hi: 92000, log: true }
+    passmark_single: { lo: 300, hi: 4730, log: true }
+    passmark_cpu_mark: { lo: 210, hi: 148000, log: true }
+    cinebench_2024_single: { lo: 72, hi: 144, log: true }
+    cinebench_2024_multi: { lo: 483, hi: 4321, log: true }
+    cinebench_r15_single: { lo: 83, hi: 346, log: true }
+    cinebench_r15_multi: { lo: 149, hi: 6536, log: true }
+    cinebench_r11_5_single: { lo: 0.91, hi: 4.0, log: true }
+    cinebench_r11_5_multi: { lo: 1.0, hi: 69, log: true }
+    cinebench_r10_single: { lo: 541, hi: 12522, log: true }
+    cinebench_r10_multi: { lo: 865, hi: 99662, log: true }
+    specint2006: { lo: 11.4, hi: 81.5, log: true }
+    specfp2006: { lo: 10.3, hi: 151, log: true }
+    dhrystone_mips: { lo: 8.7, hi: 9726, log: true }
+    whetstone_mflops: { lo: 1, hi: 200000, log: true }  # n=0, placeholder
+    superpi_1m_sec: { lo: 5, hi: 600, log: true, invert: true }  # n=0, placeholder
+  gpu:
+    timespy_score: { lo: 513, hi: 34163, log: true }
+    timespy_extreme_score: { lo: 173, hi: 19460, log: true }
+    passmark_g3d_mark: { lo: 3, hi: 38073, log: true }
+    fp32_tflops: { lo: 0.023, hi: 81.72, log: true }
+    blender_score: { lo: 97.45, hi: 14972, log: true }
+    speedway_score: { lo: 180, hi: 10074, log: true }
+    octanebench_score: { lo: 16, hi: 1258, log: true }
+  soc:
+    geekbench_single: { lo: 153, hi: 3640, log: true }
+    geekbench_multi: { lo: 471, hi: 10558, log: true }
+    antutu_score: { lo: 102154, hi: 3161830, log: true }
+  phone:
+    geekbench_single: { lo: 153, hi: 3640, log: true }
+    geekbench_multi: { lo: 471, hi: 10558, log: true }
+    antutu_score: { lo: 102154, hi: 3161830, log: true }
+    ram_gb: { lo: 2, hi: 24, log: false }
+    battery_mah: { lo: 1500, hi: 6000, log: false }
+    charging_wired_w: { lo: 5, hi: 120, log: false }
+    charging_wireless_w: { lo: 0, hi: 50, log: false }
+    process_nm: { lo: 2.0, hi: 14.0, log: false, invert: true }
+    brightness_nits: { lo: 400, hi: 3000, log: false }
+    ppi: { lo: 250, hi: 600, log: false }
+    refresh_hz: { lo: 60, hi: 165, log: false }
+    main_camera_mp: { lo: 8, hi: 200, log: false }
+    msrp_usd: { lo: 200, hi: 1600, log: false, invert: true }
+
+chains:
+  cpu:
+    single: [cinebench_r23_single, geekbench_single, passmark_single, cinebench_2024_single,
+             cinebench_r15_single, cinebench_r11_5_single, cinebench_r10_single,
+             specint2006, dhrystone_mips, superpi_1m_sec]
+    multi: [cinebench_r23_multi, geekbench_multi, passmark_cpu_mark, cinebench_2024_multi,
+            cinebench_r15_multi, cinebench_r11_5_multi, cinebench_r10_multi,
+            specfp2006, whetstone_mflops]
+  gpu:
+    graphics: [timespy_score, passmark_g3d_mark, fp32_tflops, blender_score,
+               timespy_extreme_score, speedway_score, octanebench_score]
+  soc:
+    single: [geekbench_single]
+    multi: [geekbench_multi]
+    system: [antutu_score]
+
+weights:
+  cpu: { single: 0.45, multi: 0.55 }
+  soc: { cpu: 0.70, system: 0.30 }
+  soc_cpu: { single: 0.40, multi: 0.60 }
+  phone_perf: { single: 0.25, multi: 0.30, system: 0.30, ram: 0.15 }
+  phone_overall: { performance: 0.30, camera: 0.25, battery: 0.20, display: 0.25 }
+  value: { overall: 0.5, affordability: 0.5 }
+
+era_bands:
+  - [0, 2005, "pre-2006"]
+  - [2006, 2009, "2006-2009"]
+  - [2010, 2013, "2010-2013"]
+  - [2014, 2016, "2014-2016"]
+  - [2017, 2019, "2017-2019"]
+  - [2020, 2021, "2020-2021"]
+  - [2022, 2023, "2022-2023"]
+  - [2024, 2999, "2024-2026"]
+
+tiers:
+  - [95, "S"]
+  - [80, "A"]
+  - [60, "B"]
+  - [40, "C"]
+  - [20, "D"]
+  - [5, "E"]
+  - [0, "F"]

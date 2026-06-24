@@ -13,8 +13,9 @@ from app.models.smartphone import Smartphone
 from app.models.soc import SoC
 from app.routers.utils import build_ref_page
 from app.schemas.common import Page, ResourceRef
-from app.schemas.serializers import resource_ref, soc_read
-from app.schemas.soc import SoCRead
+from app.schemas.serializers import resource_ref, soc_read, soc_score_read
+from app.schemas.soc import SoCRead, SoCScoreRead
+from app.services.scoring import get_dataset_stats, score_soc
 
 router = APIRouter(prefix="/socs", tags=["socs"])
 
@@ -29,15 +30,27 @@ def list_socs(session: SessionDep, pagination: PaginationDep) -> Page[ResourceRe
     return build_ref_page(refs, count=count, path="/v1/socs", pagination=pagination)
 
 
-@router.get("/{slug}", summary="Get a SoC")
-def get_soc(slug: str, session: SessionDep) -> SoCRead:
+def _load_soc(session: SessionDep, slug: str) -> tuple[SoC, Brand]:
     soc = session.exec(select(SoC).where(SoC.slug == slug)).first()
     if soc is None:
         raise not_found("SoC", slug)
     manufacturer = session.get(Brand, soc.manufacturer_id)
     if manufacturer is None:  # pragma: no cover - guarded by FK + validation
         raise not_found("Brand", str(soc.manufacturer_id))
-    return soc_read(soc, manufacturer)
+    return soc, manufacturer
+
+
+@router.get("/{slug}", summary="Get a SoC")
+def get_soc(slug: str, session: SessionDep) -> SoCRead:
+    soc, manufacturer = _load_soc(session, slug)
+    score = score_soc(soc, stats=get_dataset_stats(session))
+    return soc_read(soc, manufacturer, score)
+
+
+@router.get("/{slug}/score", summary="Get a SoC's scores")
+def get_soc_score(slug: str, session: SessionDep) -> SoCScoreRead:
+    soc, _manufacturer = _load_soc(session, slug)
+    return soc_score_read(score_soc(soc, stats=get_dataset_stats(session)))
 
 
 @router.get("/{slug}/smartphones", summary="Smartphones using this SoC")

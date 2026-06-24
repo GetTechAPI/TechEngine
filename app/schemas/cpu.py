@@ -10,7 +10,16 @@ from datetime import date, datetime
 
 from pydantic import BaseModel
 
-from app.schemas.common import ManufacturerRef
+from app.schemas.common import HybridRead, ManufacturerRef
+
+
+class CPUScoreRead(BaseModel):
+    """Computed CPU scores (§8): single/multi compute axes."""
+
+    algorithm_version: str
+    overall: float | None = None
+    single: HybridRead
+    multi: HybridRead
 
 
 class CPURead(BaseModel):
@@ -37,6 +46,7 @@ class CPURead(BaseModel):
     integrated_graphics: str | None = None
     memory_support: str | None = None
     msrp_usd: int | None = None
+    score: CPUScoreRead
     verified: bool
     source_urls: list[str]
     created_at: datetime

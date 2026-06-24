@@ -21,7 +21,7 @@ def test_detail_matches_appendix_c_shape(client: TestClient) -> None:
     assert isinstance(body["cameras"], list)
     # score object present with all categories (§8.1)
     score = body["score"]
-    assert score["algorithm_version"] == "1.0.0"
+    assert score["algorithm_version"] == "2.0.0"
     assert {"overall", "performance", "camera", "battery", "display", "value"} <= score.keys()
 
 
@@ -33,7 +33,7 @@ def test_unknown_smartphone_404(client: TestClient) -> None:
 
 def test_score_endpoint(client: TestClient) -> None:
     body = client.get("/v1/smartphones/galaxy-s25/score").json()
-    assert body["algorithm_version"] == "1.0.0"
+    assert body["algorithm_version"] == "2.0.0"
     assert body["overall"] is not None
 
 
