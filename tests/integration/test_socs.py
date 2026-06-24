@@ -34,3 +34,18 @@ def test_soc_smartphones_relation(client: TestClient) -> None:
     body = client.get("/v1/socs/snapdragon-8-elite/smartphones?limit=100").json()
     slugs = {item["slug"] for item in body["results"]}
     assert {"galaxy-s25", "oneplus-13"} <= slugs
+
+
+def test_soc_score_endpoint(client: TestClient) -> None:
+    body = client.get("/v1/socs/snapdragon-8-elite/score").json()
+    assert body["algorithm_version"] == "2.0.0"
+    assert {"cpu", "system"} <= body.keys()
+    overall = body["overall"]
+    assert overall is None or 0.0 <= overall <= 100.0
+
+
+def test_soc_detail_embeds_score(client: TestClient) -> None:
+    score = client.get("/v1/socs/snapdragon-8-elite").json()["score"]
+    assert score["algorithm_version"] == "2.0.0"
+    if score["cpu"]["index"] is not None:
+        assert score["cpu"]["source"] == "geekbench"

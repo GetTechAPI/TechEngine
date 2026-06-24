@@ -16,9 +16,9 @@ from app.models.smartphone import Smartphone
 from app.models.soc import SoC
 from app.routers.utils import build_ref_page
 from app.schemas.common import Page, ResourceRef
-from app.schemas.serializers import resource_ref, smartphone_read
+from app.schemas.serializers import phone_score_read, resource_ref, smartphone_read
 from app.schemas.smartphone import ScoreRead, SmartphoneRead
-from app.services.scoring import compute_scores
+from app.services.scoring import get_dataset_stats, score_phone
 
 router = APIRouter(prefix="/smartphones", tags=["smartphones"])
 
@@ -104,20 +104,11 @@ def _load_full(session: SessionDep, slug: str) -> tuple[Smartphone, Brand, SoC, 
 @router.get("/{slug}", summary="Get a smartphone")
 def get_smartphone(slug: str, session: SessionDep) -> SmartphoneRead:
     phone, brand, soc, soc_manufacturer = _load_full(session, slug)
-    scores = compute_scores(phone, soc)
+    scores = score_phone(phone, soc, stats=get_dataset_stats(session))
     return smartphone_read(phone, brand, soc, soc_manufacturer, scores)
 
 
 @router.get("/{slug}/score", summary="Get a smartphone's scores")
 def get_smartphone_score(slug: str, session: SessionDep) -> ScoreRead:
     phone, _brand, soc, _manufacturer = _load_full(session, slug)
-    scores = compute_scores(phone, soc)
-    return ScoreRead(
-        algorithm_version=scores.algorithm_version,
-        overall=scores.overall,
-        performance=scores.performance,
-        camera=scores.camera,
-        battery=scores.battery,
-        display=scores.display,
-        value=scores.value,
-    )
+    return phone_score_read(score_phone(phone, soc, stats=get_dataset_stats(session)))

@@ -33,3 +33,17 @@ def test_dump_writes_list_detail_and_manifest(client: TestClient, tmp_path: Path
     # Manifest enumerates all collections.
     manifest = json.loads((tmp_path / "v1" / "index.json").read_text())
     assert set(manifest["collections"].keys()) == set(collections)
+
+
+def test_dump_writes_scores_and_scored_count(client: TestClient, tmp_path: Path) -> None:
+    generate(client, output_dir=tmp_path, collections=["cpus"])
+    score_file = tmp_path / "v1" / "cpus" / "core-i9-14900k" / "score" / "index.json"
+    assert score_file.exists()
+    score = json.loads(score_file.read_text())
+    assert score["algorithm_version"] == "2.0.0"
+    assert score == client.get("/v1/cpus/core-i9-14900k/score").json()
+
+    manifest = json.loads((tmp_path / "v1" / "index.json").read_text())
+    cpus = manifest["collections"]["cpus"]
+    assert isinstance(cpus["scored"], int)
+    assert 0 <= cpus["scored"] <= cpus["count"]

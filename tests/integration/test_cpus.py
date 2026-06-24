@@ -43,3 +43,21 @@ def test_unknown_cpu_404(client: TestClient) -> None:
     response = client.get("/v1/cpus/nope")
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_cpu_score_endpoint(client: TestClient) -> None:
+    body = client.get("/v1/cpus/core-i9-14900k/score").json()
+    assert body["algorithm_version"] == "2.0.0"
+    assert {"single", "multi"} <= body.keys()
+    overall = body["overall"]
+    assert overall is None or 0.0 <= overall <= 100.0
+
+
+def test_cpu_detail_embeds_score_with_provenance(client: TestClient) -> None:
+    score = client.get("/v1/cpus/core-i9-14900k").json()["score"]
+    assert score["algorithm_version"] == "2.0.0"
+    multi = score["multi"]
+    if multi["index"] is not None:
+        # provenance is the benchmark NAME (never the raw value, ADR-006)
+        assert isinstance(multi["source"], str)
+        assert 0.0 <= multi["index"] <= 100.0

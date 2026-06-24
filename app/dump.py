@@ -21,6 +21,8 @@ OUTPUT_DIR = Path(__file__).resolve().parent.parent / "dump"
 
 # Collections that expose list + detail endpoints.
 COLLECTIONS = ["brands", "socs", "smartphones", "tablets", "watches", "pdas", "gpus", "cpus"]
+# Collections with a /score sub-resource (§8) and a `scored` manifest count.
+SCORED = {"smartphones", "cpus", "gpus", "socs"}
 PAGE_LIMIT = 100  # API max page size (§7.3)
 
 
@@ -58,17 +60,23 @@ def generate(
             output_dir / "v1" / resource / "index.json",
             {"count": count, "results": items},
         )
+        scored = 0
         for item in items:
             slug = item["slug"]
             detail = client.get(f"/v1/{resource}/{slug}").json()
             _write_json(output_dir / "v1" / resource / slug / "index.json", detail)
-            if resource == "smartphones":
+            if resource in SCORED:
                 score = client.get(f"/v1/{resource}/{slug}/score").json()
                 _write_json(output_dir / "v1" / resource / slug / "score" / "index.json", score)
+                if score.get("overall") is not None:
+                    scored += 1
         counts[resource] = len(items)
         manifest_collections = manifest["collections"]
         assert isinstance(manifest_collections, dict)
-        manifest_collections[resource] = {"count": count, "url": f"/v1/{resource}/index.json"}
+        entry: dict[str, object] = {"count": count, "url": f"/v1/{resource}/index.json"}
+        if resource in SCORED:
+            entry["scored"] = scored
+        manifest_collections[resource] = entry
 
     _write_json(output_dir / "v1" / "index.json", manifest)
 

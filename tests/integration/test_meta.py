@@ -19,7 +19,7 @@ def test_health_sets_request_id_header(client: TestClient) -> None:
 def test_version_reports_algorithm(client: TestClient) -> None:
     body = client.get("/v1/version").json()
     assert body["api_version"] == "v1"
-    assert body["scoring_algorithm_version"] == "1.0.0"
+    assert body["scoring_algorithm_version"] == "2.0.0"
 
 
 def test_openapi_schema_available(client: TestClient) -> None:

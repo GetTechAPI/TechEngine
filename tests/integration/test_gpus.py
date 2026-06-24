@@ -37,3 +37,18 @@ def test_unknown_gpu_404(client: TestClient) -> None:
     response = client.get("/v1/gpus/nope")
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_gpu_score_endpoint(client: TestClient) -> None:
+    body = client.get("/v1/gpus/geforce-rtx-4090/score").json()
+    assert body["algorithm_version"] == "2.0.0"
+    assert "graphics" in body
+    overall = body["overall"]
+    assert overall is None or 0.0 <= overall <= 100.0
+
+
+def test_gpu_detail_embeds_score(client: TestClient) -> None:
+    score = client.get("/v1/gpus/geforce-rtx-4090").json()["score"]
+    assert score["algorithm_version"] == "2.0.0"
+    if score["graphics"]["index"] is not None:
+        assert isinstance(score["graphics"]["source"], str)

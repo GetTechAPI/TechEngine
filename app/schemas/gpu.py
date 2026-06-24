@@ -10,7 +10,15 @@ from datetime import date
 
 from pydantic import BaseModel
 
-from app.schemas.common import ManufacturerRef
+from app.schemas.common import HybridRead, ManufacturerRef
+
+
+class GPUScoreRead(BaseModel):
+    """Computed GPU scores (§8): a single graphics compute axis."""
+
+    algorithm_version: str
+    overall: float | None = None
+    graphics: HybridRead
 
 
 class GPURead(BaseModel):
@@ -37,6 +45,7 @@ class GPURead(BaseModel):
     pcie_version: str
     fp32_tflops: float | None = None
     blender_score: float | None = None
+    score: GPUScoreRead
     verified: bool
     source_urls: list[str]
     url: str

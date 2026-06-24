@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from app.schemas.brand import BrandSummary
+from app.schemas.common import HybridRead
 from app.schemas.soc import SoCSummary
 
 
@@ -21,6 +22,7 @@ class ScoreRead(BaseModel):
     battery: float | None = None
     display: float | None = None
     value: float | None = None
+    perf: HybridRead | None = None
 
 
 class SmartphoneRead(BaseModel):

@@ -21,6 +21,19 @@ class ManufacturerRef(BaseModel):
     url: str
 
 
+class HybridRead(BaseModel):
+    """One compute axis (§8): absolute index + within-era standing + provenance.
+
+    ``source`` is the benchmark NAME the index came from (never the raw value, ADR-006).
+    """
+
+    index: float | None = None
+    percentile: float | None = None
+    tier: str | None = None
+    era: str | None = None
+    source: str | None = None
+
+
 class Page[T](BaseModel):
     """Paginated collection envelope (§7.4)."""
 
