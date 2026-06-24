@@ -1,0 +1,93 @@
+name: dump-refresh
+
+# On-demand: regenerate the static v1 dump from the CURRENT TechAPI data (no
+# scraping) and open a refresh PR to TechAPI. Use this to re-publish the dump
+# after an engine-side change that affects serialized output (e.g. a scoring
+# version bump) — weekly-refresh.yml also does this but behind a slow live scrape.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dump-refresh
+  cancel-in-progress: false
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    env:
+      TECHAPI_WRITE_TOKEN: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN }}
+      # seed/validate/dump read the data tree from here.
+      TECHAPI_DATA_DIR: ${{ github.workspace }}/techapi/data
+    steps:
+      - name: Checkout TechEngine
+        uses: actions/checkout@v4
+
+      - name: Checkout TechAPI
+        uses: actions/checkout@v4
+        with:
+          repository: GetTechAPI/TechAPI
+          path: techapi
+          token: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install TechEngine
+        run: pip install -e .
+
+      - name: Compute date
+        id: meta
+        run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      # Integrity gate: never publish a dump from data that fails the validator.
+      - name: Validate (schema / range / slug / FK)
+        run: python -m app.validate
+
+      - name: Generate static dump → site/public
+        run: python -m app.dump --output ./techapi/site/public
+
+      - name: Build PR body
+        run: |
+          {
+            echo "# Dump refresh — ${{ steps.meta.outputs.date }}"
+            echo
+            echo "Regenerates \`site/public/v1\` from the current data with no re-scrape."
+            echo "Picks up engine-side serialization changes (scoring v2.0.0: hybrid"
+            echo "absolute+relative scores for smartphones/CPUs/GPUs/SoCs, \`/score\` files,"
+            echo "\`scored\` manifest counts)."
+            echo
+            echo "- \`app.validate\` (schema/range/slug/FK): **passed**"
+          } > pr-body.md
+
+      - name: Upload dump artifact (no-token fallback)
+        if: env.TECHAPI_WRITE_TOKEN == ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: dump-${{ steps.meta.outputs.date }}
+          path: |
+            techapi/site/public/v1
+            techapi/site/public/openapi.json
+          if-no-files-found: ignore
+
+      - name: Create dump-refresh PR
+        if: env.TECHAPI_WRITE_TOKEN != ''
+        uses: peter-evans/create-pull-request@v6
+        with:
+          path: ./techapi
+          token: ${{ env.TECHAPI_WRITE_TOKEN }}
+          branch: dump-refresh/${{ steps.meta.outputs.date }}
+          base: main
+          add-paths: |
+            site/public/v1
+            site/public/openapi.json
+          commit-message: "chore(site): refresh public dump for scoring v2.0.0"
+          title: "chore(site): refresh public dump (scoring v2.0.0)"
+          body-path: pr-body.md
+          committer: TechEngineBot <289859915+TechEngineBot@users.noreply.github.com>
+          author: TechEngineBot <289859915+TechEngineBot@users.noreply.github.com>
+          delete-branch: true
