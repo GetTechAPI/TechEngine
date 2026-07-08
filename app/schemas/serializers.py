@@ -8,6 +8,7 @@ from app.models.cpu import CPU
 from app.models.gpu import DiscreteGPU
 from app.models.laptop import Laptop
 from app.models.mobile_device import MobileDeviceFields
+from app.models.monitor import Monitor
 from app.models.smartphone import Smartphone
 from app.models.soc import SoC
 from app.schemas.brand import BrandRead, BrandSummary
@@ -16,6 +17,7 @@ from app.schemas.cpu import CPURead, CPUScoreRead
 from app.schemas.gpu import GPURead, GPUScoreRead
 from app.schemas.laptop import LaptopRead
 from app.schemas.mobile_device import MobileDeviceRead
+from app.schemas.monitor import MonitorRead
 from app.schemas.smartphone import ScoreRead, SmartphoneRead
 from app.schemas.soc import SoCManufacturer, SoCRead, SoCScoreRead, SoCSummary
 from app.services.scoring import CPUScore, GPUScore, Hybrid, PhoneScore, SoCScore
@@ -343,4 +345,34 @@ def laptop_read(
         created_at=laptop.created_at,
         updated_at=laptop.updated_at,
         url=url_for("laptops", laptop.slug),
+    )
+
+
+def monitor_read(monitor: Monitor, brand: Brand) -> MonitorRead:
+    assert monitor.id is not None
+    return MonitorRead(
+        id=monitor.id,
+        slug=monitor.slug,
+        base_model_slug=monitor.base_model_slug,
+        name=monitor.name,
+        brand=brand_summary(brand),
+        release_date=monitor.release_date,
+        msrp_usd=monitor.msrp_usd,
+        size_inch=monitor.size_inch,
+        resolution=monitor.resolution,
+        aspect_ratio=monitor.aspect_ratio,
+        refresh_hz=monitor.refresh_hz,
+        panel_type=monitor.panel_type,
+        curvature=monitor.curvature,
+        hdr=monitor.hdr,
+        ppi=monitor.ppi,
+        features=monitor.features,
+        rating=monitor.rating,
+        variant=monitor.variant,
+        image_url=monitor.image_url,
+        verified=monitor.verified,
+        source_urls=monitor.source_urls,
+        created_at=monitor.created_at,
+        updated_at=monitor.updated_at,
+        url=url_for("monitors", monitor.slug),
     )
