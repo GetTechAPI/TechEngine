@@ -6,6 +6,7 @@ from app.config import settings
 from app.models.brand import Brand
 from app.models.cpu import CPU
 from app.models.gpu import DiscreteGPU
+from app.models.laptop import Laptop
 from app.models.mobile_device import MobileDeviceFields
 from app.models.smartphone import Smartphone
 from app.models.soc import SoC
@@ -13,6 +14,7 @@ from app.schemas.brand import BrandRead, BrandSummary
 from app.schemas.common import HybridRead, ManufacturerRef, ResourceRef
 from app.schemas.cpu import CPURead, CPUScoreRead
 from app.schemas.gpu import GPURead, GPUScoreRead
+from app.schemas.laptop import LaptopRead
 from app.schemas.mobile_device import MobileDeviceRead
 from app.schemas.smartphone import ScoreRead, SmartphoneRead
 from app.schemas.soc import SoCManufacturer, SoCRead, SoCScoreRead, SoCSummary
@@ -304,4 +306,41 @@ def mobile_device_read(
         created_at=device.created_at,
         updated_at=device.updated_at,
         url=url_for(resource, device.slug),
+    )
+
+
+def laptop_read(
+    laptop: Laptop,
+    brand: Brand,
+    cpu: CPU | None,
+    gpu: DiscreteGPU | None,
+) -> LaptopRead:
+    assert laptop.id is not None
+    return LaptopRead(
+        id=laptop.id,
+        slug=laptop.slug,
+        base_model_slug=laptop.base_model_slug,
+        name=laptop.name,
+        brand=brand_summary(brand),
+        cpu=resource_ref("cpus", cpu.slug, cpu.name) if cpu else None,
+        gpu=resource_ref("gpus", gpu.slug, gpu.name) if gpu else None,
+        release_date=laptop.release_date,
+        msrp_usd=laptop.msrp_usd,
+        device_category=laptop.device_category,
+        cpu_name=laptop.cpu_name,
+        gpu_name=laptop.gpu_name,
+        gpu_type=laptop.gpu_type,
+        ram_gb=laptop.ram_gb,
+        storage_gb=laptop.storage_gb,
+        display=laptop.display,
+        weight_g=laptop.weight_g,
+        os=laptop.os,
+        os_version=laptop.os_version,
+        variant=laptop.variant,
+        image_url=laptop.image_url,
+        verified=laptop.verified,
+        source_urls=laptop.source_urls,
+        created_at=laptop.created_at,
+        updated_at=laptop.updated_at,
+        url=url_for("laptops", laptop.slug),
     )
