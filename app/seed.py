@@ -29,6 +29,7 @@ from app.models.cpu import CPU
 from app.models.gpu import DiscreteGPU
 from app.models.laptop import Laptop
 from app.models.mobile_device import PDA, Tablet, Watch
+from app.models.monitor import Monitor
 from app.models.smartphone import Smartphone
 from app.models.soc import SoC
 
@@ -65,6 +66,7 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
         "gpus": 0,
         "cpus": 0,
         "laptops": 0,
+        "monitors": 0,
     }
 
     # --- Brands ---
@@ -203,6 +205,21 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
             )
         session.add(Laptop(brand_id=brand_id, cpu_id=cpu_id, gpu_id=gpu_id, **record))
         counts["laptops"] += 1
+    session.commit()
+
+    # --- Monitors (reference brand [required]) ---
+    monitor_slugs = _existing_slugs(session, Monitor)
+    for record in _load_dir(data_dir / "monitor"):
+        if record["slug"] in monitor_slugs:
+            continue
+        brand_slug = record.pop("brand")
+        brand_id = brand_id_by_slug.get(brand_slug)
+        if brand_id is None:
+            raise ValueError(
+                f"Monitor '{record['slug']}' references unknown brand '{brand_slug}'"
+            )
+        session.add(Monitor(brand_id=brand_id, **record))
+        counts["monitors"] += 1
     session.commit()
 
     return counts

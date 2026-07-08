@@ -14,7 +14,17 @@ from app import __version__
 from app.config import settings
 from app.database import create_db_and_tables
 from app.errors import register_error_handlers
-from app.routers import brands, cpus, gpus, laptops, meta, mobile_devices, smartphones, socs
+from app.routers import (
+    brands,
+    cpus,
+    gpus,
+    laptops,
+    meta,
+    mobile_devices,
+    monitors,
+    smartphones,
+    socs,
+)
 
 PREFIX = settings.api_version_prefix
 
@@ -75,6 +85,7 @@ app.include_router(mobile_devices.pdas_router, prefix=PREFIX)
 app.include_router(gpus.router, prefix=PREFIX)
 app.include_router(cpus.router, prefix=PREFIX)
 app.include_router(laptops.router, prefix=PREFIX)
+app.include_router(monitors.router, prefix=PREFIX)
 
 
 @app.get("/", include_in_schema=False)
