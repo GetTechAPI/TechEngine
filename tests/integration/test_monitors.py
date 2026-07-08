@@ -11,7 +11,10 @@ def test_list_monitors(client: TestClient) -> None:
     ensure_monitor_fixtures()
     body = client.get("/v1/monitors").json()
     assert body["count"] >= 1
-    slugs = {r["slug"] for r in body["results"]}
+    # Filter by the fixture's unique base model so it is not buried under real
+    # monitor data in pagination.
+    filtered = client.get("/v1/monitors?base_model_slug=lg-ultragear-27gp850").json()
+    slugs = {r["slug"] for r in filtered["results"]}
     assert "lg-ultragear-27gp850-test" in slugs
 
 
