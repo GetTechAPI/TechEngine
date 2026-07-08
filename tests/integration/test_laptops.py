@@ -11,7 +11,10 @@ def test_list_laptops(client: TestClient) -> None:
     ensure_laptop_fixtures()
     body = client.get("/v1/laptops").json()
     assert body["count"] >= 1
-    slugs = {r["slug"] for r in body["results"]}
+    # Filter by the fixture's unique base model so it is not buried under real
+    # laptop data in pagination.
+    filtered = client.get("/v1/laptops?base_model_slug=legion-pro-5").json()
+    slugs = {r["slug"] for r in filtered["results"]}
     assert "lenovo-legion-pro-5-test" in slugs
 
 
