@@ -20,7 +20,17 @@ from fastapi.testclient import TestClient
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "dump"
 
 # Collections that expose list + detail endpoints.
-COLLECTIONS = ["brands", "socs", "smartphones", "tablets", "watches", "pdas", "gpus", "cpus"]
+COLLECTIONS = [
+    "brands",
+    "socs",
+    "smartphones",
+    "tablets",
+    "watches",
+    "pdas",
+    "gpus",
+    "cpus",
+    "laptops",
+]
 # Collections with a /score sub-resource (§8) and a `scored` manifest count.
 SCORED = {"smartphones", "cpus", "gpus", "socs"}
 PAGE_LIMIT = 100  # API max page size (§7.3)

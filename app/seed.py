@@ -27,6 +27,7 @@ from app.database import create_db_and_tables, engine
 from app.models.brand import Brand
 from app.models.cpu import CPU
 from app.models.gpu import DiscreteGPU
+from app.models.laptop import Laptop
 from app.models.mobile_device import PDA, Tablet, Watch
 from app.models.smartphone import Smartphone
 from app.models.soc import SoC
@@ -63,6 +64,7 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
         "pdas": 0,
         "gpus": 0,
         "cpus": 0,
+        "laptops": 0,
     }
 
     # --- Brands ---
@@ -172,6 +174,35 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
             )
         session.add(CPU(manufacturer_id=manufacturer_id, **record))
         counts["cpus"] += 1
+    session.commit()
+
+    # --- Laptops (reference brand [required], cpu + gpu [optional]) ---
+    cpu_id_by_slug = {c.slug: c.id for c in session.exec(select(CPU)).all()}
+    gpu_id_by_slug = {g.slug: g.id for g in session.exec(select(DiscreteGPU)).all()}
+    laptop_slugs = _existing_slugs(session, Laptop)
+    for record in _load_dir(data_dir / "laptop"):
+        if record["slug"] in laptop_slugs:
+            continue
+        brand_slug = record.pop("brand")
+        cpu_slug = record.pop("cpu", None)
+        gpu_slug = record.pop("gpu", None)
+        brand_id = brand_id_by_slug.get(brand_slug)
+        if brand_id is None:
+            raise ValueError(
+                f"Laptop '{record['slug']}' references unknown brand '{brand_slug}'"
+            )
+        cpu_id = cpu_id_by_slug.get(cpu_slug) if cpu_slug else None
+        gpu_id = gpu_id_by_slug.get(gpu_slug) if gpu_slug else None
+        if cpu_slug and cpu_id is None:
+            raise ValueError(
+                f"Laptop '{record['slug']}' references unknown CPU '{cpu_slug}'"
+            )
+        if gpu_slug and gpu_id is None:
+            raise ValueError(
+                f"Laptop '{record['slug']}' references unknown GPU '{gpu_slug}'"
+            )
+        session.add(Laptop(brand_id=brand_id, cpu_id=cpu_id, gpu_id=gpu_id, **record))
+        counts["laptops"] += 1
     session.commit()
 
     return counts
