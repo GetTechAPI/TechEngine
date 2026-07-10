@@ -7,6 +7,7 @@ from app.schemas.laptop import LaptopRead
 from app.schemas.monitor import MonitorRead
 from app.schemas.smartphone import ScoreRead, SmartphoneRead
 from app.schemas.soc import SoCManufacturer, SoCRead, SoCSummary
+from app.schemas.software import SoftwareRead
 
 __all__ = [
     "Page",
@@ -23,4 +24,5 @@ __all__ = [
     "LaptopRead",
     "MonitorRead",
     "GameRead",
+    "SoftwareRead",
 ]

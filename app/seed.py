@@ -33,6 +33,7 @@ from app.models.mobile_device import PDA, Tablet, Watch
 from app.models.monitor import Monitor
 from app.models.smartphone import Smartphone
 from app.models.soc import SoC
+from app.models.software import Software
 
 DATA_DIR = get_data_root()
 
@@ -69,6 +70,7 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
         "laptops": 0,
         "monitors": 0,
         "games": 0,
+        "software": 0,
     }
 
     # --- Brands ---
@@ -231,6 +233,15 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
             continue
         session.add(Game(**record))
         counts["games"] += 1
+    session.commit()
+
+    # --- Software (standalone; no brand FK) ---
+    software_slugs = _existing_slugs(session, Software)
+    for record in _load_dir(data_dir / "software"):
+        if record["slug"] in software_slugs:
+            continue
+        session.add(Software(**record))
+        counts["software"] += 1
     session.commit()
 
     return counts
