@@ -12,6 +12,7 @@ from app.models.mobile_device import PDA, Tablet, Watch
 from app.models.monitor import Monitor
 from app.models.smartphone import Smartphone
 from app.models.soc import SoC
+from app.models.software import Software
 
 __all__ = [
     "Brand",
@@ -25,4 +26,5 @@ __all__ = [
     "Laptop",
     "Monitor",
     "Game",
+    "Software",
 ]

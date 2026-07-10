@@ -12,6 +12,7 @@ from app.models.mobile_device import MobileDeviceFields
 from app.models.monitor import Monitor
 from app.models.smartphone import Smartphone
 from app.models.soc import SoC
+from app.models.software import Software
 from app.schemas.brand import BrandRead, BrandSummary
 from app.schemas.common import HybridRead, ManufacturerRef, ResourceRef
 from app.schemas.cpu import CPURead, CPUScoreRead
@@ -22,6 +23,7 @@ from app.schemas.mobile_device import MobileDeviceRead
 from app.schemas.monitor import MonitorRead
 from app.schemas.smartphone import ScoreRead, SmartphoneRead
 from app.schemas.soc import SoCManufacturer, SoCRead, SoCScoreRead, SoCSummary
+from app.schemas.software import SoftwareRead
 from app.services.scoring import CPUScore, GPUScore, Hybrid, PhoneScore, SoCScore
 
 PREFIX = settings.api_version_prefix
@@ -404,4 +406,25 @@ def game_read(game: Game) -> GameRead:
         created_at=game.created_at,
         updated_at=game.updated_at,
         url=url_for("games", game.slug),
+    )
+
+
+def software_read(software: Software) -> SoftwareRead:
+    assert software.id is not None
+    return SoftwareRead(
+        id=software.id,
+        slug=software.slug,
+        name=software.name,
+        release_date=software.release_date,
+        developers=software.developers,
+        publishers=software.publishers,
+        operating_systems=software.operating_systems,
+        programming_languages=software.programming_languages,
+        licenses=software.licenses,
+        genres=software.genres,
+        verified=software.verified,
+        source_urls=software.source_urls,
+        created_at=software.created_at,
+        updated_at=software.updated_at,
+        url=url_for("software", software.slug),
     )
