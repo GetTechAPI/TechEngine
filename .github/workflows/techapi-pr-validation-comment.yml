@@ -63,6 +63,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+          # Avoid the default whole-workspace manifest search after the large
+          # TechAPI PR and main worktrees have been checked out.
+          cache-dependency-path: pyproject.toml
 
       - name: Detect TechAPI homepage changes
         id: site_changes
