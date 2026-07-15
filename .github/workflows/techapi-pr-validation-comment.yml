@@ -59,13 +59,9 @@ jobs:
           ref: main
           path: TechAPI-main
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-          cache: pip
-          # Avoid the default whole-workspace manifest search after the large
-          # TechAPI PR and main worktrees have been checked out.
-          cache-dependency-path: pyproject.toml
 
       - name: Detect TechAPI homepage changes
         id: site_changes
