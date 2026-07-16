@@ -63,6 +63,19 @@ jobs:
           mkdir -p _site
           cp -r site/dist/. _site/
           cp -r dump/. _site/
+          # Games remain available as versioned data in the TechAPI repo, but
+          # publishing ~1M per-record files exceeds the fixed GitHub Pages
+          # deployment window (the deploy step times out at "syncing_files").
+          # Exclude them from the published artifact to keep deploys reliable,
+          # mirroring the TechAPI homepage workflow.
+          rm -rf _site/v1/games
+          node <<'NODE'
+          const fs = require("fs");
+          const path = "_site/v1/index.json";
+          const manifest = JSON.parse(fs.readFileSync(path, "utf8"));
+          delete manifest.collections?.games;
+          fs.writeFileSync(path, JSON.stringify(manifest, null, 2) + "\n");
+          NODE
           touch _site/.nojekyll
 
       - uses: actions/upload-pages-artifact@v3
