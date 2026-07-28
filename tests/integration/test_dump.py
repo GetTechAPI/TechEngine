@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
-from app.dump import generate
+from app.dump import COLLECTIONS, generate, resolve_collections
 from tests.integration.mobile_device_fixtures import ensure_mobile_device_fixtures
 
 
@@ -47,3 +48,19 @@ def test_dump_writes_scores_and_scored_count(client: TestClient, tmp_path: Path)
     cpus = manifest["collections"]["cpus"]
     assert isinstance(cpus["scored"], int)
     assert 0 <= cpus["scored"] <= cpus["count"]
+
+
+def test_resolve_collections_defaults_to_everything() -> None:
+    assert resolve_collections() == COLLECTIONS
+    assert resolve_collections([]) == COLLECTIONS
+
+
+def test_resolve_collections_drops_excluded_and_keeps_order() -> None:
+    resolved = resolve_collections(["games"])
+    assert "games" not in resolved
+    assert resolved == [c for c in COLLECTIONS if c != "games"]
+
+
+def test_resolve_collections_rejects_unknown_names() -> None:
+    with pytest.raises(ValueError, match="unknown collection"):
+        resolve_collections(["gmaes"])

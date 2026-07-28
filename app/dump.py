@@ -39,6 +39,22 @@ SCORED = {"smartphones", "cpus", "gpus", "socs"}
 PAGE_LIMIT = 100  # API max page size (§7.3)
 
 
+def resolve_collections(exclude: list[str] | None = None) -> list[str]:
+    """Return the collections to dump, minus ``exclude``.
+
+    Unknown names raise instead of being ignored, so a typo in a workflow fails
+    loudly rather than silently dumping everything.
+    """
+    if not exclude:
+        return list(COLLECTIONS)
+    unknown = sorted(set(exclude) - set(COLLECTIONS))
+    if unknown:
+        raise ValueError(
+            f"unknown collection(s) {unknown}; valid names: {', '.join(COLLECTIONS)}"
+        )
+    return [resource for resource in COLLECTIONS if resource not in set(exclude)]
+
+
 def _write_json(path: Path, data: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -98,23 +114,39 @@ def generate(
     return counts
 
 
-def run(output_dir: Path = OUTPUT_DIR) -> None:
+def run(output_dir: Path = OUTPUT_DIR, exclude: list[str] | None = None) -> None:
     from sqlmodel import Session
 
     from app.database import create_db_and_tables, engine
     from app.main import app
     from app.seed import seed
 
+    collections = resolve_collections(exclude)
+
     create_db_and_tables()
     with Session(engine) as session:
         seed(session)
     with TestClient(app) as client:
-        counts = generate(client, output_dir)
+        counts = generate(client, output_dir, collections)
     total = sum(counts.values())
-    print(f"Dumped {total} records to {output_dir}: {counts}")
+    skipped = sorted(set(COLLECTIONS) - set(collections))
+    suffix = f" (skipped: {', '.join(skipped)})" if skipped else ""
+    print(f"Dumped {total} records to {output_dir}: {counts}{suffix}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate the TechAPI static JSON dump (§4.2)")
     parser.add_argument("--output", type=Path, default=OUTPUT_DIR, help="output directory")
-    run(parser.parse_args().output)
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="COLLECTION",
+        help=(
+            "collection to skip, repeatable (e.g. --exclude games). Useful when a "
+            "consumer does not publish a large collection: skipping it avoids "
+            "writing hundreds of thousands of files that are discarded anyway."
+        ),
+    )
+    args = parser.parse_args()
+    run(args.output, args.exclude)
