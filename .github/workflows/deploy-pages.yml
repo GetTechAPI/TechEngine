@@ -44,7 +44,12 @@ jobs:
       - name: Generate static JSON dump + openapi.json
         env:
           TECHAPI_DATA_DIR: ${{ github.workspace }}/TechAPI/data
-        run: python -m app.dump --output dump
+        # Games are not published here: ~962k per-record files exceed the fixed
+        # GitHub Pages deployment window (the deploy step times out at
+        # "syncing_files"). Skipping them at generation time also keeps this
+        # step from writing files that would only be deleted before upload.
+        # They remain available as versioned data in the TechAPI repo.
+        run: python -m app.dump --output dump --exclude games
 
       - uses: actions/setup-node@v4
         with:
@@ -63,19 +68,6 @@ jobs:
           mkdir -p _site
           cp -r site/dist/. _site/
           cp -r dump/. _site/
-          # Games remain available as versioned data in the TechAPI repo, but
-          # publishing ~1M per-record files exceeds the fixed GitHub Pages
-          # deployment window (the deploy step times out at "syncing_files").
-          # Exclude them from the published artifact to keep deploys reliable,
-          # mirroring the TechAPI homepage workflow.
-          rm -rf _site/v1/games
-          node <<'NODE'
-          const fs = require("fs");
-          const path = "_site/v1/index.json";
-          const manifest = JSON.parse(fs.readFileSync(path, "utf8"));
-          delete manifest.collections?.games;
-          fs.writeFileSync(path, JSON.stringify(manifest, null, 2) + "\n");
-          NODE
           touch _site/.nojekyll
 
       - uses: actions/upload-pages-artifact@v3
