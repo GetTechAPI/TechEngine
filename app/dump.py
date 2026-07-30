@@ -33,6 +33,7 @@ COLLECTIONS = [
     "monitors",
     "games",
     "software",
+    "websites",
 ]
 # Collections with a /score sub-resource (§8) and a `scored` manifest count.
 SCORED = {"smartphones", "cpus", "gpus", "socs"}
