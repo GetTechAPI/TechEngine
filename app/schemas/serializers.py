@@ -13,6 +13,7 @@ from app.models.monitor import Monitor
 from app.models.smartphone import Smartphone
 from app.models.soc import SoC
 from app.models.software import Software
+from app.models.website import Website
 from app.schemas.brand import BrandRead, BrandSummary
 from app.schemas.common import HybridRead, ManufacturerRef, ResourceRef
 from app.schemas.cpu import CPURead, CPUScoreRead
@@ -24,6 +25,7 @@ from app.schemas.monitor import MonitorRead
 from app.schemas.smartphone import ScoreRead, SmartphoneRead
 from app.schemas.soc import SoCManufacturer, SoCRead, SoCScoreRead, SoCSummary
 from app.schemas.software import SoftwareRead
+from app.schemas.website import WebsiteRead
 from app.services.scoring import CPUScore, GPUScore, Hybrid, PhoneScore, SoCScore
 
 PREFIX = settings.api_version_prefix
@@ -427,4 +429,22 @@ def software_read(software: Software) -> SoftwareRead:
         created_at=software.created_at,
         updated_at=software.updated_at,
         url=url_for("software", software.slug),
+    )
+
+
+def website_read(website: Website) -> WebsiteRead:
+    assert website.id is not None
+    return WebsiteRead(
+        id=website.id,
+        slug=website.slug,
+        name=website.name,
+        homepage_url=website.homepage_url,
+        launch_date=website.launch_date,
+        owners=website.owners,
+        languages=website.languages,
+        verified=website.verified,
+        source_urls=website.source_urls,
+        created_at=website.created_at,
+        updated_at=website.updated_at,
+        url=url_for("websites", website.slug),
     )

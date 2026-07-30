@@ -34,6 +34,7 @@ from app.models.monitor import Monitor
 from app.models.smartphone import Smartphone
 from app.models.soc import SoC
 from app.models.software import Software
+from app.models.website import Website
 
 DATA_DIR = get_data_root()
 
@@ -71,6 +72,7 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
         "monitors": 0,
         "games": 0,
         "software": 0,
+        "websites": 0,
     }
 
     # --- Brands ---
@@ -242,6 +244,15 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
             continue
         session.add(Software(**record))
         counts["software"] += 1
+    session.commit()
+
+    # --- Websites (standalone; no brand FK) ---
+    website_slugs = _existing_slugs(session, Website)
+    for record in _load_dir(data_dir / "website"):
+        if record["slug"] in website_slugs:
+            continue
+        session.add(Website(**record))
+        counts["websites"] += 1
     session.commit()
 
     return counts

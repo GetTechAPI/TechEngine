@@ -26,6 +26,7 @@ from app.routers import (
     smartphones,
     socs,
     software,
+    websites,
 )
 
 PREFIX = settings.api_version_prefix
@@ -90,6 +91,7 @@ app.include_router(laptops.router, prefix=PREFIX)
 app.include_router(monitors.router, prefix=PREFIX)
 app.include_router(games.router, prefix=PREFIX)
 app.include_router(software.router, prefix=PREFIX)
+app.include_router(websites.router, prefix=PREFIX)
 
 
 @app.get("/", include_in_schema=False)
