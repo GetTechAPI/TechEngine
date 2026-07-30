@@ -46,8 +46,12 @@ def _load_dir(subdir: Path) -> list[dict[str, Any]]:
     for path in sorted(subdir.rglob("*.json")):  # recurse into brand subfolders
         record = json.loads(path.read_text(encoding="utf-8"))
         # SQLModel table models skip validation, so coerce ISO date strings here.
-        if isinstance(record.get("release_date"), str):
-            record["release_date"] = date.fromisoformat(record["release_date"])
+        # Keyed on the *_date suffix rather than one field name: a category whose
+        # date column is not called release_date (website.launch_date) would
+        # otherwise reach SQLite as a str and fail the insert.
+        for key, value in list(record.items()):
+            if key.endswith("_date") and isinstance(value, str):
+                record[key] = date.fromisoformat(value)
         items.append(record)
     return items
 
