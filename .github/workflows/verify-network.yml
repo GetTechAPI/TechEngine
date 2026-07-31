@@ -45,6 +45,10 @@ jobs:
         with:
           repository: GetTechAPI/TechAPI
           path: TechAPI
+          # TechAPI follows git-flow: promotions are integration work, so branch
+          # from develop and open the PR there. Cutting from main would put the
+          # bot branch behind whatever is already integrated.
+          ref: develop
           fetch-depth: 0
           token: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN || secrets.GITHUB_TOKEN }}
 
@@ -121,6 +125,6 @@ jobs:
           Auto-promotions from the verification layer (green+live-source or crossref-confirm).
           Each flip is verified:false->true only; see data/_verify/ledger.jsonl. Refs #1"
           git push origin "$branch"
-          gh pr create --repo GetTechAPI/TechAPI --base main --head "$branch" \
+          gh pr create --repo GetTechAPI/TechAPI --base develop --head "$branch" \
             --title "data(verify): verified promotions ($(date -u +%Y-%m-%d))" \
             --body "Automated verified promotions from \`app.verify promote\` (run in TechEngine). Each change flips only the \`verified\` flag; structural validator passed and diff scope guarded. Review before merge. Refs #1"
