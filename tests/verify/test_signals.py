@@ -88,14 +88,16 @@ def test_placeholder_soc_date_gets_year_slack():
     and its year runs up to ~2 years late, so a small gap is not evidence."""
     soc_release = {"chip-x": "2022-01-01"}
     rec = {"soc": "chip-x", "release_date": "2020-09-01"}
-    assert _named(signals.mobile_signals(rec, NOW, soc_release), "soc_not_after_device").result == "pass"
+    s = _named(signals.mobile_signals(rec, NOW, soc_release), "soc_not_after_device")
+    assert s.result == "pass"
 
 
 def test_real_soc_date_is_compared_exactly():
     """A day-precise SoC date is a measurement, so it keeps the strict check."""
     soc_release = {"chip-x": "2022-11-16"}
     rec = {"soc": "chip-x", "release_date": "2021-09-01"}
-    assert _named(signals.mobile_signals(rec, NOW, soc_release), "soc_not_after_device").result == "fail"
+    s = _named(signals.mobile_signals(rec, NOW, soc_release), "soc_not_after_device")
+    assert s.result == "fail"
 
 
 def test_soc_process_nm_era():
