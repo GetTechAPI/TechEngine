@@ -409,9 +409,18 @@ def cmd_check_urls(args: argparse.Namespace) -> int:
         max_workers=args.workers,
         min_interval=args.min_interval,
     )
+    # A rate-limited answer is not a verdict — leave it out so the next run asks
+    # again instead of parking the URL as dead for the whole TTL.
+    throttled = sum(1 for r in results if r.transient)
     for r in results:
-        cache[r.url] = http_check.result_to_entry(r, ts)
+        if not r.transient:
+            cache[r.url] = http_check.result_to_entry(r, ts)
     http_check.save_cache(cache)
+    if throttled:
+        print(
+            f"note: {throttled} URL(s) rate-limited after retries; "
+            "not cached, will retry next run"
+        )
     print(f"cache: wrote {len(cache)} URL result(s) to data/_verify/state/url_cache.jsonl")
     _summarize_cache(cache, targets)
     return 0

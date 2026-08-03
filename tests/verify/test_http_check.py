@@ -103,3 +103,67 @@ def test_cache_roundtrip():
         assert loaded["https://x.com/y"]["alive"] is True
     finally:
         path.unlink(missing_ok=True)
+
+
+class _Http429(Exception):
+    """urllib-shaped 429, optionally carrying a Retry-After header."""
+
+    def __init__(self, url, retry_after=None):
+        super().__init__("Too Many Requests")
+        self.code = 429
+        self.url = url
+        self.headers = {"Retry-After": retry_after} if retry_after else {}
+
+
+class FlakyOpener(FakeOpener):
+    """Rate-limits the first ``fail_times`` calls, then answers normally."""
+
+    def __init__(self, table, fail_times):
+        super().__init__(table)
+        self.remaining = fail_times
+
+    def open(self, url, method):
+        self.calls.append((url, method))
+        if self.remaining > 0:
+            self.remaining -= 1
+            raise _Http429(url, retry_after="0")
+        return self.table[url]
+
+
+def test_rate_limit_is_retried_then_succeeds(monkeypatch):
+    monkeypatch.setattr(http_check.time, "sleep", lambda _s: None)
+    url = "https://www.gsmarena.com/x-1.php"
+    op = FlakyOpener({url: (200, url)}, fail_times=2)
+    [res] = http_check.check_urls([url], opener_factory=lambda: op, min_interval=0)
+    assert res.alive and res.status == 200 and not res.transient
+
+
+def test_persistent_rate_limit_is_transient_not_dead(monkeypatch):
+    monkeypatch.setattr(http_check.time, "sleep", lambda _s: None)
+    url = "https://www.gsmarena.com/y-2.php"
+    op = FlakyOpener({url: (200, url)}, fail_times=99)
+    [res] = http_check.check_urls([url], opener_factory=lambda: op, min_interval=0)
+    assert res.status == 429 and res.transient  # caller must not cache this as a verdict
+
+
+def test_rate_limit_slows_the_host_down(monkeypatch):
+    monkeypatch.setattr(http_check.time, "sleep", lambda _s: None)
+    url = "https://www.gsmarena.com/z-3.php"
+    limiter = http_check.HostRateLimiter(min_interval=1.0)
+    op = FlakyOpener({url: (200, url)}, fail_times=1)
+    http_check.check_urls([url], opener_factory=lambda: op, limiter=limiter)
+    assert limiter.interval_for("gsmarena.com") > 1.0
+
+
+def test_cached_rate_limit_entries_are_not_cache_hits(tmp_path):
+    path = tmp_path / "url_cache.jsonl"
+    path.write_text(
+        '{"url": "https://www.gsmarena.com/a-1.php", "status": 429, "alive": false,'
+        ' "reason": "http-429", "checked_at": "2026-08-03T00:00:00Z"}\n'
+        '{"url": "https://en.wikipedia.org/wiki/X", "status": 200, "alive": true,'
+        ' "reason": "http-200", "checked_at": "2026-08-03T00:00:00Z"}\n',
+        encoding="utf-8",
+    )
+    cache = http_check.load_cache(path)
+    assert "https://en.wikipedia.org/wiki/X" in cache
+    assert "https://www.gsmarena.com/a-1.php" not in cache  # a 429 is not an answer
