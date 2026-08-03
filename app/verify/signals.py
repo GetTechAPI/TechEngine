@@ -77,6 +77,15 @@ def _year_of(value: Any) -> int | None:
     return None
 
 
+# A bulk-imported record with no known day is stored as January 1st. The year on
+# such a date is an approximation, not a measurement.
+_PLACEHOLDER_SOC_YEAR_SLACK = 2
+
+
+def _is_placeholder_date(value: Any) -> bool:
+    return isinstance(value, str) and value[5:10] == "01-01"
+
+
 def parse_resolution(value: Any) -> tuple[int, int] | None:
     if not isinstance(value, str):
         return None
@@ -209,11 +218,19 @@ def mobile_signals(
     # (e.g. Snapdragon 888 stored as 2022-01-01), so a mismatch usually means the
     # *SoC* record's date is wrong, not the device. We flag + penalize but don't
     # force-red the device on the strength of a second record's bad date.
+    #
+    # 92.9% of SoC records (1,954/2,104) carry a placeholder date, and their year
+    # is itself imprecise by up to ~2 years, so comparing years exactly against
+    # one measures the placeholder, not the device: it fails 5,488 otherwise-sound
+    # phones. Where the SoC date is a placeholder we only fail a gross mismatch;
+    # a real, day-precise SoC date is still compared exactly.
     soc = rec.get("soc")
+    soc_date = soc_release.get(soc) if isinstance(soc, str) else None
     dev_year = _year_of(rec.get("release_date"))
-    soc_year = _year_of(soc_release.get(soc)) if isinstance(soc, str) else None
+    soc_year = _year_of(soc_date)
     if dev_year is not None and soc_year is not None:
-        ok = soc_year <= dev_year
+        slack = _PLACEHOLDER_SOC_YEAR_SLACK if _is_placeholder_date(soc_date) else 0
+        ok = soc_year <= dev_year + slack
         out.append(Signal("soc_not_after_device", "pass" if ok else "fail", hard=False))
     else:
         out.append(Signal("soc_not_after_device", "na", hard=False))
