@@ -41,6 +41,10 @@ RETRY_BACKOFF_S = (2.0, 6.0)
 MAX_RETRY_AFTER_S = 15.0
 # How much to slow a host down for the rest of the run once it has pushed back.
 RATE_LIMIT_PENALTY = 4.0
+# The penalty is multiplicative, so without a ceiling a host that refuses often
+# walks the interval up without bound (1s -> 4 -> 16 -> 64 -> ...) and a run over
+# a few thousand URLs on that host turns into hours of sleeping.
+MAX_HOST_INTERVAL_S = 30.0
 
 
 class CheckResult(NamedTuple):
@@ -184,7 +188,7 @@ class HostRateLimiter:
         pace and every subsequent URL on it comes back 429.
         """
         with self._lock:
-            self._interval[host] = self.interval_for(host) * factor
+            self._interval[host] = min(self.interval_for(host) * factor, MAX_HOST_INTERVAL_S)
 
     def wait(self, host: str) -> None:
         with self._lock:
