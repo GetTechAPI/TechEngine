@@ -167,3 +167,10 @@ def test_cached_rate_limit_entries_are_not_cache_hits(tmp_path):
     cache = http_check.load_cache(path)
     assert "https://en.wikipedia.org/wiki/X" in cache
     assert "https://www.gsmarena.com/a-1.php" not in cache  # a 429 is not an answer
+
+
+def test_host_backoff_is_capped():
+    limiter = http_check.HostRateLimiter(min_interval=1.0)
+    for _ in range(20):
+        limiter.back_off("gsmarena.com")
+    assert limiter.interval_for("gsmarena.com") == http_check.MAX_HOST_INTERVAL_S
