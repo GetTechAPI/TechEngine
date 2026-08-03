@@ -32,12 +32,27 @@ USER_AGENT = (
 )
 
 
+# "Come back later" is not "this link is dead". A host that rate-limits us says
+# nothing about whether the page exists, so these answers must never be cached as
+# a verdict — otherwise one impatient run marks a whole host dead for a TTL.
+TRANSIENT_STATUSES = frozenset({429, 503})
+RETRY_ATTEMPTS = 3
+RETRY_BACKOFF_S = (2.0, 6.0)
+MAX_RETRY_AFTER_S = 15.0
+# How much to slow a host down for the rest of the run once it has pushed back.
+RATE_LIMIT_PENALTY = 4.0
+
+
 class CheckResult(NamedTuple):
     url: str
     status: int | None
     final_url: str | None
     alive: bool
     reason: str
+
+    @property
+    def transient(self) -> bool:
+        return self.status in TRANSIENT_STATUSES
 
 
 # --- opener abstraction (injectable for tests) -----------------------------------
@@ -93,10 +108,21 @@ def classify(original_url: str, status: int | None, final_url: str | None) -> tu
     return True, f"http-{status}"
 
 
-def check_one(url: str, opener: Any) -> CheckResult:
-    """HEAD first; fall back to GET when HEAD is rejected (405/403) or errors."""
+def _retry_after_seconds(exc: Exception) -> float | None:
+    """Seconds requested by a ``Retry-After`` header, clamped to something sane."""
+    headers = getattr(exc, "headers", None)
+    raw = headers.get("Retry-After") if headers is not None else None
+    try:
+        return min(float(raw), MAX_RETRY_AFTER_S) if raw is not None else None
+    except (TypeError, ValueError):
+        return None  # HTTP-date form; fall back to our own backoff
+
+
+def _attempt(url: str, opener: Any) -> tuple[int | None, str | None, float | None]:
+    """One HEAD-then-GET pass. Returns (status, final_url, retry_after)."""
     status: int | None = None
     final: str | None = None
+    retry_after: float | None = None
     for method in ("HEAD", "GET"):
         try:
             status, final = opener.open(url, method)
@@ -107,10 +133,31 @@ def check_one(url: str, opener: Any) -> CheckResult:
             code = getattr(exc, "code", None)
             if isinstance(code, int):
                 status, final = code, getattr(exc, "url", None) or url
+                retry_after = _retry_after_seconds(exc)
                 if method == "HEAD" and code in (400, 403, 405, 501):
                     continue
                 break
             status, final = None, None
+    return status, final, retry_after
+
+
+def check_one(
+    url: str, opener: Any, *, on_rate_limit: Callable[[str], None] | None = None
+) -> CheckResult:
+    """HEAD first; fall back to GET when HEAD is rejected (405/403) or errors.
+
+    A rate-limit answer (429/503) is retried with backoff — the host is telling us
+    to wait, not that the page is gone.
+    """
+    status = final = retry_after = None
+    for attempt in range(RETRY_ATTEMPTS):
+        status, final, retry_after = _attempt(url, opener)
+        if status not in TRANSIENT_STATUSES:
+            break
+        if on_rate_limit is not None:
+            on_rate_limit(host_of(url))
+        if attempt < RETRY_ATTEMPTS - 1:
+            time.sleep(retry_after if retry_after is not None else RETRY_BACKOFF_S[attempt])
     alive, reason = classify(url, status, final)
     return CheckResult(url, status, final, alive, reason)
 
@@ -124,13 +171,26 @@ class HostRateLimiter:
     def __init__(self, min_interval: float = 1.0) -> None:
         self.min_interval = min_interval
         self._last: dict[str, float] = {}
+        self._interval: dict[str, float] = {}
         self._lock = threading.Lock()
+
+    def interval_for(self, host: str) -> float:
+        return self._interval.get(host, self.min_interval)
+
+    def back_off(self, host: str, factor: float = RATE_LIMIT_PENALTY) -> None:
+        """A host pushed back — slow it down for the rest of the run.
+
+        Without this, one rate-limited host keeps being hammered at the global
+        pace and every subsequent URL on it comes back 429.
+        """
+        with self._lock:
+            self._interval[host] = self.interval_for(host) * factor
 
     def wait(self, host: str) -> None:
         with self._lock:
             now = time.time()
             prev = self._last.get(host, 0.0)
-            sleep_for = max(0.0, self.min_interval - (now - prev))
+            sleep_for = max(0.0, self.interval_for(host) - (now - prev))
             self._last[host] = now + sleep_for
         if sleep_for > 0:
             time.sleep(sleep_for)
@@ -172,7 +232,7 @@ def check_urls(
 
     def _task(url: str) -> CheckResult:
         limiter.wait(host_of(url))
-        return check_one(url, _get_opener())
+        return check_one(url, _get_opener(), on_rate_limit=limiter.back_off)
 
     if not urls:
         return []
@@ -184,7 +244,18 @@ def check_urls(
 
 
 def load_cache(path: Path = URL_CACHE_PATH) -> dict[str, dict[str, Any]]:
-    return {e["url"]: e for e in ledger.iter_entries(path) if isinstance(e.get("url"), str)}
+    """Load the cache, dropping rate-limit answers written by older runs.
+
+    A 429/503 is not a verdict, so an entry holding one is not a cache hit —
+    it is a URL we still have to check. Filtering on load heals a cache that a
+    previous run poisoned (3,998 GSMArena pages were parked as dead this way,
+    all of which answer 200 when asked at a civil pace).
+    """
+    return {
+        e["url"]: e
+        for e in ledger.iter_entries(path)
+        if isinstance(e.get("url"), str) and e.get("status") not in TRANSIENT_STATUSES
+    }
 
 
 def _parse_ts(ts: str) -> datetime | None:
