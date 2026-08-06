@@ -54,6 +54,22 @@ class Record:
     def verified(self) -> bool:
         return self.data.get("verified") is True
 
+    @property
+    def model_key(self) -> tuple[str, ...]:
+        """Identifies the product, not the SKU.
+
+        78% of the smartphone set is regional/RAM variants of the same phone —
+        one model can carry dozens of records ("…k61…latam-q630ha…costa-rica-
+        4gb-128gb"). Counting per record makes the dataset look far less
+        verified than the products in it are, because no source documents an
+        individual SKU. Variants collapse onto their base model; a standalone
+        record is its own model.
+        """
+        base = self.data.get("base_model_slug")
+        if isinstance(base, str) and base:
+            return (self.category, str(self.data.get("brand") or ""), base)
+        return (self.category, self.slug or self.path)
+
     def content_hash(self) -> str:
         """Stable hash of the record body — invalidates stale ledger decisions on edit."""
         blob = json.dumps(self.data, sort_keys=True, ensure_ascii=False)

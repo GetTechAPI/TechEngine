@@ -63,3 +63,26 @@ def test_future_release_red():
         "source_urls": ["https://en.wikipedia.org/wiki/x"],
     }
     assert _score("cpu", rec).band == "red"
+
+
+def test_model_key_collapses_variants_of_one_phone():
+    """Regional/RAM SKUs of one phone are one product, not many."""
+    from app.verify.common import Record
+
+    def variant(slug, base):
+        return Record("smartphone", f"smartphone/lg/2020/{base}/{slug}.json",
+                      {"slug": slug, "brand": "lg", "base_model_slug": base})
+
+    a = variant("lg-k61-costa-rica-4gb-128gb", "k61-2020")
+    b = variant("lg-k61-colombia-3gb-64gb", "k61-2020")
+    other = variant("lg-k51-usa-3gb-32gb", "k51-2020")
+    assert a.model_key == b.model_key
+    assert a.model_key != other.model_key
+
+
+def test_model_key_of_a_standalone_record_is_itself():
+    from app.verify.common import Record
+
+    rec = Record("cpu", "cpu/intel/2023/desktop/core-i9-14900k.json",
+                 {"slug": "core-i9-14900k"})
+    assert rec.model_key == ("cpu", "core-i9-14900k")
