@@ -254,14 +254,24 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     by_category: dict[str, dict[str, Any]] = {}
     tot = ver = g = y = r = 0
+    all_models: set[tuple[str, ...]] = set()
+    all_verified_models: set[tuple[str, ...]] = set()
     for cat in CATEGORIES:
         ct = cv = cg = cy = cr = 0
+        # A model counts as verified once any of its SKUs is: the variants of one
+        # phone share a provenance, so the source that verifies one describes the
+        # product the others are configurations of.
+        models: set[tuple[str, ...]] = set()
+        verified_models: set[tuple[str, ...]] = set()
         for rec in records[cat]:
             if not rec.slug:
                 continue
             ct += 1
+            key = rec.model_key
+            models.add(key)
             if rec.verified:
                 cv += 1
+                verified_models.add(key)
             band = offline.score_record(rec, now_year, soc_release).band
             cg += band == "green"
             cy += band == "yellow"
@@ -270,6 +280,11 @@ def cmd_status(args: argparse.Namespace) -> int:
             "total": ct,
             "verified": cv,
             "verified_pct": round(100 * cv / ct, 2) if ct else 0.0,
+            "models": len(models),
+            "verified_models": len(verified_models),
+            "verified_models_pct": (
+                round(100 * len(verified_models) / len(models), 2) if models else 0.0
+            ),
             "green": cg,
             "yellow": cy,
             "red": cr,
@@ -281,6 +296,8 @@ def cmd_status(args: argparse.Namespace) -> int:
         g += cg
         y += cy
         r += cr
+        all_models |= models
+        all_verified_models |= verified_models
 
     status = {
         "generated_at": _now_iso(),
@@ -289,6 +306,13 @@ def cmd_status(args: argparse.Namespace) -> int:
             "records": tot,
             "verified": ver,
             "verified_pct": round(100 * ver / tot, 2) if tot else 0.0,
+            # Same verifications counted per product rather than per SKU.
+            "models": len(all_models),
+            "verified_models": len(all_verified_models),
+            "verified_models_pct": (
+                round(100 * len(all_verified_models) / len(all_models), 2)
+                if all_models else 0.0
+            ),
             "green": g,
             "yellow": y,
             "red": r,
