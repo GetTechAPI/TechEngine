@@ -132,18 +132,30 @@ def gpu_signals(rec: dict[str, Any], now_year: int) -> list[Signal]:
         _cmp_ge("boost_ge_base", rec.get("boost_clock_mhz"), rec.get("base_clock_mhz"), hard=True),
         _release_not_future(rec, now_year),
     ]
-    # Vendor core field present: nvidia -> cuda_cores, amd/intel -> stream_processors.
+    # The core count belongs in the vendor's own field: nvidia -> cuda_cores,
+    # amd/intel -> stream_processors. Carrying the OTHER vendor's field is a
+    # contradiction and is flagged. Carrying NEITHER is not: it is an absence,
+    # which `completeness` already scores (both fields are gpu RICH_FIELDS), and
+    # scoring it here too charged the same gap twice under a name that claims the
+    # record disagrees with itself. It also misread pre-unified-shader parts —
+    # an NV1 or a RIVA 128 predates the concept of a CUDA core, so the field is
+    # inapplicable rather than missing. Of 281 records flagged before this
+    # change, 279 were plain gaps and 2 were real vendor mismatches.
     mfr = str(rec.get("manufacturer") or "").lower()
+    cuda, stream = _num(rec.get("cuda_cores")), _num(rec.get("stream_processors"))
     if mfr == "nvidia":
-        has_core = _num(rec.get("cuda_cores")) is not None
+        own, foreign = cuda, stream
     elif mfr in {"amd", "intel"}:
-        has_core = _num(rec.get("stream_processors")) is not None
+        own, foreign = stream, cuda
     else:
-        has_core = (
-            _num(rec.get("cuda_cores")) is not None
-            or _num(rec.get("stream_processors")) is not None
-        )
-    out.append(Signal("vendor_core_field", "pass" if has_core else "fail", hard=False))
+        own, foreign = (cuda if cuda is not None else stream), None
+    if own is not None:
+        result = "pass"
+    elif foreign is not None:
+        result = "fail"  # the count is filed under the wrong vendor's field
+    else:
+        result = "na"
+    out.append(Signal("vendor_core_field", result, hard=False))
     # RT / Tensor cores only plausible on post-2018 (Turing / RDNA2) parts.
     y = _year_of(rec.get("release_date"))
     rt = _num(rec.get("rt_cores"))
