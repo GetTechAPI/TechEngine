@@ -103,3 +103,22 @@ def test_real_soc_date_is_compared_exactly():
 def test_soc_process_nm_era():
     rec = {"process_nm": 5.0, "release_date": "2010-01-01", "gpu_name": "x"}
     assert _named(signals.soc_signals(rec, NOW), "process_nm_era").result == "fail"
+
+
+def test_missing_core_count_is_not_a_contradiction():
+    """An absent core count is a gap `completeness` already scores — and on a
+    pre-unified-shader part the field does not apply at all."""
+    riva = {"manufacturer": "nvidia", "name": "RIVA 128", "release_date": "1997-08-25"}
+    assert _named(signals.gpu_signals(riva, NOW), "vendor_core_field").result == "na"
+
+
+def test_core_count_under_the_wrong_vendor_field_fails():
+    rec = {"manufacturer": "amd", "cuda_cores": 2048, "release_date": "2020-01-01"}
+    assert _named(signals.gpu_signals(rec, NOW), "vendor_core_field").result == "fail"
+    rec = {"manufacturer": "nvidia", "stream_processors": 2048, "release_date": "2020-01-01"}
+    assert _named(signals.gpu_signals(rec, NOW), "vendor_core_field").result == "fail"
+
+
+def test_core_count_in_the_right_field_passes():
+    rec = {"manufacturer": "amd", "stream_processors": 2048, "release_date": "2020-01-01"}
+    assert _named(signals.gpu_signals(rec, NOW), "vendor_core_field").result == "pass"
