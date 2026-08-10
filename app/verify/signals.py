@@ -110,8 +110,15 @@ def cpu_signals(rec: dict[str, Any], now_year: int) -> list[Signal]:
         _cmp_ge("threads_ge_cores", rec.get("threads"), rec.get("cores"), hard=True),
         _cmp_ge("boost_ge_base", rec.get("boost_clock_ghz"), rec.get("base_clock_ghz"), hard=True),
         _cmp_ge("max_tdp_ge_tdp", rec.get("max_tdp_w"), rec.get("tdp_w"), hard=False),
-        _cmp_ge("passmark_multi_ge_single", rec.get("passmark_cpu_mark"),
-                rec.get("passmark_single"), hard=False),
+        # No passmark_cpu_mark vs passmark_single check: PassMark's CPU Mark and
+        # its Single Thread Rating are separately normalised scales, so their
+        # magnitudes are not comparable. The old check read that as a defect —
+        # it failed 51 of 51 single-core parts, and its failures tracked absolute
+        # weakness rather than parallelism (failing median CPU Mark 641 vs 19,657
+        # for passing), with near-ties at the boundary (Core 2 Duo E8600: 1378 vs
+        # 1388). It only ever "held" because modern CPU Marks are large.
+        # Cinebench and Geekbench below DO report both figures on one scale, so
+        # multi >= single is a real expectation there.
         _cmp_ge("cb23_multi_ge_single", rec.get("cinebench_r23_multi"),
                 rec.get("cinebench_r23_single"), hard=False),
         _cmp_ge("gb_multi_ge_single", rec.get("geekbench_multi"),
