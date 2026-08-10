@@ -122,3 +122,17 @@ def test_core_count_under_the_wrong_vendor_field_fails():
 def test_core_count_in_the_right_field_passes():
     rec = {"manufacturer": "amd", "stream_processors": 2048, "release_date": "2020-01-01"}
     assert _named(signals.gpu_signals(rec, NOW), "vendor_core_field").result == "pass"
+
+
+def test_passmark_figures_are_not_compared():
+    """CPU Mark and Single Thread Rating are separately normalised PassMark
+    scales; a single-core part legitimately scores lower on the first."""
+    rec = {"cores": 1, "threads": 1, "passmark_cpu_mark": 195, "passmark_single": 301}
+    names = {s.name for s in signals.cpu_signals(rec, NOW)}
+    assert "passmark_multi_ge_single" not in names
+
+
+def test_cinebench_multi_below_single_still_fails():
+    """One scale, so multi < single there really is a defect."""
+    rec = {"cores": 8, "threads": 16, "cinebench_r23_multi": 900, "cinebench_r23_single": 1500}
+    assert _named(signals.cpu_signals(rec, NOW), "cb23_multi_ge_single").result == "fail"
