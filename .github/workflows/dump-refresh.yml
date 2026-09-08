@@ -5,6 +5,14 @@ name: dump-refresh
 # after an engine-side change that affects serialized output (e.g. a scoring
 # version bump) — weekly-refresh.yml also does this but behind a slow live scrape.
 on:
+  # The dump has to be reconciled with data/ on a schedule of its own.
+  # weekly-refresh also regenerates it, but only after a multi-hour live
+  # scrape, and when that scrape runs long the dump is the step that gets
+  # dropped — which is how the published pages drifted away from the
+  # records for six weeks. Run a day after the Monday jobs so this picks
+  # up whatever they merged.
+  schedule:
+    - cron: "0 3 * * 2"   # Tuesdays 03:00 UTC
   workflow_dispatch:
 
 permissions:
@@ -17,6 +25,9 @@ concurrency:
 jobs:
   dump:
     runs-on: ubuntu-latest
+    # Well under GitHub's 6h ceiling, which reports an over-run as
+    # "cancelled" rather than failed and so hides the breakage.
+    timeout-minutes: 330
     env:
       TECHAPI_WRITE_TOKEN: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN }}
       # seed/validate/dump read the data tree from here.

@@ -73,7 +73,10 @@ jobs:
           run_enrich() {
             comp="$1"; src="$2"
             echo "::group::enrich ${comp}/${src}"
-            if python -m app.ingest.enrich \
+            # Cap each source: the budget below is only consulted between
+            # sources, so without this one slow source overruns it — the last
+            # run spent 260 minutes against a 200-minute budget that way.
+            if timeout "${PER_SOURCE_S}s" python -m app.ingest.enrich \
                  --source "$src" --component "$comp" \
                  --data-root ./techapi/data --sleep "$SLEEP" \
                  --summary "enrich-${comp}-${src}.md"; then
@@ -88,7 +91,8 @@ jobs:
           # broken while validate, the static dump and the refresh PR were being
           # skipped every week. Give collection a budget it cannot exceed and
           # leave the remainder to the rest of the pipeline.
-          BUDGET_S=$(( 200 * 60 ))
+          BUDGET_S=$(( 150 * 60 ))
+          PER_SOURCE_S=$(( 40 * 60 ))
           DEADLINE=$(( $(date +%s) + BUDGET_S ))
           budget_left() {
             if [ "$(date +%s)" -ge "$DEADLINE" ]; then
