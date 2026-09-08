@@ -33,6 +33,9 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    # A job that runs into GitHub's 6h ceiling is reported as *cancelled*,
+    # not failed, so it never surfaces as a broken run. Stop short of it.
+    timeout-minutes: 330
     env:
       SLEEP: ${{ inputs.sleep || '1.0' }}
       TECHAPI_TOKEN: ${{ secrets.TECHAPI_TOKEN }}
@@ -80,11 +83,35 @@ jobs:
             fi
             echo "::endgroup::"
           }
-          for s in passmark cinebench-legacy cinebench-r23 cinebench-2024 \
-                   cinebench-nbc geekbench-nbc spec-cpu2006 topcpu-cpu; do
+          # The scrape grew past GitHub's 6h job ceiling, and an over-running
+          # job is reported as "cancelled" rather than failed — so nothing looked
+          # broken while validate, the static dump and the refresh PR were being
+          # skipped every week. Give collection a budget it cannot exceed and
+          # leave the remainder to the rest of the pipeline.
+          BUDGET_S=$(( 200 * 60 ))
+          DEADLINE=$(( $(date +%s) + BUDGET_S ))
+          budget_left() {
+            if [ "$(date +%s)" -ge "$DEADLINE" ]; then
+              echo "::warning::collection budget spent; remaining sources deferred to the next run"
+              return 1
+            fi
+          }
+          # Rotate where the list starts each week: with a fixed order the tail
+          # is starved forever once the budget begins to bite.
+          rotate() {
+            local -n _a="$1"
+            local n=${#_a[@]} off=$(( 10#$(date -u +%V) % ${#_a[@]} ))
+            printf '%s\n' "${_a[@]:off}" "${_a[@]:0:off}"
+          }
+          CPU_SOURCES=(passmark cinebench-legacy cinebench-r23 cinebench-2024
+                       cinebench-nbc geekbench-nbc spec-cpu2006 topcpu-cpu)
+          GPU_SOURCES=(blender timespy passmark-gpu topcpu-gpu)
+          for s in $(rotate CPU_SOURCES); do
+            budget_left || break
             run_enrich cpu "$s"
           done
-          for s in blender timespy passmark-gpu topcpu-gpu; do
+          for s in $(rotate GPU_SOURCES); do
+            budget_left || break
             run_enrich gpu "$s"
           done
 
