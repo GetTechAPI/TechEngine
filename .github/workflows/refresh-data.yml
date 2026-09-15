@@ -43,11 +43,16 @@ jobs:
           TECHAPI_DATA_DIR: ${{ github.workspace }}/TechAPI/data
         run: python -m app.dump
 
+      # ~1M small files crash upload-artifact ("Maximum call stack size
+      # exceeded"); ship the dump as one archive instead.
+      - name: Pack static dump
+        run: tar -czf techapi-static-dump.tgz dump
+
       - name: Upload static dump artifact
         uses: actions/upload-artifact@v4
         with:
           name: techapi-static-dump
-          path: dump/
+          path: techapi-static-dump.tgz
 
       # To serve a public static API, enable Pages and swap the step above for:
       #   - uses: actions/upload-pages-artifact@v3

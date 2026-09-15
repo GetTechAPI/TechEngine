@@ -85,7 +85,11 @@ jobs:
           if-no-files-found: ignore
 
       - name: Create dump-refresh PR
+        id: cpr
         if: env.TECHAPI_WRITE_TOKEN != ''
+        # A dump PR touches so many pages that GitHub may answer "diff is taking
+        # too long to generate" after the PR exists; the next step decides.
+        continue-on-error: true
         uses: peter-evans/create-pull-request@v6
         with:
           path: ./techapi
@@ -101,3 +105,16 @@ jobs:
           committer: TechEngineBot <289859915+TechEngineBot@users.noreply.github.com>
           author: TechEngineBot <289859915+TechEngineBot@users.noreply.github.com>
           delete-branch: true
+
+      - name: Confirm dump-refresh PR exists
+        if: steps.cpr.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ env.TECHAPI_WRITE_TOKEN }}
+          BRANCH: dump-refresh/${{ steps.meta.outputs.date }}
+        run: |
+          n=$(gh api "repos/GetTechAPI/TechAPI/pulls?head=GetTechAPI:${BRANCH}&state=open" -q '.[0].number')
+          if [ -z "$n" ]; then
+            echo "::error::create-pull-request failed and no open PR exists for ${BRANCH}"
+            exit 1
+          fi
+          echo "::warning::PR #${n} exists; the failure was GitHub's diff timeout on a large PR"
