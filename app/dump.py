@@ -57,8 +57,15 @@ def resolve_collections(exclude: list[str] | None = None) -> list[str]:
 
 
 def _write_json(path: Path, data: object) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+    # Leave identical pages untouched: rewriting ~1M unchanged files resets
+    # their mtimes, and git then rehashes the whole tree when committing.
+    try:
+        if path.read_text(encoding="utf-8") == text:
+            return
+    except FileNotFoundError:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
 
 
 def _fetch_all(client: TestClient, resource: str) -> tuple[int, list[dict[str, Any]]]:
