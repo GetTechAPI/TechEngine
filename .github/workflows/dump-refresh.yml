@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     # Well under GitHub's 6h ceiling, which reports an over-run as
     # "cancelled" rather than failed and so hides the breakage.
-    timeout-minutes: 330
+    timeout-minutes: 355
     env:
       TECHAPI_WRITE_TOKEN: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN }}
       # seed/validate/dump read the data tree from here.
@@ -91,7 +91,7 @@ jobs:
           path: ./techapi
           token: ${{ env.TECHAPI_WRITE_TOKEN }}
           branch: dump-refresh/${{ steps.meta.outputs.date }}
-          base: main
+          base: develop
           add-paths: |
             site/public/v1
             site/public/openapi.json
