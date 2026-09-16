@@ -77,8 +77,9 @@ def _stable_id(table: str, slug: str, taken: set[int]) -> int:
         attempt += 1  # collision: rehash rather than fall back to a counter
 
 
-def _with_id(obj: SQLModel, taken: set[int]) -> SQLModel:
-    obj.id = _stable_id(type(obj).__tablename__, obj.slug, taken)  # type: ignore[attr-defined]
+def _with_id(obj: Any, taken: set[int]) -> Any:
+    """Stamp a slug-derived id. Every data model has ``slug``; none are typed alike."""
+    obj.id = _stable_id(str(type(obj).__tablename__), obj.slug, taken)
     return obj
 
 
