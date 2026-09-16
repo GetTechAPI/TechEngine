@@ -15,6 +15,7 @@ the ``TECHAPI_DATA_DIR`` environment variable.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import date
 from pathlib import Path
@@ -56,6 +57,31 @@ def _load_dir(subdir: Path) -> list[dict[str, Any]]:
     return items
 
 
+# Primary keys are derived from the slug instead of an autoincrement counter.
+# The dump exposes `id`, so with a counter one inserted record renumbered every
+# row after it and the regenerated dump rewrote pages whose data never changed
+# (TechAPI #180: ~1M files, GitHub could not even render the diff).
+_ID_BITS = 48  # < 2**53, so the value survives JSON round-trips intact
+
+
+def _stable_id(table: str, slug: str, taken: set[int]) -> int:
+    """Deterministic id for ``table``/``slug``, avoiding ids already assigned."""
+    attempt = 0
+    while True:
+        key = f"{table}:{slug}" if attempt == 0 else f"{table}:{slug}#{attempt}"
+        digest = hashlib.blake2b(key.encode("utf-8"), digest_size=8).digest()
+        value = int.from_bytes(digest, "big") % (1 << _ID_BITS) or 1
+        if value not in taken:
+            taken.add(value)
+            return value
+        attempt += 1  # collision: rehash rather than fall back to a counter
+
+
+def _with_id(obj: SQLModel, taken: set[int]) -> SQLModel:
+    obj.id = _stable_id(type(obj).__tablename__, obj.slug, taken)  # type: ignore[attr-defined]
+    return obj
+
+
 def _existing_slugs(session: Session, model: type[SQLModel]) -> set[str]:
     rows = session.exec(select(model)).all()
     return {row.slug for row in rows}  # type: ignore[attr-defined]  # all data models have slug
@@ -63,6 +89,8 @@ def _existing_slugs(session: Session, model: type[SQLModel]) -> set[str]:
 
 def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
     """Idempotently insert seed data. Returns counts of newly inserted rows."""
+    # Ids assigned in this run; only used to break hash collisions.
+    taken: set[int] = set()
     counts = {
         "brands": 0,
         "socs": 0,
@@ -87,7 +115,7 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
         # `categories` lives in the JSON for browsing/validation only — the Brand
         # table model does not (yet) carry it, so drop before construction.
         record.pop("categories", None)
-        session.add(Brand(**record))
+        session.add(_with_id(Brand(**record), taken))
         counts["brands"] += 1
     session.commit()
 
@@ -104,7 +132,7 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
             raise ValueError(
                 f"SoC '{record['slug']}' references unknown brand '{manufacturer}'"
             )
-        session.add(SoC(manufacturer_id=manufacturer_id, **record))
+        session.add(_with_id(SoC(manufacturer_id=manufacturer_id, **record), taken))
         counts["socs"] += 1
     session.commit()
 
@@ -127,7 +155,8 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
             raise ValueError(
                 f"Smartphone '{record['slug']}' references unknown SoC '{soc_slug}'"
             )
-        session.add(Smartphone(brand_id=brand_id, soc_id=soc_id, **record))
+        phone = Smartphone(brand_id=brand_id, soc_id=soc_id, **record)
+        session.add(_with_id(phone, taken))
         counts["smartphones"] += 1
     session.commit()
 
@@ -150,7 +179,8 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
                     f"{subdir.rstrip('s').title()} '{record['slug']}' "
                     f"references unknown SoC '{soc_slug}'"
                 )
-            session.add(model(brand_id=brand_id, soc_id=soc_id, **record))
+            device = model(brand_id=brand_id, soc_id=soc_id, **record)
+            session.add(_with_id(device, taken))
             counts[count_key] += 1
         session.commit()
 
@@ -169,7 +199,7 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
             raise ValueError(
                 f"GPU '{record['slug']}' references unknown brand '{manufacturer}'"
             )
-        session.add(DiscreteGPU(manufacturer_id=manufacturer_id, **record))
+        session.add(_with_id(DiscreteGPU(manufacturer_id=manufacturer_id, **record), taken))
         counts["gpus"] += 1
     session.commit()
 
@@ -184,7 +214,7 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
             raise ValueError(
                 f"CPU '{record['slug']}' references unknown brand '{manufacturer}'"
             )
-        session.add(CPU(manufacturer_id=manufacturer_id, **record))
+        session.add(_with_id(CPU(manufacturer_id=manufacturer_id, **record), taken))
         counts["cpus"] += 1
     session.commit()
 
@@ -213,7 +243,8 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
             raise ValueError(
                 f"Laptop '{record['slug']}' references unknown GPU '{gpu_slug}'"
             )
-        session.add(Laptop(brand_id=brand_id, cpu_id=cpu_id, gpu_id=gpu_id, **record))
+        laptop = Laptop(brand_id=brand_id, cpu_id=cpu_id, gpu_id=gpu_id, **record)
+        session.add(_with_id(laptop, taken))
         counts["laptops"] += 1
     session.commit()
 
@@ -228,7 +259,7 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
             raise ValueError(
                 f"Monitor '{record['slug']}' references unknown brand '{brand_slug}'"
             )
-        session.add(Monitor(brand_id=brand_id, **record))
+        session.add(_with_id(Monitor(brand_id=brand_id, **record), taken))
         counts["monitors"] += 1
     session.commit()
 
@@ -237,7 +268,7 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
     for record in _load_dir(data_dir / "game"):
         if record["slug"] in game_slugs:
             continue
-        session.add(Game(**record))
+        session.add(_with_id(Game(**record), taken))
         counts["games"] += 1
     session.commit()
 
@@ -246,7 +277,7 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
     for record in _load_dir(data_dir / "software"):
         if record["slug"] in software_slugs:
             continue
-        session.add(Software(**record))
+        session.add(_with_id(Software(**record), taken))
         counts["software"] += 1
     session.commit()
 
@@ -255,7 +286,7 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
     for record in _load_dir(data_dir / "website"):
         if record["slug"] in website_slugs:
             continue
-        session.add(Website(**record))
+        session.add(_with_id(Website(**record), taken))
         counts["websites"] += 1
     session.commit()
 
