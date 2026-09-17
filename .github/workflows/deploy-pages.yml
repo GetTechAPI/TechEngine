@@ -28,6 +28,8 @@ jobs:
         with:
           repository: GetTechAPI/TechAPI
           path: TechAPI
+          # Record timestamps are read from git history (app/seed.py).
+          fetch-depth: 0
 
       - uses: actions/setup-python@v6
         with:

@@ -42,6 +42,9 @@ jobs:
           repository: GetTechAPI/TechAPI
           path: techapi
           token: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN || secrets.GITHUB_TOKEN }}
+          # created_at/updated_at come from each record's git history; with the
+          # default depth-1 checkout every record would report the tip commit.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v6
         with:
