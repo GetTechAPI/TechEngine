@@ -17,7 +17,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date
+import subprocess
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +40,43 @@ from app.models.website import Website
 DATA_DIR = get_data_root()
 
 
+NUL = "\x00"  # git log record separator, so a commit line cannot look like a path
+
+
+def _git_timestamps(data_dir: Path) -> dict[str, tuple[datetime, datetime]]:
+    """Map each record path to (first commit, last commit) times.
+
+    `created_at`/`updated_at` used to be stamped with "now" at seed time, so
+    every dump rewrote every page with a timestamp that only said when the dump
+    ran. Git already knows when a record appeared and when it last changed, and
+    those answers do not move between runs.
+
+    One `git log` pass over the whole data tree; an empty map (no git, shallow
+    clone) leaves the model defaults in place.
+    """
+    try:
+        log = subprocess.run(
+            # --relative keeps paths relative to data_dir, matching __path.
+            ["git", "log", "--reverse", "--no-renames", "--relative",
+             "--format=%x00%cI", "--name-only", "--diff-filter=AM", "--", "."],
+            cwd=data_dir, check=True, capture_output=True, text=True, encoding="utf-8",
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return {}
+
+    stamps: dict[str, tuple[datetime, datetime]] = {}
+    when: datetime | None = None
+    for line in log.splitlines():
+        if line.startswith(NUL):
+            when = datetime.fromisoformat(line[1:])
+            continue
+        if when is None or not line.endswith(".json"):
+            continue
+        first, _ = stamps.get(line, (when, when))
+        stamps[line] = (first, when)
+    return stamps
+
+
 def _load_dir(subdir: Path) -> list[dict[str, Any]]:
     if not subdir.exists():
         return []
@@ -52,6 +90,7 @@ def _load_dir(subdir: Path) -> list[dict[str, Any]]:
         for key, value in list(record.items()):
             if key.endswith("_date") and isinstance(value, str):
                 record[key] = date.fromisoformat(value)
+        record["__path"] = path.relative_to(subdir.parent).as_posix()
         items.append(record)
     return items
 
@@ -82,6 +121,26 @@ def _with_id(obj: Any, taken: set[int]) -> Any:
     return obj
 
 
+def _stamp(obj: Any, path: str | None, stamps: dict[str, tuple[datetime, datetime]]) -> Any:
+    """Replace the seed-time timestamps with the record's git history."""
+    times = stamps.get(path or "")
+    if times:
+        obj.created_at, obj.updated_at = times
+    return obj
+
+
+def _row(
+    model: Any,
+    record: dict[str, Any],
+    taken: set[int],
+    stamps: dict[str, tuple[datetime, datetime]],
+    **fks: Any,
+) -> Any:
+    """Build one row: resolved FKs, stable id, git-derived timestamps."""
+    path = record.pop("__path", None)
+    return _stamp(_with_id(model(**fks, **record), taken), path, stamps)
+
+
 def _existing_slugs(session: Session, model: type[SQLModel]) -> set[str]:
     rows = session.exec(select(model)).all()
     return {row.slug for row in rows}  # type: ignore[attr-defined]  # all data models have slug
@@ -91,6 +150,7 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
     """Idempotently insert seed data. Returns counts of newly inserted rows."""
     # Ids assigned in this run; only used to break hash collisions.
     taken: set[int] = set()
+    stamps = _git_timestamps(data_dir)
     counts = {
         "brands": 0,
         "socs": 0,
@@ -114,7 +174,7 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
         # `categories` lives in the JSON for browsing/validation only — the Brand
         # table model does not (yet) carry it, so drop before construction.
         record.pop("categories", None)
-        session.add(_with_id(Brand(**record), taken))
+        session.add(_row(Brand, record, taken, stamps))
         counts["brands"] += 1
     session.commit()
 
@@ -131,7 +191,7 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
             raise ValueError(
                 f"SoC '{record['slug']}' references unknown brand '{manufacturer}'"
             )
-        session.add(_with_id(SoC(manufacturer_id=manufacturer_id, **record), taken))
+        session.add(_row(SoC, record, taken, stamps, manufacturer_id=manufacturer_id))
         counts["socs"] += 1
     session.commit()
 
@@ -154,8 +214,7 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
             raise ValueError(
                 f"Smartphone '{record['slug']}' references unknown SoC '{soc_slug}'"
             )
-        phone = Smartphone(brand_id=brand_id, soc_id=soc_id, **record)
-        session.add(_with_id(phone, taken))
+        session.add(_row(Smartphone, record, taken, stamps, brand_id=brand_id, soc_id=soc_id))
         counts["smartphones"] += 1
     session.commit()
 
@@ -178,8 +237,7 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
                     f"{subdir.rstrip('s').title()} '{record['slug']}' "
                     f"references unknown SoC '{soc_slug}'"
                 )
-            device = model(brand_id=brand_id, soc_id=soc_id, **record)
-            session.add(_with_id(device, taken))
+            session.add(_row(model, record, taken, stamps, brand_id=brand_id, soc_id=soc_id))
             counts[count_key] += 1
         session.commit()
 
@@ -198,7 +256,7 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
             raise ValueError(
                 f"GPU '{record['slug']}' references unknown brand '{manufacturer}'"
             )
-        session.add(_with_id(DiscreteGPU(manufacturer_id=manufacturer_id, **record), taken))
+        session.add(_row(DiscreteGPU, record, taken, stamps, manufacturer_id=manufacturer_id))
         counts["gpus"] += 1
     session.commit()
 
@@ -213,7 +271,7 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
             raise ValueError(
                 f"CPU '{record['slug']}' references unknown brand '{manufacturer}'"
             )
-        session.add(_with_id(CPU(manufacturer_id=manufacturer_id, **record), taken))
+        session.add(_row(CPU, record, taken, stamps, manufacturer_id=manufacturer_id))
         counts["cpus"] += 1
     session.commit()
 
@@ -242,8 +300,9 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
             raise ValueError(
                 f"Laptop '{record['slug']}' references unknown GPU '{gpu_slug}'"
             )
-        laptop = Laptop(brand_id=brand_id, cpu_id=cpu_id, gpu_id=gpu_id, **record)
-        session.add(_with_id(laptop, taken))
+        session.add(
+            _row(Laptop, record, taken, stamps, brand_id=brand_id, cpu_id=cpu_id, gpu_id=gpu_id)
+        )
         counts["laptops"] += 1
     session.commit()
 
@@ -258,7 +317,7 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
             raise ValueError(
                 f"Monitor '{record['slug']}' references unknown brand '{brand_slug}'"
             )
-        session.add(_with_id(Monitor(brand_id=brand_id, **record), taken))
+        session.add(_row(Monitor, record, taken, stamps, brand_id=brand_id))
         counts["monitors"] += 1
     session.commit()
 
@@ -267,7 +326,7 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
     for record in _load_dir(data_dir / "software"):
         if record["slug"] in software_slugs:
             continue
-        session.add(_with_id(Software(**record), taken))
+        session.add(_row(Software, record, taken, stamps))
         counts["software"] += 1
     session.commit()
 
@@ -276,7 +335,7 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
     for record in _load_dir(data_dir / "website"):
         if record["slug"] in website_slugs:
             continue
-        session.add(_with_id(Website(**record), taken))
+        session.add(_row(Website, record, taken, stamps))
         counts["websites"] += 1
     session.commit()
 
