@@ -110,13 +110,6 @@ MONITOR_REQUIRED = {
     "verified",
 }
 
-GAME_REQUIRED = {
-    "slug",
-    "name",
-    "source_urls",
-    "verified",
-}
-
 SOFTWARE_REQUIRED = {
     "slug",
     "name",
@@ -243,7 +236,6 @@ def validate() -> list[str]:
     cpus = _load("cpu")
     laptops = _load("laptop")
     monitors = _load("monitor")
-    games = _load("game")
     software = _load("software")
     websites = _load("website")
 
@@ -263,7 +255,6 @@ def validate() -> list[str]:
         ("cpu", cpus),
         ("laptop", laptops),
         ("monitor", monitors),
-        ("game", games),
         ("software", software),
         ("website", websites),
     ):
@@ -415,17 +406,6 @@ def validate() -> list[str]:
         if rec.get("brand") not in brand_slugs:
             errors.append(f"{fname}: brand '{rec.get('brand')}' not a known brand")
         _check_variant_path(fname, rec, "monitor", errors, allow_flat=True)
-
-    for fname, rec in games:
-        _check_required(fname, rec, GAME_REQUIRED, errors)
-        _check_source_urls(fname, rec, errors)
-        _check_slug(fname, rec.get("slug"), errors)
-        if rec.get("release_date") is not None:
-            _check_date(fname, rec["release_date"], errors)
-        if rec.get("rating") is not None:
-            _check_range(fname, "rating", rec.get("rating"), 0, 5, errors)
-        if rec.get("metacritic") is not None:
-            _check_range(fname, "metacritic", rec.get("metacritic"), 0, 100, errors)
 
     for fname, rec in software:
         _check_required(fname, rec, SOFTWARE_REQUIRED, errors)

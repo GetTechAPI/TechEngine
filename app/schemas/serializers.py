@@ -5,7 +5,6 @@ from __future__ import annotations
 from app.config import settings
 from app.models.brand import Brand
 from app.models.cpu import CPU
-from app.models.game import Game
 from app.models.gpu import DiscreteGPU
 from app.models.laptop import Laptop
 from app.models.mobile_device import MobileDeviceFields
@@ -17,7 +16,6 @@ from app.models.website import Website
 from app.schemas.brand import BrandRead, BrandSummary
 from app.schemas.common import HybridRead, ManufacturerRef, ResourceRef
 from app.schemas.cpu import CPURead, CPUScoreRead
-from app.schemas.game import GameRead
 from app.schemas.gpu import GPURead, GPUScoreRead
 from app.schemas.laptop import LaptopRead
 from app.schemas.mobile_device import MobileDeviceRead
@@ -381,33 +379,6 @@ def monitor_read(monitor: Monitor, brand: Brand) -> MonitorRead:
         created_at=monitor.created_at,
         updated_at=monitor.updated_at,
         url=url_for("monitors", monitor.slug),
-    )
-
-
-def game_read(game: Game) -> GameRead:
-    assert game.id is not None
-    return GameRead(
-        id=game.id,
-        slug=game.slug,
-        name=game.name,
-        release_date=game.release_date,
-        rating=game.rating,
-        rating_count=game.rating_count,
-        metacritic=game.metacritic,
-        playtime_hours=game.playtime_hours,
-        platforms=game.platforms,
-        genres=game.genres,
-        stores=game.stores,
-        developers=game.developers,
-        publishers=game.publishers,
-        tags=game.tags,
-        esrb_rating=game.esrb_rating,
-        background_image=game.background_image,
-        verified=game.verified,
-        source_urls=game.source_urls,
-        created_at=game.created_at,
-        updated_at=game.updated_at,
-        url=url_for("games", game.slug),
     )
 
 

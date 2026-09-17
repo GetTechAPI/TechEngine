@@ -27,4 +27,4 @@ def test_collision_falls_back_to_a_rehash_not_a_duplicate():
 
 
 def test_id_fits_in_a_json_safe_integer():
-    assert 0 < _stable_id("games", "doom", set()) < 2**53
+    assert 0 < _stable_id("software", "vim", set()) < 2**53

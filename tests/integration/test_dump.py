@@ -56,9 +56,9 @@ def test_resolve_collections_defaults_to_everything() -> None:
 
 
 def test_resolve_collections_drops_excluded_and_keeps_order() -> None:
-    resolved = resolve_collections(["games"])
-    assert "games" not in resolved
-    assert resolved == [c for c in COLLECTIONS if c != "games"]
+    resolved = resolve_collections(["software"])
+    assert "software" not in resolved
+    assert resolved == [c for c in COLLECTIONS if c != "software"]
 
 
 def test_resolve_collections_rejects_unknown_names() -> None:

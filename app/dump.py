@@ -31,7 +31,6 @@ COLLECTIONS = [
     "cpus",
     "laptops",
     "monitors",
-    "games",
     "software",
     "websites",
 ]
@@ -151,7 +150,7 @@ if __name__ == "__main__":
         default=[],
         metavar="COLLECTION",
         help=(
-            "collection to skip, repeatable (e.g. --exclude games). Useful when a "
+            "collection to skip, repeatable (e.g. --exclude software). Useful when a "
             "consumer does not publish a large collection: skipping it avoids "
             "writing hundreds of thousands of files that are discarded anyway."
         ),
