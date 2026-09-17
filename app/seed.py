@@ -124,7 +124,8 @@ def _with_id(obj: Any, taken: set[int]) -> Any:
 def _stamp(obj: Any, path: str | None, stamps: dict[str, tuple[datetime, datetime]]) -> Any:
     """Replace the seed-time timestamps with the record's git history."""
     times = stamps.get(path or "")
-    if times:
+    # brand and gpu carry no timestamps at all — skip rather than invent fields.
+    if times and hasattr(obj, "created_at"):
         obj.created_at, obj.updated_at = times
     return obj
 
