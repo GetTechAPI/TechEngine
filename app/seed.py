@@ -27,7 +27,6 @@ from app.data_root import get_data_root
 from app.database import create_db_and_tables, engine
 from app.models.brand import Brand
 from app.models.cpu import CPU
-from app.models.game import Game
 from app.models.gpu import DiscreteGPU
 from app.models.laptop import Laptop
 from app.models.mobile_device import PDA, Tablet, Watch
@@ -103,7 +102,6 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
         "cpus": 0,
         "laptops": 0,
         "monitors": 0,
-        "games": 0,
         "software": 0,
         "websites": 0,
     }
@@ -262,15 +260,6 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
             )
         session.add(_with_id(Monitor(brand_id=brand_id, **record), taken))
         counts["monitors"] += 1
-    session.commit()
-
-    # --- Games (standalone; no brand FK) ---
-    game_slugs = _existing_slugs(session, Game)
-    for record in _load_dir(data_dir / "game"):
-        if record["slug"] in game_slugs:
-            continue
-        session.add(_with_id(Game(**record), taken))
-        counts["games"] += 1
     session.commit()
 
     # --- Software (standalone; no brand FK) ---

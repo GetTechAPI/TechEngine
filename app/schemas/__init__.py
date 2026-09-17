@@ -2,7 +2,6 @@
 
 from app.schemas.brand import BrandRead, BrandSummary
 from app.schemas.common import ErrorBody, ErrorResponse, Page, ResourceRef
-from app.schemas.game import GameRead
 from app.schemas.laptop import LaptopRead
 from app.schemas.monitor import MonitorRead
 from app.schemas.smartphone import ScoreRead, SmartphoneRead
@@ -23,6 +22,5 @@ __all__ = [
     "ScoreRead",
     "LaptopRead",
     "MonitorRead",
-    "GameRead",
     "SoftwareRead",
 ]

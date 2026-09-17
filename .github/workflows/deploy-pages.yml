@@ -44,12 +44,7 @@ jobs:
       - name: Generate static JSON dump + openapi.json
         env:
           TECHAPI_DATA_DIR: ${{ github.workspace }}/TechAPI/data
-        # Games are not published here: ~962k per-record files exceed the fixed
-        # GitHub Pages deployment window (the deploy step times out at
-        # "syncing_files"). Skipping them at generation time also keeps this
-        # step from writing files that would only be deleted before upload.
-        # They remain available as versioned data in the TechAPI repo.
-        run: python -m app.dump --output dump --exclude games
+        run: python -m app.dump --output dump
 
       - uses: actions/setup-node@v4
         with:
