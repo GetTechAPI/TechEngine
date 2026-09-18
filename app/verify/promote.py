@@ -66,14 +66,10 @@ def decide(
     # Reality confirm: external source agrees -> strongest promotion.
     if crossref_decision == "confirm":
         return PromotionDecision(True, "crossref-confirm")
-    # green = passed the offline inspection: an authoritative source (T1/T2) IS
-    # cited, cross-field consistency holds, the record is complete, and there are
-    # no hard violations. That is the verification result, so promote it (unless
-    # crossref contradicted above). The earlier live-HTTP source re-check was
-    # dropped: most green records cite spec DBs (phonedb/cpubenchmark) that block
-    # automated requests, which kept verified stuck far below the green band.
-    if band == "green":
-        return PromotionDecision(True, "green")
+    # green is only an offline candidate. Promotion still requires a cited
+    # authoritative source to have been confirmed alive by Tier 1.
+    if band == "green" and has_live_authoritative_source(source_urls, url_cache):
+        return PromotionDecision(True, "green-live-source")
     return PromotionDecision(False, "needs-confirmation")
 
 

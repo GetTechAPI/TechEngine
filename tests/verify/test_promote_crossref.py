@@ -113,21 +113,32 @@ def test_write_back_atomic_lf_preserved():
 # --- promotion decision ----------------------------------------------------------
 
 
-def test_green_promotes():
-    # green = passed the offline inspection -> verified. The live-source state no
-    # longer gates (green already requires a cited authoritative source).
-    d = promote.decide(band="green", source_urls=[], url_cache={}, crossref_decision=None)
-    assert d.promote and d.reason == "green"
+def test_green_requires_live_authoritative_source():
+    d = promote.decide(
+        band="green",
+        source_urls=["https://www.intel.com/x"],
+        url_cache={},
+        crossref_decision=None,
+    )
+    assert not d.promote
 
 
-def test_green_promotes_regardless_of_source_liveness():
-    # Even with a dead / unchecked source, a green record promotes.
+def test_green_promotes_with_live_authoritative_source():
+    cache = {"https://www.phonedb.net/x": {"alive": True}}
+    d = promote.decide(
+        band="green", source_urls=["https://www.phonedb.net/x"],
+        url_cache=cache, crossref_decision=None,
+    )
+    assert d.promote and d.reason == "green-live-source"
+
+
+def test_green_does_not_promote_with_dead_authoritative_source():
     cache = {"https://www.phonedb.net/x": {"alive": False}}
     d = promote.decide(
         band="green", source_urls=["https://www.phonedb.net/x"],
         url_cache=cache, crossref_decision=None,
     )
-    assert d.promote and d.reason == "green"
+    assert not d.promote
 
 
 def test_yellow_without_confirm_holds():
