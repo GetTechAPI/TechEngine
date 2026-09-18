@@ -92,6 +92,14 @@ def test_record_liveness():
     assert http_check.record_liveness(["a", "b", "c", "missing"], cache) == (2, 1)
 
 
+def test_record_liveness_excludes_automation_challenge():
+    cache = {
+        "blocked": {"alive": False, "reason": http_check.AUTOMATION_CHALLENGE_REASON},
+        "dead": {"alive": False, "reason": "http-404"},
+    }
+    assert http_check.record_liveness(["blocked", "dead"], cache) == (0, 1)
+
+
 def test_cache_roundtrip():
     # tmp_path fixture is unreliable on this Windows runner; use a local scratch file.
     from pathlib import Path
@@ -113,6 +121,16 @@ class _Http429(Exception):
         self.code = 429
         self.url = url
         self.headers = {"Retry-After": retry_after} if retry_after else {}
+
+
+class _Http403Challenge(Exception):
+    """urllib-shaped Cloudflare bot challenge observed from Geekbench."""
+
+    def __init__(self, url):
+        super().__init__("Forbidden")
+        self.code = 403
+        self.url = url
+        self.headers = {"CF-Mitigated": "challenge"}
 
 
 class FlakyOpener(FakeOpener):
@@ -144,6 +162,27 @@ def test_persistent_rate_limit_is_transient_not_dead(monkeypatch):
     op = FlakyOpener({url: (200, url)}, fail_times=99)
     [res] = http_check.check_urls([url], opener_factory=lambda: op, min_interval=0)
     assert res.status == 429 and res.transient  # caller must not cache this as a verdict
+
+
+def test_cloudflare_bot_challenge_is_indeterminate_not_dead():
+    url = "https://browser.geekbench.com/v6/cpu/1"
+    op = FakeOpener({url: _Http403Challenge(url)})
+    res = http_check.check_one(url, op)
+    assert res.status == 403
+    assert not res.alive
+    assert res.indeterminate
+    assert not res.transient
+    assert res.reason == http_check.AUTOMATION_CHALLENGE_REASON
+    assert [method for _url, method in op.calls] == ["HEAD", "GET"]
+
+
+def test_generic_403_stays_dead():
+    err = type("E", (Exception,), {"code": 403, "url": None, "headers": {}})()
+    url = "https://example.com/private"
+    res = http_check.check_one(url, FakeOpener({url: err}))
+    assert not res.alive
+    assert not res.indeterminate
+    assert res.reason == "http-403"
 
 
 def test_rate_limit_slows_the_host_down(monkeypatch):

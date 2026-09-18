@@ -36,6 +36,7 @@ USER_AGENT = (
 # nothing about whether the page exists, so these answers must never be cached as
 # a verdict — otherwise one impatient run marks a whole host dead for a TTL.
 TRANSIENT_STATUSES = frozenset({429, 503})
+AUTOMATION_CHALLENGE_REASON = "automation-challenge"
 RETRY_ATTEMPTS = 3
 RETRY_BACKOFF_S = (2.0, 6.0)
 MAX_RETRY_AFTER_S = 15.0
@@ -57,6 +58,11 @@ class CheckResult(NamedTuple):
     @property
     def transient(self) -> bool:
         return self.status in TRANSIENT_STATUSES
+
+    @property
+    def indeterminate(self) -> bool:
+        """True when the endpoint reached an anti-bot challenge, not a page verdict."""
+        return self.reason == AUTOMATION_CHALLENGE_REASON
 
 
 # --- opener abstraction (injectable for tests) -----------------------------------
@@ -102,7 +108,15 @@ def _is_homepage_redirect(original: str, final: str) -> bool:
     return _path_depth(original) >= 1 and _path_depth(final) == 0
 
 
-def classify(original_url: str, status: int | None, final_url: str | None) -> tuple[bool, str]:
+def classify(
+    original_url: str,
+    status: int | None,
+    final_url: str | None,
+    *,
+    automation_challenge: bool = False,
+) -> tuple[bool, str]:
+    if automation_challenge:
+        return False, AUTOMATION_CHALLENGE_REASON
     if status is None:
         return False, "error"
     if status >= 400:
@@ -122,11 +136,34 @@ def _retry_after_seconds(exc: Exception) -> float | None:
         return None  # HTTP-date form; fall back to our own backoff
 
 
-def _attempt(url: str, opener: Any) -> tuple[int | None, str | None, float | None]:
-    """One HEAD-then-GET pass. Returns (status, final_url, retry_after)."""
+def _is_automation_challenge(exc: Exception, code: int) -> bool:
+    """Recognize an explicit anti-bot challenge without weakening generic 403s.
+
+    A September 2026 probe with this module's User-Agent found
+    ``browser.geekbench.com`` returning ``403`` with
+    ``CF-Mitigated: challenge`` and Cloudflare's challenge page.  That proves the
+    request reached the cited host but not whether an unauthenticated client may
+    inspect the page.  Keep ordinary 401/403 responses as dead: an HTTP status
+    alone cannot distinguish a missing or forbidden page from bot protection.
+    """
+    if code != 403:
+        return False
+    headers = getattr(exc, "headers", None)
+    mitigated = headers.get("CF-Mitigated", "") if headers is not None else ""
+    return isinstance(mitigated, str) and mitigated.lower() == "challenge"
+
+
+def _attempt(url: str, opener: Any) -> tuple[int | None, str | None, float | None, bool]:
+    """One HEAD-then-GET pass.
+
+    Returns ``(status, final_url, retry_after, automation_challenge)``.  The last
+    value is intentionally based on an explicit gateway signal, never on a bare
+    403, so unavailable pages cannot become promotable merely by returning 403.
+    """
     status: int | None = None
     final: str | None = None
     retry_after: float | None = None
+    automation_challenge = False
     for method in ("HEAD", "GET"):
         try:
             status, final = opener.open(url, method)
@@ -138,11 +175,12 @@ def _attempt(url: str, opener: Any) -> tuple[int | None, str | None, float | Non
             if isinstance(code, int):
                 status, final = code, getattr(exc, "url", None) or url
                 retry_after = _retry_after_seconds(exc)
+                automation_challenge = _is_automation_challenge(exc, code)
                 if method == "HEAD" and code in (400, 403, 405, 501):
                     continue
                 break
-            status, final = None, None
-    return status, final, retry_after
+            status, final, automation_challenge = None, None, False
+    return status, final, retry_after, automation_challenge
 
 
 def check_one(
@@ -154,15 +192,18 @@ def check_one(
     to wait, not that the page is gone.
     """
     status = final = retry_after = None
+    automation_challenge = False
     for attempt in range(RETRY_ATTEMPTS):
-        status, final, retry_after = _attempt(url, opener)
+        status, final, retry_after, automation_challenge = _attempt(url, opener)
         if status not in TRANSIENT_STATUSES:
             break
         if on_rate_limit is not None:
             on_rate_limit(host_of(url))
         if attempt < RETRY_ATTEMPTS - 1:
             time.sleep(retry_after if retry_after is not None else RETRY_BACKOFF_S[attempt])
-    alive, reason = classify(url, status, final)
+    alive, reason = classify(
+        url, status, final, automation_challenge=automation_challenge
+    )
     return CheckResult(url, status, final, alive, reason)
 
 
@@ -247,13 +288,20 @@ def check_urls(
 # --- cache -----------------------------------------------------------------------
 
 
+def is_automation_challenge(entry: dict[str, Any]) -> bool:
+    """Whether a cached result reached an explicit anti-bot challenge."""
+    return entry.get("reason") == AUTOMATION_CHALLENGE_REASON
+
+
 def load_cache(path: Path = URL_CACHE_PATH) -> dict[str, dict[str, Any]]:
     """Load the cache, dropping rate-limit answers written by older runs.
 
     A 429/503 is not a verdict, so an entry holding one is not a cache hit —
     it is a URL we still have to check. Filtering on load heals a cache that a
     previous run poisoned (3,998 GSMArena pages were parked as dead this way,
-    all of which answer 200 when asked at a civil pace).
+    all of which answer 200 when asked at a civil pace). Explicit anti-bot
+    challenges stay cached as *indeterminate*: the promotion layer can use that
+    reachability signal only for an already-authoritative cited host.
     """
     return {
         e["url"]: e
@@ -292,7 +340,7 @@ def result_to_entry(r: CheckResult, ts: str) -> dict[str, Any]:
 
 
 def record_liveness(source_urls: list[str], cache: dict[str, dict[str, Any]]) -> tuple[int, int]:
-    """(#live, #dead) for a record's URLs that are present in the cache."""
+    """(#live, #dead) for cached URLs, excluding anti-bot indeterminate results."""
     live = dead = 0
     for u in source_urls:
         e = cache.get(u)
@@ -300,6 +348,6 @@ def record_liveness(source_urls: list[str], cache: dict[str, dict[str, Any]]) ->
             continue
         if e.get("alive"):
             live += 1
-        else:
+        elif not is_automation_challenge(e):
             dead += 1
     return live, dead

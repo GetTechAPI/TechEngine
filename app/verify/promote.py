@@ -19,7 +19,7 @@ import re
 from pathlib import Path
 from typing import Any, NamedTuple
 
-from . import hosts
+from . import hosts, http_check
 from .common import STATE_DIR
 
 CROSSREF_CACHE_PATH = STATE_DIR / "crossref_cache.jsonl"
@@ -36,16 +36,27 @@ class PromotionDecision(NamedTuple):
 def has_live_authoritative_source(
     source_urls: list[str], url_cache: dict[str, dict[str, Any]]
 ) -> bool:
-    """True if some cited URL is an authoritative host (Tier 1 *or* Tier 2) AND
-    confirmed alive. The green band already requires a T1/T2 source + completeness
-    + consistency; this just adds "and that source actually resolves". Requiring a
-    *manufacturer/encyclopaedia* (T1 only) was too strict — it never promoted the
-    many green records sourced from reputable spec/benchmark DBs (gsmarena,
-    cpubenchmark, ...), so verified never moved off its floor.
+    """True if an authoritative cited URL has a usable liveness signal.
+
+    A normal alive response always qualifies. An explicit anti-bot challenge also
+    qualifies, but only for an already classified Tier-1/Tier-2 host: it proves
+    the request reached that host while the gateway withheld page inspection.
+    This preserves the live-source gate without treating every 403 as a live
+    record. Generic errors, ordinary 401/403, redirects to a homepage, and
+    unclassified hosts remain insufficient for promotion.
+
+    This distinction is deliberate. The September 2026 probe found Geekbench's
+    Cloudflare challenge under the verifier User-Agent, while several other
+    Tier-2 databases returned normal 200 responses. Treating challenge responses
+    as dead made a host-wide automation policy look like thousands of dead
+    citations; dropping the liveness gate altogether made unchecked citations
+    promotable. This narrow fallback avoids both failure modes.
     """
     for u in source_urls:
         entry = url_cache.get(u)
-        if entry and entry.get("alive") and hosts.tier_of_host(hosts.host_of(u)) in (1, 2):
+        if not entry or hosts.tier_of_host(hosts.host_of(u)) not in (1, 2):
+            continue
+        if entry.get("alive") or http_check.is_automation_challenge(entry):
             return True
     return False
 

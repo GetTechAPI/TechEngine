@@ -453,11 +453,22 @@ def cmd_check_urls(args: argparse.Namespace) -> int:
 def _summarize_cache(cache: dict[str, dict[str, Any]], targets: list[str]) -> None:
     from collections import Counter
     alive = sum(1 for u in targets if cache.get(u, {}).get("alive"))
-    dead = sum(1 for u in targets if u in cache and not cache[u].get("alive"))
-    print(f"\nliveness over {len(targets)} targeted URL(s): {alive} alive, {dead} dead")
+    indeterminate = sum(
+        1 for u in targets if http_check.is_automation_challenge(cache.get(u, {}))
+    )
+    dead = sum(
+        1 for u in targets
+        if u in cache and not cache[u].get("alive")
+        and not http_check.is_automation_challenge(cache[u])
+    )
+    print(
+        f"\nliveness over {len(targets)} targeted URL(s): {alive} alive, {dead} dead, "
+        f"{indeterminate} automation-challenged"
+    )
     reasons = Counter(
         cache[u].get("reason") for u in targets
         if u in cache and not cache[u].get("alive")
+        and not http_check.is_automation_challenge(cache[u])
     )
     if reasons:
         print("dead reasons:")
@@ -619,10 +630,17 @@ def cmd_pr(args: argparse.Namespace) -> int:
         except Exception as exc:  # network hiccup must not sink the report
             print(f"_Tier 1 skipped: {exc}_\n")
         alive = sum(1 for e in url_cache.values() if e.get("alive"))
-        dead = len(url_cache) - alive
+        indeterminate = sum(1 for e in url_cache.values() if http_check.is_automation_challenge(e))
+        dead = len(url_cache) - alive - indeterminate
         print("### Tier 1 — source-URL liveness (changed)\n")
-        print(f"Checked **{len(url_cache)}** unique URL(s): **{alive} alive**, **{dead} dead**.\n")
-        dead_reasons = Counter(e["reason"] for e in url_cache.values() if not e.get("alive"))
+        print(
+            f"Checked **{len(url_cache)}** unique URL(s): **{alive} alive**, "
+            f"**{dead} dead**, **{indeterminate} automation-challenged**.\n"
+        )
+        dead_reasons = Counter(
+            e["reason"] for e in url_cache.values()
+            if not e.get("alive") and not http_check.is_automation_challenge(e)
+        )
         if dead_reasons:
             print("| Dead reason | Count |")
             print("| --- | ---: |")
