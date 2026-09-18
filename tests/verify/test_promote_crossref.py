@@ -141,6 +141,40 @@ def test_green_does_not_promote_with_dead_authoritative_source():
     assert not d.promote
 
 
+def test_green_promotes_with_authoritative_automation_challenge():
+    url = "https://browser.geekbench.com/v6/cpu/1"
+    d = promote.decide(
+        band="green",
+        source_urls=[url],
+        url_cache={
+            url: {
+                "alive": False,
+                "status": 403,
+                "reason": "automation-challenge",
+            }
+        },
+        crossref_decision=None,
+    )
+    assert d.promote and d.reason == "green-live-source"
+
+
+def test_green_does_not_promote_with_unclassified_automation_challenge():
+    url = "https://example.com/specs/1"
+    d = promote.decide(
+        band="green",
+        source_urls=[url],
+        url_cache={
+            url: {
+                "alive": False,
+                "status": 403,
+                "reason": "automation-challenge",
+            }
+        },
+        crossref_decision=None,
+    )
+    assert not d.promote
+
+
 def test_yellow_without_confirm_holds():
     d = promote.decide(band="yellow", source_urls=[], url_cache={}, crossref_decision=None)
     assert not d.promote
