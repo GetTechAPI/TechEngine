@@ -632,13 +632,13 @@ def cmd_pr(args: argparse.Namespace) -> int:
 
         # Tier 2 — external cross-reference (network, exact-heading only).
         fetcher = crossref.WikidataFetcher()
-        xref: dict[str, str] = {}
+        xref: dict[tuple[str, str], str] = {}
         decisions: Counter[str] = Counter()
         for r, _ in scored:
             try:
                 xres = crossref.crossref_record(r.data, fetcher)
                 if r.slug:
-                    xref[r.slug] = xres.decision
+                    xref[(r.category, r.slug)] = xres.decision
                 decisions[xres.decision] += 1
             except Exception:
                 decisions["error"] += 1
@@ -655,8 +655,12 @@ def cmd_pr(args: argparse.Namespace) -> int:
         hold = 0
         for r, s in scored:
             urls_r = [u for u in r.data.get("source_urls", []) if isinstance(u, str)]
-            dec = promote.decide(band=s.band, source_urls=urls_r, url_cache=url_cache,
-                                 crossref_decision=xref.get(r.slug) if r.slug else None)
+            dec = promote.decide(
+                band=s.band,
+                source_urls=urls_r,
+                url_cache=url_cache,
+                crossref_decision=xref.get((r.category, r.slug)) if r.slug else None,
+            )
             if dec.promote:
                 promote_rows.append((r, dec.reason))
             else:
