@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 
 from app.models.smartphone import Smartphone
 from app.models.soc import SoC
 from app.services.scoring import ALGORITHM_VERSION, DatasetStats, score_phone
+from app.services.scoring.config import load_config
 
 
 def _soc(**overrides: object) -> SoC:
@@ -90,6 +92,24 @@ def test_missing_camera_yields_null() -> None:
 
 def test_value_requires_msrp() -> None:
     assert score_phone(_phone(msrp_usd=None), _soc()).value is None
+
+
+def test_overall_and_value_use_configured_weights() -> None:
+    cfg = load_config()
+    weights = {name: values.copy() for name, values in cfg.weights.items()}
+    weights["phone_overall"] = {
+        "performance": 1.0,
+        "camera": 0.0,
+        "battery": 0.0,
+        "display": 0.0,
+    }
+    weights["value"] = {"overall": 1.0, "affordability": 0.0}
+    configured = replace(cfg, weights=weights)
+
+    score = score_phone(_phone(), _soc(), config=configured)
+
+    assert score.overall == score.performance
+    assert score.value == score.overall
 
 
 def test_relative_fields_filled_only_with_stats() -> None:

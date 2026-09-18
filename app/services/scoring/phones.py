@@ -124,14 +124,17 @@ def _display(display: dict[str, Any], scales: dict[str, ReferenceScale]) -> floa
 
 
 def _value(
-    overall: float | None, msrp_usd: int | None, scales: dict[str, ReferenceScale]
+    overall: float | None,
+    msrp_usd: int | None,
+    scales: dict[str, ReferenceScale],
+    weights: dict[str, float],
 ) -> float | None:
     if overall is None or not msrp_usd:
         return None
     affordability = capability(float(msrp_usd), scales["msrp_usd"])
     if affordability is None:
         return None
-    return round(overall * 0.5 + affordability * 0.5, 1)
+    return combine([(overall, weights["overall"]), (affordability, weights["affordability"])])
 
 
 def score_phone(
@@ -153,9 +156,16 @@ def score_phone(
         scales,
     )
     display = _display(phone.display, scales)
-    components = [s for s in (perf.index, camera, battery, display) if s is not None]
-    overall = round(sum(components) / len(components), 1) if components else None
-    value = _value(overall, phone.msrp_usd, scales)
+    overall_weights = cfg.weights["phone_overall"]
+    overall = combine(
+        [
+            (perf.index, overall_weights["performance"]),
+            (camera, overall_weights["camera"]),
+            (battery, overall_weights["battery"]),
+            (display, overall_weights["display"]),
+        ]
+    )
+    value = _value(overall, phone.msrp_usd, scales, cfg.weights["value"])
     return PhoneScore(
         algorithm_version=settings.scoring_algorithm_version,
         overall=overall,

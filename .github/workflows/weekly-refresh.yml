@@ -54,6 +54,7 @@ jobs:
           repository: GetTechAPI/TechAPI
           path: techapi
           token: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN || secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
       - uses: actions/setup-python@v6
         with:
