@@ -31,6 +31,9 @@ env/
 # Note: data/_staging/ (raw collected candidate pool) is intentionally tracked —
 # comprehensive data collection is a purpose of this repo.
 
+# Local Wikipedia GPU backfill cache and dry-run reports (never a TechAPI write)
+.wikipedia-gpu-backfill/
+
 # Testing / coverage
 .pytest_cache/
 .coverage

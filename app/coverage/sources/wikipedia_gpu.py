@@ -8,8 +8,12 @@ from ..normalize import is_probable_model_slug, slugify
 from .base import CoveragePoint
 from .wikipedia import fetch_wikipedia_html, wikitable_first_cells
 
+# Keep in step with ``app.ingest.sources.wikipedia_gpu.PAGES``. ``Quadro`` is
+# the redirect target of ``Nvidia_Quadro``. Workstation/ATI legacy rows live
+# on the AMD list; there is no separate workstation list article.
 PAGES: list[tuple[str, str]] = [
     ("nvidia", "List_of_Nvidia_graphics_processing_units"),
+    ("nvidia", "Quadro"),
     ("amd", "List_of_AMD_graphics_processing_units"),
     ("intel", "List_of_Intel_graphics_processing_units"),
 ]
