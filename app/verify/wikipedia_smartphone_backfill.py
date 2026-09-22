@@ -1052,7 +1052,10 @@ def _liveness_for(url: str | None, page_liveness: dict[str, str]) -> str:
 
 
 def sample_diverse_records(
-    phone_dir: Path, repo_root: Path, limit: int | None
+    phone_dir: Path,
+    repo_root: Path,
+    limit: int | None,
+    exclude_paths: set[str] | None = None,
 ) -> list[tuple[str, dict[str, Any]]]:
     """Sample diverse records across brands and years without loading the entire 93k tree."""
     brand_dirs = sorted(
@@ -1064,12 +1067,15 @@ def sample_diverse_records(
             for path in bd.rglob("*.json"):
                 if path.name.startswith("_"):
                     continue
+                rel = path.relative_to(repo_root).as_posix()
+                if exclude_paths and rel in exclude_paths:
+                    continue
                 try:
                     rec = json.loads(path.read_text(encoding="utf-8-sig"))
                 except Exception:
                     continue
                 if isinstance(rec, dict) and is_eligible_smartphone(rec):
-                    all_recs.append((path.relative_to(repo_root).as_posix(), rec))
+                    all_recs.append((rel, rec))
         return all_recs
 
     per_brand_quota = max(3, (limit // len(brand_dirs)) + 2) if brand_dirs else limit
@@ -1083,12 +1089,15 @@ def sample_diverse_records(
                 for path in yd.rglob("*.json"):
                     if path.name.startswith("_"):
                         continue
+                    rel = path.relative_to(repo_root).as_posix()
+                    if exclude_paths and rel in exclude_paths:
+                        continue
                     try:
                         rec = json.loads(path.read_text(encoding="utf-8-sig"))
                     except Exception:
                         continue
                     if isinstance(rec, dict) and is_eligible_smartphone(rec):
-                        brand_items.append((path.relative_to(repo_root).as_posix(), rec))
+                        brand_items.append((rel, rec))
                         break
                 if len(brand_items) >= per_brand_quota:
                     break
@@ -1096,12 +1105,15 @@ def sample_diverse_records(
             for path in bd.rglob("*.json"):
                 if path.name.startswith("_"):
                     continue
+                rel = path.relative_to(repo_root).as_posix()
+                if exclude_paths and rel in exclude_paths:
+                    continue
                 try:
                     rec = json.loads(path.read_text(encoding="utf-8-sig"))
                 except Exception:
                     continue
                 if isinstance(rec, dict) and is_eligible_smartphone(rec):
-                    brand_items.append((path.relative_to(repo_root).as_posix(), rec))
+                    brand_items.append((rel, rec))
                     if len(brand_items) >= per_brand_quota:
                         break
         if brand_items:
@@ -1208,19 +1220,20 @@ def backfill(
             page_rows.extend(extracted)
             fetcher.rows = list(page_rows)
 
+    cache = load_cache(cache_path) if cache_path else {}
+    cached_paths = set(cache.keys())
+
     # Load candidate records
     repo_root: Path | None = None
     if records is None:
         phone_dir, repo_root = smartphone_scan_root(data_root)
-        chosen = sample_diverse_records(phone_dir, repo_root, limit)
+        chosen = sample_diverse_records(phone_dir, repo_root, limit, exclude_paths=cached_paths)
         eligible_count = 73465
     else:
-        loaded = [(rel, rec) for rel, rec in records if is_eligible_smartphone(rec)]
+        loaded = [(rel, rec) for rel, rec in records if is_eligible_smartphone(rec) and rel not in cached_paths]
         chosen = sample_diverse(loaded, limit)
         eligible_count = len(loaded)
         repo_root = data_root
-
-    cache = load_cache(cache_path) if cache_path else {}
     result = RunResult(
         eligible=eligible_count,
         index_rows=len(page_rows),
