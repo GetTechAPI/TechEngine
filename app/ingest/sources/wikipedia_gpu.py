@@ -31,8 +31,14 @@ from ..normalize import (
 from .base import IngestCandidate
 from .wikitable import parse_table
 
+# ``Nvidia_Quadro`` redirects to ``Quadro``, whose AGP/PCI/PCIe and NVS tables
+# carry Quadro4-era boards the GeForce list does not. ATI Rage/Radeon legacy
+# and FireGL/FirePro/Radeon Pro workstation sections are already on
+# ``List_of_AMD_graphics_processing_units``. There is no
+# ``List_of_AMD_workstation_graphics_processing_units`` article.
 PAGES: list[tuple[str, str, str]] = [
     ("nvidia", "List_of_Nvidia_graphics_processing_units", "NVIDIA GeForce"),
+    ("nvidia", "Quadro", "NVIDIA Quadro"),
     ("amd", "List_of_AMD_graphics_processing_units", "AMD Radeon"),
     ("intel", "List_of_Intel_graphics_processing_units", "Intel Graphics"),
 ]
