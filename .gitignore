@@ -44,3 +44,7 @@ coverage.xml
 .idea/
 .vscode/
 .DS_Store
+
+# GSMArena backfill local index, resume cache, and dry-run reports.
+# Never lives in the TechAPI data checkout.
+.gsmarena-backfill/
