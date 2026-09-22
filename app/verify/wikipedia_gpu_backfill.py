@@ -750,7 +750,8 @@ def decide(
     record: dict[str, Any], rows: list[WikiRow], *, liveness: str = "http-200"
 ) -> GateResult:
     """CONFIRM only when the heading, form factor, bus, and two specs agree."""
-    name = record.get("name") if isinstance(record.get("name"), str) else ""
+    raw_name = record.get("name")
+    name = raw_name if isinstance(raw_name, str) else ""
     card = split_card_name(name)
     alive = _reason_alive(liveness)
     if not card.base:
@@ -777,17 +778,17 @@ def decide(
     # across those lines; the marker is enough to refuse the pair.
     kept = [row for row in hits if not form_factor_conflict(name, row_form_text(row))]
     if not kept:
-        sample = hits[0]
+        sample_row = hits[0]
         return GateResult(
             AMBIGUOUS,
             None,
-            sample.url,
-            sample.model,
+            sample_row.url,
+            sample_row.model,
             liveness,
             [],
             [],
             "form-factor-variant",
-            not brand_prefix_equal(card.base, comparable_title(sample.model)),
+            not brand_prefix_equal(card.base, comparable_title(sample_row.model)),
             card.base,
         )
     scored = [_Scored(row, *compare_specs(record, row, card)) for row in kept]
@@ -1402,7 +1403,8 @@ def backfill(
             result.cached += 1
             maybe_write(rel, cached.get("decision"), cached.get("proposed_url"))
             continue
-        name = record.get("name") if isinstance(record.get("name"), str) else ""
+        raw_name = record.get("name")
+        name = raw_name if isinstance(raw_name, str) else ""
         card = split_card_name(name)
         hits = fetcher.rows_for(name)
         if not hits:
