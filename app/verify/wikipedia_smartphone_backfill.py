@@ -1230,7 +1230,11 @@ def backfill(
         chosen = sample_diverse_records(phone_dir, repo_root, limit, exclude_paths=cached_paths)
         eligible_count = 73465
     else:
-        loaded = [(rel, rec) for rel, rec in records if is_eligible_smartphone(rec) and rel not in cached_paths]
+        loaded = [
+            (rel, rec)
+            for rel, rec in records
+            if is_eligible_smartphone(rec) and rel not in cached_paths
+        ]
         chosen = sample_diverse(loaded, limit)
         eligible_count = len(loaded)
         repo_root = data_root
