@@ -25,7 +25,9 @@ from .common import STATE_DIR
 CROSSREF_CACHE_PATH = STATE_DIR / "crossref_cache.jsonl"
 
 # A top-level, one-key-per-line "verified": false entry (2-space indented).
-_VERIFIED_FALSE_RE = re.compile(r'^(  )"verified": false(,?)[ \t]*$', re.MULTILINE)
+# Permit either common newline convention.  With ``re.MULTILINE``, ``$`` sits
+# before ``\n`` but after the preceding ``\r`` in CRLF files.
+_VERIFIED_FALSE_RE = re.compile(r'^(  )"verified": false(,?)[ \t]*(\r?)$', re.MULTILINE)
 
 
 class PromotionDecision(NamedTuple):
@@ -86,7 +88,7 @@ def flip_verified_text(raw: str) -> str | None:
     Returns None (refuse) unless exactly one such token exists, so we never touch
     a record that isn't shaped the way we expect.
     """
-    new, n = _VERIFIED_FALSE_RE.subn(r'\g<1>"verified": true\g<2>', raw)
+    new, n = _VERIFIED_FALSE_RE.subn(r'\g<1>"verified": true\g<2>\g<3>', raw)
     return new if n == 1 else None
 
 
