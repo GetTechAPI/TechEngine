@@ -477,6 +477,32 @@ class PoliteClient:
         self.retry_after_s = parse_retry_after(retry_after)
         return status, final, body
 
+    def fetch_post(self, url: str, form: dict[str, str]) -> tuple[int | None, str, str]:
+        gap = max(self.sleep_s, MIN_SLEEP_S)
+        if self.requests:
+            wait = gap - (time.monotonic() - self._last)
+            if wait > 0:
+                time.sleep(wait)
+        self.requests += 1
+        self._last = time.monotonic()
+        data = urlencode(form).encode()
+        request = Request(
+            url,
+            data=data,
+            headers={"User-Agent": USER_AGENT, "Content-Type": "application/x-www-form-urlencoded"},
+        )
+        try:
+            with urlopen(request, timeout=60) as response:
+                return (
+                    int(getattr(response, "status", None) or response.getcode()),
+                    response.geturl(),
+                    response.read().decode("utf-8", "replace"),
+                )
+        except HTTPError as exc:
+            return int(exc.code), exc.geturl(), exc.read().decode("utf-8", "replace")
+        except URLError:
+            return None, url, ""
+
 
 def _outside_repo(path: Path, repo: Path) -> None:
     resolved = path.resolve()
@@ -753,36 +779,6 @@ class PhoneDbFetcher:
             if _phonedb_heading_matches(name, title):
                 found.append(Candidate(title=title, url=url))
         return disambiguate(name, found)
-
-
-def _fetch_post(self: PoliteClient, url: str, form: dict[str, str]) -> tuple[int | None, str, str]:
-    gap = max(self.sleep_s, MIN_SLEEP_S)
-    if self.requests:
-        wait = gap - (time.monotonic() - self._last)
-        if wait > 0:
-            time.sleep(wait)
-    self.requests += 1
-    self._last = time.monotonic()
-    data = urlencode(form).encode()
-    request = Request(
-        url,
-        data=data,
-        headers={"User-Agent": USER_AGENT, "Content-Type": "application/x-www-form-urlencoded"},
-    )
-    try:
-        with urlopen(request, timeout=60) as response:
-            return (
-                int(getattr(response, "status", None) or response.getcode()),
-                response.geturl(),
-                response.read().decode("utf-8", "replace"),
-            )
-    except HTTPError as exc:
-        return int(exc.code), exc.geturl(), exc.read().decode("utf-8", "replace")
-    except URLError:
-        return None, url, ""
-
-
-PoliteClient.fetch_post = _fetch_post  # type: ignore[attr-defined]
 
 
 def evaluate_record(record: dict[str, Any], fetcher: PhoneDbFetcher, fetch: FetchFn) -> GateResult:
