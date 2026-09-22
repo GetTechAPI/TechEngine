@@ -95,6 +95,14 @@ def test_flip_refuses_already_true():
     assert promote.flip_verified_text(SEED.replace("false", "true")) is None
 
 
+def test_flip_preserves_crlf():
+    crlf_seed = SEED.replace("\n", "\r\n")
+    out = promote.flip_verified_text(crlf_seed)
+    assert out is not None
+    assert '  "verified": true,\r\n' in out
+    assert "\n" not in out.replace("\r\n", "")
+
+
 def test_write_back_atomic_lf_preserved():
     path = Path(__file__).parent / "_scratch_seed.json"
     try:
