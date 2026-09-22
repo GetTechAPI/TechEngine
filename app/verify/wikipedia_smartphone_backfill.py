@@ -624,7 +624,7 @@ def compare_specs(
     rec_wt = record.get("weight_g")
     if isinstance(rec_wt, (int, float)) and row.weight_g is not None:
         rec_wt_val = float(rec_wt)
-        tolerance = max(5.0, round(0.04 * max(rec_wt_val, row.weight_g)))
+        tolerance = max(5, round(0.04 * max(rec_wt_val, row.weight_g)))
         if abs(rec_wt_val - row.weight_g) <= tolerance:
             agreements.append("weight_g")
         else:
