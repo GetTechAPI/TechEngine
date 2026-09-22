@@ -195,7 +195,9 @@ jobs:
 
       # --- 4. Dated branch + auto PR against TechAPI (only with a PAT) ---
       - name: Create refresh PR
+        id: create_pr
         if: env.TECHAPI_WRITE_TOKEN != ''
+        continue-on-error: true
         uses: peter-evans/create-pull-request@v6
         with:
           path: ./techapi
@@ -212,3 +214,16 @@ jobs:
           committer: TechEngineBot <289859915+TechEngineBot@users.noreply.github.com>
           author: TechEngineBot <289859915+TechEngineBot@users.noreply.github.com>
           delete-branch: true
+
+      - name: Confirm refresh PR exists
+        if: env.TECHAPI_WRITE_TOKEN != ''
+        env:
+          GH_TOKEN: ${{ env.TECHAPI_WRITE_TOKEN }}
+        run: |
+          pr_count="$(gh pr list --repo GetTechAPI/TechAPI --head refresh/${{ steps.meta.outputs.date }} --base main --state open --json number --jq length)"
+          if [ "$pr_count" -gt 0 ]; then
+            exit 0
+          fi
+
+          echo "::error::Refresh PR refresh/${{ steps.meta.outputs.date }} was not created."
+          exit 1
