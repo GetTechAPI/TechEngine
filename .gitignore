@@ -51,3 +51,6 @@ coverage.xml
 # GSMArena backfill local index, resume cache, and dry-run reports.
 # Never lives in the TechAPI data checkout.
 .gsmarena-backfill/
+
+# Local Wikipedia SoC backfill cache and reports (never commit)
+.wikipedia-soc-backfill/
