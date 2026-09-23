@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sys
 from collections.abc import Iterable
 from pathlib import Path
@@ -30,6 +31,7 @@ CATEGORIES: tuple[str, ...] = (
 )
 
 VERIFY_DIR = DATA_DIR / "_verify"
+_RAW_CHIPSET_YEAR = re.compile(r"^[^,]+,\s*((?:19|20)\d{2})\s*,")
 LEDGER_PATH = VERIFY_DIR / "ledger.jsonl"  # git-tracked: promotion decisions only
 STATE_DIR = VERIFY_DIR / "state"  # gitignored caches
 SCORES_PATH = STATE_DIR / "scores.jsonl"  # full Tier 0 results (cheap to recompute)
@@ -95,7 +97,10 @@ def foreign_key_sets(
     """Build FK lookups the way ``app.validate`` does, plus a SoC release-date map.
 
     Returns ``(brand_slugs, soc_slugs, soc_release_date)`` where ``soc_release_date``
-    maps a SoC slug to its ISO release date (used for "chip can't postdate device").
+    maps a SoC slug to its best available ISO release date (used for "chip can't
+    postdate device"). A structured year in ``raw_chipset`` takes precedence
+    when the normalized January 1 placeholder is later. The raw import often
+    records the chip's year while the normalized date is several years late.
     """
     brand_slugs = {r.slug for r in records.get("brand", []) if r.slug}
     soc_slugs = {r.slug for r in records.get("soc", []) if r.slug}
@@ -103,6 +108,11 @@ def foreign_key_sets(
     for r in records.get("soc", []):
         rd = r.data.get("release_date")
         if r.slug and isinstance(rd, str):
+            raw = r.data.get("raw_chipset")
+            if rd.endswith("-01-01") and isinstance(raw, str):
+                match = _RAW_CHIPSET_YEAR.search(raw)
+                if match and match.group(1) < rd[:4]:
+                    rd = f"{match.group(1)}-01-01"
             soc_release[r.slug] = rd
     return brand_slugs, soc_slugs, soc_release
 
