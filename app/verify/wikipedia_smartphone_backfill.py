@@ -1355,7 +1355,9 @@ def _only(agreements: list[str], allowed: set[str]) -> bool:
     return bool(agreements) and set(agreements) <= allowed
 
 
-def render_summary(result: RunResult, *, dry_run: bool, sleep_s: float, category: str = "smartphone") -> str:
+def render_summary(
+    result: RunResult, *, dry_run: bool, sleep_s: float, category: str = "smartphone"
+) -> str:
     counts = result.counts()
     year_only = [
         row
@@ -1368,7 +1370,9 @@ def render_summary(result: RunResult, *, dry_run: bool, sleep_s: float, category
     spec_conflicts = [row for row in result.rows if row.get("decision") == CONTRADICT]
 
     lines = [
-        f"# Wikipedia {category.title()} backfill dry-run" if dry_run else f"# Wikipedia {category.title()} backfill",
+        f"# Wikipedia {category.title()} backfill dry-run"
+        if dry_run
+        else f"# Wikipedia {category.title()} backfill",
         "",
         f"- records processed: **{len(result.rows):,}** across **{len(result.brands)}** brands",
         f"- total eligible in dataset: {result.eligible:,}",
