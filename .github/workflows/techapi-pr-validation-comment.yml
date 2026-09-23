@@ -51,13 +51,22 @@ jobs:
           repository: GetTechAPI/TechAPI
           ref: ${{ env.TECHAPI_HEAD_SHA }}
           path: TechAPI
+          fetch-depth: 0
 
-      - name: Checkout TechAPI main
+      - name: Checkout TechAPI PR base
         uses: actions/checkout@v4
         with:
           repository: GetTechAPI/TechAPI
-          ref: main
-          path: TechAPI-main
+          ref: develop
+          path: TechAPI-base
+          fetch-depth: 0
+
+      - name: Pin PR base to the merge base
+        shell: bash
+        run: |
+          git -C TechAPI fetch --no-tags origin develop
+          base_sha="$(git -C TechAPI merge-base origin/develop HEAD)"
+          git -C TechAPI-base checkout --detach "$base_sha"
 
       - uses: actions/setup-python@v6
         with:
@@ -100,7 +109,7 @@ jobs:
               return files
 
           head = rel_site_files(Path("TechAPI"))
-          base = rel_site_files(Path("TechAPI-main"))
+          base = rel_site_files(Path("TechAPI-base"))
           added = sorted(set(head) - set(base))
           deleted = sorted(set(base) - set(head))
           modified = sorted(key for key in set(head) & set(base) if digest(head[key]) != digest(base[key]))
@@ -135,11 +144,26 @@ jobs:
 
           {
             echo
-            echo "## integrity_check.py --strict"
-            python integrity_check.py TechAPI/data --strict
-            echo "integrity_status=$?"
+            echo "## integrity_check.py (PR head compared with PR base)"
+            python integrity_check.py TechAPI/data --hard-report head-hard.json
+            echo "head_integrity_scan_status=$?"
+            python integrity_check.py TechAPI-base/data --hard-report base-hard.json > baseline-integrity.log
+            echo "base_integrity_scan_status=$?"
           } >> validation.log 2>&1
-          integrity_status=$(grep "integrity_status=" validation.log | tail -n 1 | cut -d= -f2)
+          integrity_status=$(python - <<'PY'
+          import json
+          from pathlib import Path
+
+          head = set(json.loads(Path("head-hard.json").read_text(encoding="utf-8")))
+          base = set(json.loads(Path("base-hard.json").read_text(encoding="utf-8")))
+          introduced = sorted(head - base)
+          with Path("validation.log").open("a", encoding="utf-8") as log:
+              log.write(f"\nBaseline hard anomalies: {len(base)}; PR head: {len(head)}; introduced: {len(introduced)}\n")
+              for anomaly in introduced:
+                  log.write(f"NEW HARD ANOMALY: {anomaly}\n")
+          print("1" if introduced else "0")
+          PY
+          )
 
           sed -i '/_status=/d' validation.log
 
@@ -173,7 +197,6 @@ jobs:
       - name: Build data quality summary
         shell: bash
         run: |
-          git -C TechAPI fetch --no-tags --depth=1 origin main
           python - <<'PY'
           from __future__ import annotations
 
@@ -186,7 +209,7 @@ jobs:
           from typing import Any
 
           HEAD = Path("TechAPI/data")
-          BASE = Path("TechAPI-main/data")
+          BASE = Path("TechAPI-base/data")
           CATEGORIES = (
               "brand",
               "soc",
@@ -227,8 +250,7 @@ jobs:
                       "diff",
                       "--name-status",
                       "--no-renames",
-                      "FETCH_HEAD",
-                      "HEAD",
+                      "origin/develop...HEAD",
                       "--",
                       "data",
                   ],
@@ -469,7 +491,7 @@ jobs:
           site_lines.append("## Changed site")
           site_lines.append("")
           head_site = rel_site_files(Path("TechAPI"))
-          base_site = rel_site_files(Path("TechAPI-main"))
+          base_site = rel_site_files(Path("TechAPI-base"))
           site_added = sorted(set(head_site) - set(base_site))
           site_deleted = sorted(set(base_site) - set(head_site))
           site_modified = sorted(
@@ -573,12 +595,13 @@ jobs:
                   continue
               if current_section and line.startswith("  "):
                   section_counts[current_section] += 1
-                  if any(token in line for token in ("DUP ", "slug!=file", " > ")):
-                      hard_lines.append(line)
+              if line.startswith("NEW HARD ANOMALY: "):
+                  hard_lines.append(line.removeprefix("NEW HARD ANOMALY: "))
 
           out: list[str] = []
           out.append("## Validation notes")
           out.append("")
+          out.append("- The integrity gate blocks only hard anomalies introduced by this PR relative to its merge base.")
           out.append("- Full advisory outlier listings are suppressed on successful runs because they are dataset-wide and mostly stable between PRs.")
           out.append("- Failure runs still include a detailed log excerpt for debugging.")
           if key_lines:
@@ -596,7 +619,7 @@ jobs:
                   out.append(f"| {name} | {count} |")
           if hard_lines:
               out.append("")
-              out.append("Potential blocking lines:")
+              out.append("New blocking anomalies:")
               out.append("")
               out.append("```text")
               out.extend(hard_lines[:80])
@@ -654,7 +677,7 @@ jobs:
             echo "| Check | Result |"
             echo "| --- | --- |"
             echo "| \`python -m app.validate\` | $([ "${{ steps.validate.outputs.app_status }}" = "0" ] && echo PASS || echo FAIL) |"
-            echo "| \`python integrity_check.py TechAPI/data --strict\` | $([ "${{ steps.validate.outputs.integrity_status }}" = "0" ] && echo PASS || echo FAIL) |"
+            echo "| New hard integrity anomalies vs PR base | $([ "${{ steps.validate.outputs.integrity_status }}" = "0" ] && echo PASS || echo FAIL) |"
             if [ "${site_changed}" = "true" ]; then
               echo "| \`cd TechAPI/site && npm ci && npm run build\` | $([ "${site_build_status}" = "0" ] && echo PASS || echo FAIL) |"
             fi

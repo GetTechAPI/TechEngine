@@ -220,10 +220,21 @@ jobs:
         env:
           GH_TOKEN: ${{ env.TECHAPI_WRITE_TOKEN }}
         run: |
-          pr_count="$(gh pr list --repo GetTechAPI/TechAPI --head refresh/${{ steps.meta.outputs.date }} --base main --state open --json number --jq length)"
-          if [ "$pr_count" -gt 0 ]; then
-            exit 0
-          fi
-
-          echo "::error::Refresh PR refresh/${{ steps.meta.outputs.date }} was not created."
+          set -euo pipefail
+          branch="refresh/${{ steps.meta.outputs.date }}"
+          title="chore(data): weekly refresh ${{ steps.meta.outputs.date }}"
+          for attempt in 1 2 3; do
+            if gh pr list --repo GetTechAPI/TechAPI --head "$branch" --base main \
+              --state open --json number --jq 'length' | grep -qx '[1-9][0-9]*'; then
+              exit 0
+            fi
+            # create-pull-request may have pushed the branch before its API call
+            # failed. Retry just the PR API operation without repeating the scrape.
+            if gh pr create --repo GetTechAPI/TechAPI --head "$branch" --base main \
+              --title "$title" --body-file pr-body.md; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then sleep 15; fi
+          done
+          echo "::error::Refresh PR $branch was not created after three attempts."
           exit 1

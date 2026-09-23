@@ -7,7 +7,7 @@ contamination detector). Read-only; prints flagged items for human review.
 
 Usage::
 
-    python integrity_check.py [DATA_ROOT] [--strict]
+    python integrity_check.py [DATA_ROOT] [--strict] [--hard-report PATH]
 
 By default it prints every flagged item and exits 0 (human-review mode). With
 ``--strict`` it additionally exits non-zero when any *hard* anomaly is found —
@@ -16,6 +16,7 @@ slug/filename mismatches, and physically-impossible single>multi benchmarks.
 The statistical cross-source/era outliers stay advisory (a heterogeneous catalog
 of server + desktop + mobile parts legitimately produces many ratio outliers), so
 they are printed for review but never fail the gate.
+``--hard-report`` writes a JSON list of hard anomalies for baseline comparison.
 """
 from __future__ import annotations
 import os, json, math, re, statistics, sys
@@ -28,6 +29,10 @@ except Exception:
 
 _argv = sys.argv[1:]
 STRICT = "--strict" in _argv
+_report_index = _argv.index("--hard-report") if "--hard-report" in _argv else -1
+HARD_REPORT = _argv[_report_index + 1] if _report_index >= 0 else None
+if _report_index >= 0:
+    del _argv[_report_index:_report_index + 2]
 _positional = [a for a in _argv if not a.startswith("-")]
 ROOT = _positional[0] if _positional else r"C:\Users\29\Desktop\TechAPI\data"
 
@@ -70,9 +75,9 @@ for comp, recs in (("cpu", cpus), ("gpu", gpus)):
         if d.get("slug") != fn:
             hard(f"  [{comp}] slug!=file: {fn} slug={d.get('slug')}")
     for s, fl in slugs.items():
-        if len(fl) > 1: hard(f"  [{comp}] DUP slug {s}: {fl}")
+        if len(fl) > 1: hard(f"  [{comp}] DUP slug {s}: {sorted(fl)}")
     for n, fl in names.items():
-        if len(fl) > 1: hard(f"  [{comp}] DUP name {n!r}: {fl}")
+        if len(fl) > 1: hard(f"  [{comp}] DUP name {n!r}: {sorted(fl)}")
 
 # --- 2. AMD Ryzen line vs DESKTOP model tier-digit (2nd digit); APU/mobile excepted ---
 section("CPU name/tier consistency (desktop mainstream only)")
@@ -129,6 +134,10 @@ for fa, fb in [("passmark_g3d_mark","timespy_score"),
         print(f"  [{fa}/{fb}] {label!r}: ratio={ratio}")
 
 print("\n(no lines under a section = clean)")
+
+if HARD_REPORT:
+    with open(HARD_REPORT, "w", encoding="utf-8") as report:
+        json.dump(sorted(set(HARD)), report, ensure_ascii=False, indent=2)
 
 if STRICT and HARD:
     print(f"\n❌ integrity gate: {len(HARD)} hard anomaly(ies) — blocking refresh.")
