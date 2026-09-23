@@ -1,4 +1,4 @@
-"""Backfill PhoneDB URLs onto Kaggle-only tablet records."""
+"""Backfill PhoneDB URLs onto Kaggle-only phone, tablet, and watch records."""
 
 from __future__ import annotations
 
@@ -41,6 +41,7 @@ _SOURCE_URLS_RE = re.compile(
 )
 DECISIONS = (CONFIRM, AMBIGUOUS, NOTFOUND, CONTRADICT)
 MIN_SLEEP_S = 1.0
+STOP_RETRY_AFTER_S = 5 * 60
 # Do not turn a batch run into an unattended multi-hour wait. A server can
 # ask for up to 15 minutes; anything over five minutes ends this host run
 # cleanly and leaves the remaining records eligible for a later invocation.
@@ -493,14 +494,17 @@ class PoliteClient:
         )
         try:
             with urlopen(request, timeout=60) as response:
+                self.retry_after_s = parse_retry_after(response.headers.get("Retry-After"))
                 return (
                     int(getattr(response, "status", None) or response.getcode()),
                     response.geturl(),
                     response.read().decode("utf-8", "replace"),
                 )
         except HTTPError as exc:
+            self.retry_after_s = parse_retry_after(exc.headers.get("Retry-After"))
             return int(exc.code), exc.geturl(), exc.read().decode("utf-8", "replace")
         except URLError:
+            self.retry_after_s = None
             return None, url, ""
 
 
@@ -600,6 +604,15 @@ def render_summary(result: RunResult, *, dry_run: bool, sleep_s: float) -> str:
     for name in DECISIONS:
         count = counts[name]
         lines.append(f"| {name.upper()} | {count} | {count / total:.1%} |")
+    confirms = [row for row in result.rows if row.get("decision") == CONFIRM]
+    conflicts = [row for row in result.rows if row.get("conflicts")]
+    lines.extend(
+        [
+            "",
+            f"- CONFIRM rate: {len(confirms) / total:.1%}",
+            f"- records with spec conflicts: {len(conflicts)} ({len(conflicts) / total:.1%})",
+        ]
+    )
     lines.append("")
     suffix_confirms = [
         row
@@ -678,7 +691,7 @@ def render_summary(result: RunResult, *, dry_run: bool, sleep_s: float) -> str:
 # implementation below intentionally reuses the surrounding cache, liveness,
 # guarded source_urls writer and two-stage gate from this module.
 PHONEDB_URL = "https://phonedb.net/index.php?m=device&s=list"
-PHONEDB_SOURCE = "https://www.kaggle.com/datasets/sady36/mobile-phones-specs"
+DATA_CATEGORIES = ("smartphone", "tablet", "watch")
 # PhoneDB's list endpoint emits one ``content_block_title`` anchor per result.
 # Its current markup happens to put ``title`` before ``href``; accept either
 # order and insignificant whitespace so the parser follows the page structure.
@@ -692,17 +705,35 @@ _PHONEDB_H1_RE = re.compile(r"<h1>(.*?)</h1>", re.I | re.S)
 
 
 def is_kaggle_record(record: dict[str, Any]) -> bool:
-    """The stable provenance key: tablet seed cites only sady36's Kaggle dump.
-
-    ``variant.source_category`` is absent on 96/110 affected records, so it is
-    deliberately not used as a selector.
-    """
-    return record.get("source_urls") == [PHONEDB_SOURCE]
+    """Select records whose only citation is a Kaggle dataset URL."""
+    sources = record.get("source_urls")
+    return (
+        isinstance(sources, list)
+        and len(sources) == 1
+        and isinstance(sources[0], str)
+        and sources[0].lower().startswith(
+            (
+                "https://www.kaggle.com/",
+                "https://kaggle.com/",
+                "http://www.kaggle.com/",
+                "http://kaggle.com/",
+            )
+        )
+    )
 
 
 def list_kaggle_paths(repo: Path) -> list[str]:
     proc = subprocess.run(
-        ["git", "-C", str(repo), "ls-tree", "-r", "--name-only", "HEAD", "data/tablet"],
+        [
+            "git",
+            "-C",
+            str(repo),
+            "ls-tree",
+            "-r",
+            "--name-only",
+            "HEAD",
+            *[f"data/{category}" for category in DATA_CATEGORIES],
+        ],
         capture_output=True,
         text=True,
         check=True,
@@ -712,7 +743,7 @@ def list_kaggle_paths(repo: Path) -> list[str]:
 
 def brand_of(rel_path: str) -> str:
     parts = rel_path.split("/")
-    return parts[2] if len(parts) >= 3 and parts[:2] == ["data", "tablet"] else ""
+    return parts[2] if len(parts) >= 3 and parts[0] == "data" and parts[1] in DATA_CATEGORIES else ""
 
 
 def _phonedb_text(value: str) -> str:
@@ -720,27 +751,8 @@ def _phonedb_text(value: str) -> str:
 
 
 def _phonedb_heading_matches(record_name: str, result_title: str) -> bool:
-    """Allow PhoneDB's manufacturer prefix and marketed-variant suffix.
-
-    The catalogue title is often a full SKU while a TechAPI record is the model
-    name.  A contiguous token sequence avoids fuzzy matching; page specs remain
-    the independent confirmation gate.
-    """
-    record_tokens = re.findall(r"[a-z0-9]+", record_name.lower())
-    result_tokens = re.findall(r"[a-z0-9]+", result_title.lower())
-    if not record_tokens or not result_tokens:
-        return False
-    if record_tokens == result_tokens:
-        return True
-    shorter, longer = (
-        (record_tokens, result_tokens)
-        if len(record_tokens) <= len(result_tokens)
-        else (result_tokens, record_tokens)
-    )
-    return len(shorter) >= 2 and any(
-        longer[offset : offset + len(shorter)] == shorter
-        for offset in range(len(longer) - len(shorter) + 1)
-    )
+    """Require PhoneDB's result title to exactly match the record name."""
+    return normalize_heading(record_name) == normalize_heading(result_title)
 
 
 def parse_page(html_text: str) -> PageSpecs:
@@ -760,6 +772,7 @@ def parse_page(html_text: str) -> PageSpecs:
 @dataclass
 class PhoneDbFetcher:
     client: PoliteClient
+    stopped: str | None = None
 
     def search(self, name: str) -> list[Candidate]:
         # POST is PhoneDB's documented quick-search form; no third-party search
@@ -767,6 +780,24 @@ class PhoneDbFetcher:
         status, _final, body = self.client.fetch_post(
             PHONEDB_URL, {"search_exp": name, "search_header": "Search"}
         )
+        if status == 429:
+            retry_after = self.client.retry_after_s
+            if retry_after is None:
+                self.stopped = "PhoneDB returned 429 without a usable Retry-After; stopped"
+                return []
+            if retry_after > STOP_RETRY_AFTER_S:
+                self.stopped = (
+                    f"PhoneDB requested Retry-After={retry_after:.0f}s; "
+                    "stopped before sending more requests"
+                )
+                return []
+            time.sleep(retry_after)
+            status, _final, body = self.client.fetch_post(
+                PHONEDB_URL, {"search_exp": name, "search_header": "Search"}
+            )
+            if status == 429:
+                self.stopped = "PhoneDB returned repeated 429 responses; stopped"
+                return []
         if status is None or status >= 400:
             return []
         found: list[Candidate] = []
@@ -823,6 +854,27 @@ def backfill(
     chosen = sample_diverse(eligible, limit)
     result = RunResult(index_size=0, skipped_category=len(rel_paths) - len(eligible))
     fetcher = PhoneDbFetcher(client)
+
+    def fetch(url: str) -> tuple[int | None, str, str]:
+        status, final, body = client.fetch(url)
+        if status != 429:
+            return status, final, body
+        retry_after = client.retry_after_s
+        if retry_after is None:
+            result.stopped = "PhoneDB returned 429 without a usable Retry-After; stopped"
+            return status, final, body
+        if retry_after > STOP_RETRY_AFTER_S:
+            result.stopped = (
+                f"PhoneDB requested Retry-After={retry_after:.0f}s; "
+                "stopped before sending more requests"
+            )
+            return status, final, body
+        time.sleep(retry_after)
+        status, final, body = client.fetch(url)
+        if status == 429:
+            result.stopped = "PhoneDB returned repeated 429 responses; stopped"
+        return status, final, body
+
     for rel in chosen:
         record = loaded[rel]
         result.brands.add(brand_of(rel))
@@ -832,7 +884,13 @@ def backfill(
             result.rows.append(_row_from_cache(cached))
             result.cached += 1
             continue
-        outcome = evaluate_record(record, fetcher, client.fetch)
+        outcome = evaluate_record(record, fetcher, fetch)
+        if fetcher.stopped:
+            result.stopped = fetcher.stopped
+        if result.stopped:
+            result.rows.append(_row_from_result(rel, record, outcome))
+            print(result.stopped, flush=True)
+            break
         if not dry_run and outcome.decision == CONFIRM and outcome.proposed_url:
             if not write_source_url_if_unchanged(repo / rel, record, outcome.proposed_url):
                 outcome = GateResult(
@@ -895,6 +953,9 @@ def main(argv: list[str] | None = None) -> int:
         " ".join(f"{name.upper()}={counts[name]}" for name in DECISIONS)
         + f" records={len(result.rows)} requests={result.requests} dry_run={args.dry_run}"
     )
+    if result.stopped:
+        print(result.stopped, file=sys.stderr)
+        return 1
     return 0
 
 
