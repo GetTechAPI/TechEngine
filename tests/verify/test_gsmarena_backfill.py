@@ -21,7 +21,6 @@ from app.verify.gsmarena_backfill import (
     add_source_url_text,
     backfill,
     compare_specs,
-    content_hash,
     gate_page,
     parse_cat_file_batch,
     parse_page,
@@ -370,7 +369,65 @@ def test_dry_run_does_not_write_the_record_and_caches(tmp_path: Path):
     )
     assert client.requests == 0
     assert again.cached == 1
-    assert content_hash(DX650_RECORD) == again.rows[0]["decision"] or again.cached == 1
+    assert again.rows[0]["decision"] == CONFIRM
+
+    # The cached confirmation still needs to be applied to the source file.
+    applied = backfill(
+        repo=repo,
+        cache_path=state / "gsmarena_backfill_cache.jsonl",
+        index_path=state / "phone_index.json",
+        summary_path=state / "summary.md",
+        limit=5,
+        sleep_s=0,
+        dry_run=False,
+        refresh_index=False,
+        client=client,
+        paths=[rel],
+        records={rel: DX650_RECORD},
+    )
+    url = "https://www.gsmarena.com/acer_dx650-2888.php"
+    written = target.read_text(encoding="utf-8")
+    assert json.loads(written)["source_urls"].count(url) == 1
+    assert applied.cached == 1
+    assert applied.rows[0]["decision"] == CONFIRM
+    assert client.requests == 0
+
+    # Applying again must leave the file byte-for-byte unchanged.
+    reapplied = backfill(
+        repo=repo,
+        cache_path=state / "gsmarena_backfill_cache.jsonl",
+        index_path=state / "phone_index.json",
+        summary_path=state / "summary.md",
+        limit=5,
+        sleep_s=0,
+        dry_run=False,
+        refresh_index=False,
+        client=client,
+        paths=[rel],
+        records={rel: DX650_RECORD},
+    )
+    assert target.read_text(encoding="utf-8") == written
+    assert reapplied.rows[0]["decision"] == CONFIRM
+    assert client.requests == 0
+
+    changed = {**DX650_RECORD, "battery_mah": 9999}
+    target.write_text(json.dumps(changed, indent=2) + "\n", encoding="utf-8")
+    stale = backfill(
+        repo=repo,
+        cache_path=state / "gsmarena_backfill_cache.jsonl",
+        index_path=state / "phone_index.json",
+        summary_path=state / "summary.md",
+        limit=5,
+        sleep_s=0,
+        dry_run=False,
+        refresh_index=False,
+        client=client,
+        paths=[rel],
+        records={rel: DX650_RECORD},
+    )
+    assert stale.rows[0]["decision"] == "write-failed"
+    assert url not in target.read_text(encoding="utf-8")
+    assert client.requests == 0
 
 
 def test_retry_after_is_parsed_and_honored_without_a_fixed_delay(tmp_path: Path, monkeypatch):
