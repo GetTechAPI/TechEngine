@@ -794,12 +794,16 @@ def write_source_url_if_unchanged(path: Path, record: dict[str, Any], url: str) 
         current = json.loads(raw)
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return False
-    if not isinstance(current, dict) or content_hash(current) != content_hash(record):
+    if not isinstance(current, dict):
+        return False
+    source_urls = current.get("source_urls")
+    if isinstance(source_urls, list) and url in source_urls:
+        return True
+    if content_hash(current) != content_hash(record):
         return False
     updated = add_source_url_text(raw, url)
     if updated is None:
-        source_urls = current.get("source_urls")
-        return isinstance(source_urls, list) and url in source_urls
+        return False
     tmp = path.with_suffix(path.suffix + ".tmp")
     try:
         tmp.write_bytes(updated.encode("utf-8"))
@@ -1165,7 +1169,15 @@ def backfill(
         digest = content_hash(record)
         cached = cache.get(rel)
         if cached and cached.get("hash") == digest and cached.get("decision") in DECISIONS:
-            result.rows.append(_row_from_cache(cached))
+            row = _row_from_cache(cached)
+            if not dry_run and cached["decision"] == CONFIRM:
+                url = cached.get("proposed_url")
+                if not isinstance(url, str) or not write_source_url_if_unchanged(
+                    repo / rel, record, url
+                ):
+                    row["decision"] = "write-failed"
+                    row["reason"] = "source-urls-write-failed-or-record-changed"
+            result.rows.append(row)
             result.cached += 1
             continue
         outcome = evaluate_record(record, fetcher, fetch)
@@ -1190,8 +1202,8 @@ def backfill(
                     "source-urls-write-failed-or-record-changed",
                     outcome.suffix_only,
                 )
-        # Transient blocks stay uncached so a later run can retry them. A real
-        # CONFIRM is cached only after the guarded source_urls write succeeded.
+        # Transient blocks stay uncached so a later run can retry them. Cached
+        # dry-run CONFIRMs are written through the same guard on an apply run.
         if outcome.liveness not in RETRY_LIVENESS and outcome.reason != "network-error":
             append_cache(
                 cache_entry(rel_path=rel, record=record, result=outcome, ts=_now_iso()),
