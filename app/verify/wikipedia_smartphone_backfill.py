@@ -60,7 +60,6 @@ from app.verify.crossref import (
     CONTRADICT,
     NOTFOUND,
     Candidate,
-    WikipediaFetcher,
     _heading_matches,
     normalize_heading,
 )
@@ -89,6 +88,12 @@ CROSSREF_PAGES: tuple[tuple[str, str, str], ...] = (
     ("nokia", "List_of_Nokia_products", "List of Nokia products"),
     ("asus", "Asus_ZenFone", "Asus ZenFone"),
     ("asus", "ROG_Phone", "ROG Phone"),
+)
+
+TABLET_CROSSREF_PAGES: tuple[tuple[str, str, str], ...] = (
+    ("apple", "List_of_iPad_models", "List of iPad models"),
+    ("samsung", "Samsung_Galaxy_Tab", "Samsung Galaxy Tab"),
+    ("google", "Google_Pixel_Tablet", "Google Pixel Tablet"),
 )
 
 _BRAND_TOKENS = (
@@ -912,13 +917,13 @@ def append_wikipedia_source(path: Path, url: str) -> str:
     return "written"
 
 
-def smartphone_scan_root(data_root: Path) -> tuple[Path, Path]:
+def smartphone_scan_root(data_root: Path, category: str = "smartphone") -> tuple[Path, Path]:
     for cand in (data_root, data_root / "data"):
-        direct = cand / "smartphone"
+        direct = cand / category
         if direct.is_dir():
             parent = data_root.parent if data_root.name == "data" else data_root
             return direct, parent
-    raise SystemExit(f"no data/smartphone directory under {data_root}")
+    raise SystemExit(f"no data/{category} directory under {data_root}")
 
 
 def iter_smartphone_records(
@@ -1034,7 +1039,28 @@ class PoliteWiki:
         if name in self._search_cache:
             return self._search_cache[name]
         self._pause()
-        res = WikipediaFetcher(timeout=self.timeout, limit=5).search(name)
+        if self._client is None:
+            self._client = httpx.Client(
+                timeout=self.timeout,
+                headers={"User-Agent": USER_AGENT},
+                follow_redirects=True,
+            )
+        try:
+            response = self._client.get(
+                "https://en.wikipedia.org/w/rest.php/v1/search/page",
+                params={"q": name, "limit": 5},
+            )
+            response.raise_for_status()
+            res = [
+                Candidate(
+                    title=page["title"],
+                    url=f"https://en.wikipedia.org/wiki/{quote(page['key'], safe='()_')}",
+                )
+                for page in response.json().get("pages", [])
+                if isinstance(page.get("title"), str) and isinstance(page.get("key"), str)
+            ]
+        except (httpx.HTTPError, ValueError, KeyError, TypeError):
+            res = []
         self._search_cache[name] = res
         return res
 
@@ -1154,7 +1180,10 @@ def backfill(
     search_fn: SearchFn | None = None,
     records: list[tuple[str, dict[str, Any]]] | None = None,
     cache_path: Path | None = None,
+    category: str = "smartphone",
 ) -> RunResult:
+    if category not in {"smartphone", "tablet"}:
+        raise ValueError(f"unsupported category: {category}")
     writing = apply and not dry_run
     html_cache = data_root / "data" / "_verify" / "cache" / "wikipedia_html"
     polite = PoliteWiki(sleep_s=sleep_s, cache_dir=html_cache) if fetch_page is None else None
@@ -1169,7 +1198,9 @@ def backfill(
     parsed_pages: set[str] = set()
 
     # Pre-parse list pages
-    target_pages = pages if pages is not None else CROSSREF_PAGES
+    target_pages = pages if pages is not None else (
+        TABLET_CROSSREF_PAGES if category == "tablet" else CROSSREF_PAGES
+    )
     for _mfg, page, _title in target_pages:
         status, final, html = fetch(page)
         _alive, reason = classify(f"https://en.wikipedia.org/wiki/{page}", status, final or None)
@@ -1226,9 +1257,31 @@ def backfill(
     # Load candidate records
     repo_root: Path | None = None
     if records is None:
-        phone_dir, repo_root = smartphone_scan_root(data_root)
+        phone_dir, repo_root = smartphone_scan_root(data_root, category)
         chosen = sample_diverse_records(phone_dir, repo_root, limit, exclude_paths=cached_paths)
-        eligible_count = 73465
+        if category == "tablet" and limit is not None and len(chosen) < limit:
+            remaining = sample_diverse_records(
+                phone_dir,
+                repo_root,
+                None,
+                exclude_paths=cached_paths | {rel for rel, _record in chosen},
+            )
+            chosen_models = {str(record.get("base_model_slug")) for _rel, record in chosen}
+            novel = [
+                (rel, record)
+                for rel, record in remaining
+                if str(record.get("base_model_slug")) not in chosen_models
+            ]
+            chosen.extend(sample_diverse(novel, limit - len(chosen)))
+            if len(chosen) < limit:
+                picked = {rel for rel, _record in chosen}
+                chosen.extend(
+                    sample_diverse(
+                        [(rel, record) for rel, record in remaining if rel not in picked],
+                        limit - len(chosen),
+                    )
+                )
+        eligible_count = len(chosen)
     else:
         loaded = [
             (rel, rec)
@@ -1272,6 +1325,14 @@ def backfill(
             consider_fallback(phone.base, record_brand=rec_b)
             hits = matching_rows(name, fetcher.rows, record_brand=rec_b)
 
+        if category == "tablet":
+            # A shared substring or a brand-omitted article is insufficient for
+            # the tablet batch: the article heading must name this exact model.
+            hits = [
+                row for row in hits
+                if normalize_heading(phone.base) == normalize_heading(row.model)
+            ]
+
         live = _liveness_for(hits[0].url if hits else None, page_liveness)
         outcome = decide(record, hits, liveness=live if hits else "http-200")
         entry = cache_entry(rel, outcome, record)
@@ -1294,7 +1355,7 @@ def _only(agreements: list[str], allowed: set[str]) -> bool:
     return bool(agreements) and set(agreements) <= allowed
 
 
-def render_summary(result: RunResult, *, dry_run: bool, sleep_s: float) -> str:
+def render_summary(result: RunResult, *, dry_run: bool, sleep_s: float, category: str = "smartphone") -> str:
     counts = result.counts()
     year_only = [
         row
@@ -1307,7 +1368,7 @@ def render_summary(result: RunResult, *, dry_run: bool, sleep_s: float) -> str:
     spec_conflicts = [row for row in result.rows if row.get("decision") == CONTRADICT]
 
     lines = [
-        "# Wikipedia Smartphone backfill dry-run" if dry_run else "# Wikipedia Smartphone backfill",
+        f"# Wikipedia {category.title()} backfill dry-run" if dry_run else f"# Wikipedia {category.title()} backfill",
         "",
         f"- records processed: **{len(result.rows):,}** across **{len(result.brands)}** brands",
         f"- total eligible in dataset: {result.eligible:,}",
@@ -1350,6 +1411,7 @@ def render_summary(result: RunResult, *, dry_run: bool, sleep_s: float) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-root", type=Path, default=Path("."), help="TechAPI repository root")
+    parser.add_argument("--category", choices=("smartphone", "tablet"), default="smartphone")
     parser.add_argument("--limit", type=int, default=300, help="Max records to process")
     parser.add_argument(
         "--sleep", type=float, default=MIN_SLEEP_S, help="Sleep between Wikipedia calls"
@@ -1368,7 +1430,7 @@ def main(argv: list[str] | None = None) -> int:
 
     dry_run = not args.apply if args.apply else args.dry_run
     cache_path = args.cache or (
-        args.data_root / "data" / "_verify" / "state" / "wikipedia_smartphone_cache.jsonl"
+        args.data_root / "data" / "_verify" / "state" / f"wikipedia_{args.category}_cache.jsonl"
     )
 
     result = backfill(
@@ -1379,8 +1441,9 @@ def main(argv: list[str] | None = None) -> int:
         apply=args.apply,
         max_fallback=args.max_fallback,
         cache_path=cache_path,
+        category=args.category,
     )
-    print(render_summary(result, dry_run=dry_run, sleep_s=args.sleep))
+    print(render_summary(result, dry_run=dry_run, sleep_s=args.sleep, category=args.category))
     return 0
 
 
