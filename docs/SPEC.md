@@ -958,9 +958,10 @@ algorithm_version: "1.2.0"
 | **제조사 공식 스펙시트** | 사실 데이터 | ⭐⭐⭐⭐⭐ | ✅ |
 | **Wikipedia** | CC-BY-SA | ⭐⭐⭐⭐ | ✅ (출처 표기) |
 | **Wikidata** | CC0 | ⭐⭐⭐⭐ | ✅ |
-| **GSMArena** | ToS 제한 | ⭐⭐⭐⭐⭐ | ⚠️ 참조용, 직접 크롤 금지 |
+| **GSMArena** | ToS 제한 | ⭐⭐⭐⭐⭐ | ⚠️ 인용 정정 전용(ADR-013) — 대량 스펙 추출 금지 |
+| **PhoneDB.net** | ToS 명시 없음, robots.txt 허용적 | ⭐⭐⭐⭐ | ⚠️ 인용 정정 전용(ADR-013) — 대량 스펙 추출 금지 |
 | **NanoReview** | 비공개 | ⭐⭐⭐⭐ | ⚠️ 비교만, 데이터 추출 금지 |
-| **DeviceSpecifications** | ToS 제한 | ⭐⭐⭐⭐ | ⚠️ 참조용 |
+| **DeviceSpecifications** | ToS 제한 | ⭐⭐⭐⭐ | ⚠️ 참조용, 보류(ADR-013 범위 아님) |
 | **TechPowerUp (GPU)** | 비공개 | ⭐⭐⭐⭐⭐ | ⚠️ 참조용 |
 | **Blender Open Data** | CC-BY-SA | ⭐⭐⭐⭐ | ✅ |
 | **사용자 제출 PR** | 기여자 라이선스 | 가변 | ✅ (검증 필수) |
@@ -1939,6 +1940,19 @@ TechAPI의 **핵심 목표 중 하나**. TechPicks 외에 다양한 앱·플랫�
 - **벤치 게이트**: 성능/연산 차원은 **실측 벤치만**. 없으면 `null`(스펙으로 성능 추정 금지). CPU/GPU/SoC는 벤치 전무 시 overall `null`. 폰 camera/battery/display는 본질적 스펙 기반이라 예외.
 - **출처 공개**: 각 지수의 **벤치 이름**을 `source`로 노출(예 "cinebench_r23_multi"). **원값은 여전히 ADR-006대로 비공개**.
 - **영향**: `/v1/{cpus,gpus,socs}/{slug}/score` 신규 + 상세에 `score` 임베드, 매니페스트 `scored` 카운트, 사이트 카드에 ring+bar+티어배지+출처. 재보정 시 `algorithm_version` bump 필수(기준척도 불변 보장).
+
+### ADR-013: GSMArena/PhoneDB — 인용 정정 전용 사용 허용 (대량 크롤 금지 유지)
+
+- **날짜**: 2026-09-22
+- **상태**: Accepted
+- **배경**: 스마트폰 레코드의 76.7%(81,137건, 그중 73,465건은 `variant.source_category: "gsmarena-kaggle"`)가 실제로는 GSMArena/PhoneDB에서 온 데이터를 Kaggle 덤프 URL(Tier 3)로만 인용하고 있어, 데이터 자체는 이미 신뢰 가능함에도 인용 출처 때문에 영구적으로 yellow 밴드에 갇힘. Wikipedia/Wikidata 단독으로는 스마트폰이 전체 데이터셋의 88%를 차지해 검증률 목표(30%)에 수학적으로 도달 불가능함을 확인(비-스마트폰 카테고리 100% 전환해도 이론상 상한 ~28.2%).
+- **결정**: **인용 정정(citation correction) 전용**으로 GSMArena·PhoneDB 접근을 제한적으로 허용한다.
+  - 허용: (1) GSMArena 사이트맵 인덱스 조회(구조적 URL 목록, 콘텐츠 아님), (2) 후보 1건당 라이브 페이지 1회 요청으로 제목 정확 일치(`_heading_matches`) + 스펙 1개 이상 교차확인, (3) 확인되면 `source_urls`에 정식 URL만 추가. 레코드 전체를 GSMArena에서 재스크레이핑하거나 새 스펙 필드를 채우는 행위는 이 ADR의 범위 밖.
+  - 금지 유지: 대량 스펙 크롤링, 페이지 전체 파싱 후 신규 필드 채우기, `robots`/`Retry-After` 무시, 동시성 확대(요청 간 최소 1초 유지).
+  - 도구: `app/verify/gsmarena_backfill.py`(PR #70, dry-run 검증 완료), 동일 게이트를 따르는 PhoneDB 대응 도구.
+  - 승인 범위: GSMArena, PhoneDB.net. DeviceSpecifications.com·Namuwiki(라이선스 비호환)는 이 ADR에 포함되지 않음 — 별도 검토 필요.
+- **대안**: (a) Wikipedia/Wikidata만 계속 사용 — 검증률 상한 ~24-25%로 목표 미달. (b) GSMArena 전면 크롤링 허용 — ToS 위반 리스크 과도. (c) 공식 파트너십/라이선스 체결 — 별도 트랙으로 계속 타진, 이 ADR과 배타적이지 않음.
+- **근거**: 인용 정정은 새로운 데이터를 추출하지 않고, 이미 팀이 정당하게 보유한(Kaggle을 통해 리라이선스된) 데이터의 **출처 표기만 사실대로 교정**하는 행위. 요청량은 레코드당 최대 2회(사이트맵은 1회 캐시, 페이지 확인 1회)로 제한되고 요청 간 최소 1초 간격을 지킨다.
 
 ---
 
