@@ -59,6 +59,8 @@ class Smartphone(SQLModel, table=True):
     # Assets
     image_url: str | None = None
     images: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    image_license: str | None = None
+    image_attribution: str | None = None
 
     # 3D — {url, version, bytes, sha256, license, attribution, parts[], colors[]}
     model_3d: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
