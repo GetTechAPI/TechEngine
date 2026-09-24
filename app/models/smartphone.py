@@ -60,6 +60,11 @@ class Smartphone(SQLModel, table=True):
     image_url: str | None = None
     images: list[str] = Field(default_factory=list, sa_column=Column(JSON))
 
+    # 3D — {url, version, bytes, sha256, license, attribution, parts[], colors[]}
+    model_3d: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    # Body shape for 2.5D fallback rendering — {corner_radius_mm, back_color_hex, camera_layout}
+    body: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+
     # Meta
     verified: bool = False
     source_urls: list[str] = Field(default_factory=list, sa_column=Column(JSON))

@@ -52,6 +52,8 @@ class SmartphoneRead(BaseModel):
     connectivity: dict[str, Any]
     image_url: str | None = None
     images: list[str] = []
+    model_3d: dict[str, Any] | None = None
+    body: dict[str, Any] | None = None
     score: ScoreRead
     verified: bool
     source_urls: list[str]

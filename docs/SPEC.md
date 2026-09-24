@@ -587,8 +587,13 @@ class Smartphone:
     connectivity: dict          # {wifi, bluetooth, nfc, usb}
 
     # Assets
-    image_url: str | None
+    image_url: str | None       # real hotlinked source host (gsmarena.com, aitoolbuzz.com, ...),
+                                 # NOT a TechAPI-hosted CDN — no such mirror exists (ADR-015)
     images: list[str] = []
+
+    # 3D (optional, sparse — added 2026-09-24 for TechPicks' 3D viewer, ADR-015)
+    model_3d: dict | None       # {url, version, bytes, sha256, license, attribution, parts[], colors[]}
+    body: dict | None           # {corner_radius_mm, back_color_hex, camera_layout} — 2.5D fallback shape
 
     # Meta
     verified: bool = False
@@ -1976,6 +1981,16 @@ TechAPI의 **핵심 목표 중 하나**. TechPicks 외에 다양한 앱·플랫�
   - §3.1의 "목표 데이터 수"는 2026-05 최초 계획 당시 수치라 2026-09 기준 실제 규모와 크게 다름 — 실제 수치로 갱신.
 - **재검토 트리거**: ADR-010과 동일 — 인증이 필요해지거나(토큰 발급·요청 제한), 정적 파일로 표현 불가능한 동적 쿼리(전문 검색, 복합 필터)가 실제로 요청될 때.
 
+### ADR-015: `image_url` 예시 오류 정정 + `model_3d`/`body` 스키마 필드 추가 (필드만, 콘텐츠 없음)
+
+- **날짜**: 2026-09-24
+- **상태**: Accepted
+- **배경 1 (버그 근본 원인)**: §6.4·부록 C의 스마트폰 응답 예시가 `image_url`을 `https://cdn.jsdelivr.net/gh/GetTechAPI/images/smartphones/galaxy-s25.webp` 형태로 서술했으나, `GetTechAPI/images` 리포는 존재한 적이 없다. 실제 데이터의 `image_url`은 원본 호스트(gsmarena.com, aitoolbuzz.com 등)를 그대로 가리키는 hotlink다. 이 문서 예시를 그대로 믿고 만든 외부 소비자(TechPicks)가 존재하지 않는 CDN 경로로 이미지를 요청해 전부 404를 겪었다 — **TechAPI 데이터 결함이 아니라 문서 결함이 실제 버그를 유발한 사례**.
+- **결정**: 부록 C·§6.4 예시를 실제 hotlink 형태로 정정. 앞으로 응답 예시는 실제 `app/dump.py` 산출물에서 표본을 뜨거나, 최소한 존재하는 도메인만 쓴다.
+- **배경 2 (TechPicks 3D 뷰어 요청)**: TechPicks가 기기별 `.glb` 3D 모델 + 부품 노드 + 카메라 배치 메타데이터를 요청(2026-09-24). 실제 3D 모델 파일(수백 종 스캔/모델링)은 TechAPI의 소싱 정책(§9, Wikipedia/제조사/CC 데이터셋만) 범위 밖이라 이번 결정에서 **제외** — 별도 트랙(무료/합법 3D 소스 존재 여부 조사)으로 추후 검토.
+- **결정**: 스키마 필드만 우선 추가한다 — `Smartphone.model_3d: dict | None`(url/version/bytes/sha256/license/attribution/parts[]/colors[]), `Smartphone.body: dict | None`(corner_radius_mm/back_color_hex/camera_layout, 3D 없을 때 2.5D 대체 렌더링용). 둘 다 전 레코드 `null` — 파일 소싱이 결정되기 전까지 콘텐츠는 비워둔다. `base_model_slug`는 이미 스키마에 존재하며 미채움 상태(별도 채우기 작업 필요, 이 ADR 범위 밖).
+- **영향**: `app/models/smartphone.py`, `app/schemas/smartphone.py`, `app/schemas/serializers.py`, SPEC §6.4·부록 C.
+
 ---
 
 ## 24. 용어집
@@ -2179,7 +2194,9 @@ SCORING_CONFIG_PATH=./config/scoring.yaml
     "nfc": true,
     "usb": "USB-C 3.2"
   },
-  "image_url": "https://cdn.jsdelivr.net/gh/GetTechAPI/images/smartphones/galaxy-s25.webp",
+  "image_url": "https://cdn2.gsmarena.com/vv/bigpic/samsung-galaxy-s25.jpg",
+  "model_3d": null,
+  "body": null,
   "score": {
     "algorithm_version": "1.0.0",
     "overall": 87.4,

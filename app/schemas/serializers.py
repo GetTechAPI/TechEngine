@@ -266,6 +266,8 @@ def smartphone_read(
         connectivity=phone.connectivity,
         image_url=phone.image_url,
         images=phone.images,
+        model_3d=phone.model_3d,
+        body=phone.body,
         score=phone_score_read(scores),
         verified=phone.verified,
         source_urls=phone.source_urls,
