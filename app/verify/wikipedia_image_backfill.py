@@ -178,7 +178,8 @@ class CommonsFetcher(PoliteWiki):
             f"https://{host}/w/api.php", params={"action": "query", "format": "json", **params}
         )
         response.raise_for_status()
-        return response.json()
+        data: dict[str, Any] = response.json()
+        return data
 
 
 def inspect(url: str, fetcher: CommonsFetcher, name: str = "") -> dict[str, str]:
