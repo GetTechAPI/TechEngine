@@ -275,26 +275,30 @@ feat: project scaffolding + health endpoint
 
 ## 3. 스코프
 
-### 3.1 v1 포함 카테고리
+### 3.1 실제 카테고리와 규모 (2026-09-24 기준, ADR-014)
 
-| 카테고리 | 목표 데이터 수 | 우선순위 |
-|---|---|---|
-| **Smartphones** | ~500 (2020년 이후 주요 모델) | P0 |
-| **SoCs** | ~200 (Snapdragon, MediaTek, Apple, Exynos, Tensor) | P0 |
-| **Discrete GPUs** | ~150 (NVIDIA RTX, AMD Radeon, Intel Arc) | P1 |
-| **Brands** | ~50 (제조사·SoC 메이커) | P0 |
+> 아래 표는 2026-05 최초 계획 당시 "목표"였다. 실제로는 계획보다 훨씬 큰 규모(과거 최대 111만 레코드, 2026-09-17 게임을 `game-catalog`로 분리한 뒤 약 19.1만)로 확장됐고, "2020년 이후 주요 모델만"이 아니라 1989~2026년 전 시대를 다룬다. 최신 수치는 `site/public/v1/index.json`이 정본이며 아래는 스냅샷이다.
 
-### 3.2 v2+ 확장 (시간순)
+| 카테고리 | 실제 레코드 수 | 비고 |
+|---|---:|---|
+| **Smartphones** | 93,396 | 전체의 대다수 |
+| **Websites** | 40,084 | |
+| **Software** | 42,493 | |
+| **Tablets** | 3,455 | |
+| **CPUs** | 3,993 | |
+| **SoCs** | 2,104 | |
+| **GPUs** | 2,030 | |
+| **Laptops** | 1,951 | |
+| **Monitors** | 882 | |
+| **Watches** | 433 | |
+| **PDAs** | 140 | |
+| **Brands** | 207 | |
 
-1. 태블릿
-2. 노트북·랩탑 (CPU 포함)
-3. 데스크탑 CPU
-4. 디스플레이 모듈 (패널 제조사·스펙)
-5. 카메라 센서 (Sony IMX 등)
-6. 무선 이어폰 / 헤드폰
-7. 스마트워치 / 웨어러블
-8. 게이밍 콘솔
-9. SBC (라즈베리파이 등)
+게임(962,384건)은 2026-09-17 `GetTechAPI/game-catalog`로 이력 보존 분리(별도 레포, 점수·검증 대상 아님 — 별개 정체성이라는 게 분리 기준, §3.3 참고). software/websites는 한 번 분리를 검토했으나 "테크 데이터"라는 정체성이 같아 TechAPI에 유지하기로 결정(2026-09-18).
+
+### 3.2 확장 이력 (시간순, 완료된 것)
+
+애초 "v2+"로 미뤘던 항목 대부분이 이미 구현됐다: 태블릿·워치·PDA(모바일 기기 계열), 노트북(CPU 포함), 데스크탑 CPU, 디스크리트 GPU, 소프트웨어, 웹사이트. 아직 없는 것: 디스플레이 모듈 단독 엔티티, 카메라 센서, 무선 이어폰/헤드폰, 게이밍 콘솔, SBC — 수요가 확인되면 §22와 동일한 절차(엔진 먼저 병합 → 서브모듈 bump → 데이터 PR)로 추가.
 
 ### 3.3 절대 안 다룰 영역
 
@@ -1427,97 +1431,100 @@ chore: bump fastapi to 0.115
 
 ## 16. CI/CD
 
-### 16.1 GitHub Actions 워크플로
+> ADR-014 (2026-09-24): 아래는 2026-09 기준 **실제 운영 중인** 워크플로다. 이전 판(§16.2~16.4의 Railway/Fly.io/Sentry 절차)은 한 번도 실행된 적 없는 원안이라 삭제했다 — 서버 배포가 실제로 필요해지면 ADR-010을 다시 근거로 복원한다.
+
+### 16.1 GitHub Actions 워크플로 (실제)
+
+**TechAPI**
 
 | 워크플로 | 트리거 | 작업 |
 |---|---|---|
-| `test.yml` | PR, push | 테스트 + 린트 + 타입체크 |
 | `validate-data.yml` | PR (data/ 변경) | JSON 스키마 검증 |
-| `deploy-prod.yml` | push to main | Railway/Fly.io 배포 |
-| `dump-data.yml` | main 머지 (data/ 변경) | api-data 리포에 정적 JSON 푸시 |
-| `weekly-stale.yml` | cron (월요일) | 30일 넘은 Backlog 라벨링 |
-| `release.yml` | tag (v*) | 릴리스 노트 + 패키지 배포 |
+| `pr-metadata.yml` | PR 열림 | 담당자·라벨·마일스톤·프로젝트 필드 자동 부여 |
+| `request-engine-pr-validation.yml` | PR | TechEngine에 검증 요청 (relay) |
+| `bump-engine.yml` | TechEngine 릴리스 | 서브모듈 포인터 자동 bump |
+| `notify-engine.yml` | `data/` push | TechEngine에 변경 알림 (무한루프 방지용 paths-ignore 적용) |
+| `deploy-pages.yml` | `main` push | GitHub Pages 배포 (공개 사이트) |
+| `verify-command.yml` | 수동/커맨트 트리거 | 검증 계층 커맨드 실행 |
+| `verify-report.yml` | PR | Tier 0 분석 봇 코멘트 |
 
-### 16.2 환경 분리
+**TechEngine**
 
-| 환경 | 도메인 | DB | 배포 트리거 |
-|---|---|---|---|
-| **local** | `localhost:8000` | Docker Postgres | 수동 |
-| **staging** | `staging.api.techapi.dev` | Supabase (별도 프로젝트) | PR 머지 to `develop` (Phase 3+) |
-| **production** | `api.techapi.dev` | Supabase 메인 | main 머지 |
+| 워크플로 | 트리거 | 작업 |
+|---|---|---|
+| `test.yml` | PR, push | 테스트 + 린트 |
+| `validate-data.yml` | PR | TechAPI 데이터 스키마 검증 |
+| `techapi-pr-validation-comment.yml` | TechAPI PR | `npm run build`로 사이트 빌드 검증 + TechEngineBot 리뷰 코멘트 |
+| `techapi-verify-comment.yml` | TechAPI PR | 검증 계층 분석 코멘트 |
+| `weekly-ingest.yml` | cron (주간) | 신규 SKU 수집 → TechAPI PR |
+| `weekly-refresh.yml` | cron (주간) | 실사이트 스크레이핑 + 덤프 갱신 |
+| `dump-refresh.yml` | cron + 수동 | 스크레이핑 없이 현재 데이터로 정적 덤프만 재생성 |
+| `refresh-data.yml` | 수동 | 데이터 리프레시 (tar 묶음 업로드) |
+| `verify-network.yml` | cron (월요일) + 수동(`apply` 입력) | Tier 1-3 네트워크 검증 + `verified` 승급, TechAPI에 human-gated PR |
+| `verify-status.yml` | `data/` push + 매일 | `data/_verify/status.json` 집계 갱신 |
+| `bump-techapi.yml` | TechAPI 릴리스 | 서브모듈 포인터 자동 bump |
+| `notify-techapi.yml` | TechEngine push | TechAPI에 변경 알림 |
+| `coverage-report.yml` | 매일 | 커버리지 갭 이슈 자동 갱신 |
+| `deploy-pages.yml` | `main` push | GitHub Pages 배포 |
 
-### 16.3 배포 절차
+**TechMachine** (레포 관리 전용, 서비스 코드 아님) — 매일 org 전체 워크플로 상태 점검, 문제 목록이 바뀔 때만 메인테이너 멘션 알림. 위성 레포 생성 틀도 여기서 제공.
+
+### 16.2 환경
+
+단일 환경만 존재한다: **GitHub Pages 정적 사이트** (`https://gettechapi.github.io/TechAPI/`), `main` 브랜치가 소스. `develop`은 PR 통합용이며 배포되지 않는다(develop 화면 미리보기는 아직 없음, §22 참고). 로컬 DB(SQLite)는 덤프 생성 시점에만 존재하는 임시 산출물이다.
+
+### 16.3 배포 절차 (실제)
 
 ```
-1. main 머지
+1. data/ PR이 develop에 rebase-merge
    ↓
-2. test.yml 통과
+2. develop → main 릴리스 PR (merge commit)
    ↓
-3. Docker 이미지 빌드
+3. deploy-pages.yml이 site/를 빌드해 GitHub Pages에 배포
    ↓
-4. Railway/Fly.io에 push
-   ↓
-5. 헬스체크 (`/v1/health` 200)
-   ↓
-6. 트래픽 전환 (zero-downtime)
-   ↓
-7. Sentry에 release 마킹
+4. notify-engine.yml이 TechEngine에 알림 → bump-engine이 필요시 반영
 ```
 
 ### 16.4 롤백
 
-```bash
-# Railway
-railway rollback
-
-# Fly.io
-fly releases list
-fly deploy --image registry.fly.io/techapi:v0.3.5
-```
+`main`에서 이전 커밋으로 되돌리는 revert PR을 만들고 다시 `deploy-pages.yml`이 돌게 한다. 별도 배포 플랫폼(Railway/Fly.io)이 없으므로 플랫폼 롤백 명령은 존재하지 않는다.
 
 ---
 
 ## 17. 운영·관측
 
-### 17.1 로깅
+> ADR-014 (2026-09-24): Sentry/Better Stack/UptimeRobot/Supabase는 도입된 적 없다. 실제 운영·관측은 **TechMachine**(`GetTechAPI/TechMachine`)이 org 레벨에서 담당한다. 아래는 실제 운영 방식.
 
-- **포맷**: 구조화 JSON
-- **레벨**: DEBUG (로컬), INFO (스테이징), WARN (프로덕션)
-- **수집**: Better Stack 또는 Axiom (무료 티어)
-- **필수 필드**: `timestamp`, `level`, `request_id`, `path`, `status`, `latency_ms`
+### 17.1 상태 점검
 
-### 17.2 모니터링
+- **TechMachine `health.py`**: 매일 org의 모든 활성 레포·워크플로 최신 실행을 워크플로 단위로 조회 (취소/시간초과도 문제로 간주). 최근 N개 실행만 보는 방식은 저빈도 워크플로의 실패를 놓쳐서(주간 워크플로가 취소돼도 4일간 미발견) 워크플로별 조회로 바꿨다.
+- 결과는 **[TechMachine #1](https://github.com/GetTechAPI/TechMachine/issues/1)** 이슈 하나에 계속 갱신.
 
-| 지표 | 도구 | 알림 임계치 |
-|---|---|---|
-| 에러율 | Sentry | 5min 동안 1%+ |
-| 응답 시간 | Better Stack | P95 > 500ms |
-| 가용성 | UptimeRobot | 5xx 또는 응답 없음 |
-| DB 연결 | Supabase 대시보드 | 80% 풀 |
-| 디스크 사용 | 호스팅 대시보드 | 80% |
+### 17.2 알림
 
-### 17.3 알림
+- 문제 목록이 **바뀔 때만** `@메인테이너` 멘션 댓글 (동일 실패 반복이나 "모두 정상"은 알리지 않음 — 알림 피로 방지).
+- 이메일·Discord/Slack webhook·Sentry 등 별도 알림 채널은 없음. GitHub Issue 코멘트가 유일한 채널.
 
-- **이메일**: 메인테이너 (모든 P0)
-- **Discord/Slack webhook**: 빌드 실패, 배포 완료
-- **GitHub Issue 자동 생성**: P0 발생 시
+### 17.3 로깅
+
+- 서버가 없으므로 요청 단위 구조화 로깅은 해당 없음.
+- 각 GitHub Actions 워크플로 실행 로그가 사실상의 로그 저장소 (기본 보관 기간 적용).
 
 ### 17.4 백업
 
-| 자산 | 빈도 | 보관 | 복구 시간 목표 |
+| 자산 | 빈도 | 보관 | 비고 |
 |---|---|---|---|
-| Postgres | 일 1회 (Supabase 자동) | 7일 (Free) ~ 30일 (Pro) | 1시간 |
-| GitHub 리포 | Git이 곧 백업 | 영구 | 10분 |
-| 환경 변수 | password manager | 영구 | 5분 |
-| 이미지 | GitHub | 영구 | - |
+| 데이터 (`data/`) | 커밋마다 | 영구 (Git 이력) | DB 백업 불필요 — 파일이 곧 원본 |
+| GitHub 리포 | Git이 곧 백업 | 영구 | |
+| 정적 덤프 (`site/public/v1`) | 커밋마다 | 영구 | 데이터에서 재생성 가능, 백업이라기보다 산출물 |
+| 환경 변수/시크릿 | GitHub Secrets | 영구 | password manager는 미사용 |
 
 ### 17.5 사고 대응 (Incident Response)
 
-1. **감지**: 알림 수신
-2. **분류**: P0 (서비스 다운) / P1 (성능 저하) / P2 (부분 장애)
-3. **대응**: 롤백 우선 → 원인 분석
-4. **소통**: 상태 페이지 업데이트 (Phase 3+)
-5. **사후 분석**: GitHub Issue로 post-mortem 작성
+1. **감지**: TechMachine #1 코멘트 (또는 사용자 직접 발견)
+2. **분류**: 데이터 문제(validate 실패) / CI 워크플로 실패 / 사이트 빌드 실패 — "서비스 다운"은 해당 없음(정적 사이트라 GitHub Pages 가용성에 종속)
+3. **대응**: 원인이 코드면 fix PR, 데이터면 revert 또는 후속 보정 PR
+4. **사후 분석**: 심각한 경우 `.claude/worklog_*.md`에 기록 (커밋 메시지·PR·이슈에는 에이전트 흔적을 남기지 않음)
 
 ---
 
@@ -1805,7 +1812,7 @@ TechAPI의 **핵심 목표 중 하나**. TechPicks 외에 다양한 앱·플랫�
 
 ### ADR-002: DB는 Supabase Postgres
 - **날짜**: 2026-05-26
-- **상태**: Accepted
+- **상태**: Superseded by ADR-014 (2026-09-24) — 실행된 적 없음, 실제는 정적 덤프 생성용 로컬 SQLite
 - **결정**: Supabase 호스팅 Postgres
 - **대안**: 자체 호스팅 Postgres, MySQL, MongoDB
 - **근거**: 무료 티어 충분, 운영 부담 적음, RLS 활용 가능, 어드민 UI 호환
@@ -1883,7 +1890,7 @@ TechAPI의 **핵심 목표 중 하나**. TechPicks 외에 다양한 앱·플랫�
 
 ### ADR-010: 전용 서버 (FastAPI on Railway/Fly.io) — 서버리스/Next.js 대신
 - **날짜**: 2026-05-26
-- **상태**: Accepted
+- **상태**: Superseded by ADR-014 (2026-09-24) — 배포된 적 없음, 실제는 정적 덤프 + GitHub Pages. 아래 근거는 §22 재검토 시 유효
 - **결정**: FastAPI를 Railway 또는 Fly.io에 배포하는 **전용 서버 모델**. Next.js 풀스택 / 정적 / Cloudflare Workers / Vercel Serverless 등 대안은 모두 검토 후 비채택.
 - **검토한 대안**:
   - **정적 전용**: 인증·복잡 쿼리 불가 → 핵심 요구 불충족
@@ -1953,6 +1960,21 @@ TechAPI의 **핵심 목표 중 하나**. TechPicks 외에 다양한 앱·플랫�
   - 승인 범위: GSMArena, PhoneDB.net. DeviceSpecifications.com·Namuwiki(라이선스 비호환)는 이 ADR에 포함되지 않음 — 별도 검토 필요.
 - **대안**: (a) Wikipedia/Wikidata만 계속 사용 — 검증률 상한 ~24-25%로 목표 미달. (b) GSMArena 전면 크롤링 허용 — ToS 위반 리스크 과도. (c) 공식 파트너십/라이선스 체결 — 별도 트랙으로 계속 타진, 이 ADR과 배타적이지 않음.
 - **근거**: 인용 정정은 새로운 데이터를 추출하지 않고, 이미 팀이 정당하게 보유한(Kaggle을 통해 리라이선스된) 데이터의 **출처 표기만 사실대로 교정**하는 행위. 요청량은 레코드당 최대 2회(사이트맵은 1회 캐시, 페이지 확인 1회)로 제한되고 요청 간 최소 1초 간격을 지킨다.
+
+### ADR-014: 정적 덤프 + GitHub Pages 전용 아키텍처 (라이브 서버 미배포, ADR-002·ADR-010 대체)
+
+- **날짜**: 2026-09-24
+- **상태**: Accepted (실제로는 수개월 전부터 이 방식으로 운영 중이었고, 이 ADR은 문서를 실제 구현에 맞춘 것)
+- **배경**: §4·§16·§17이 여전히 ADR-001/002/010 당시 계획(FastAPI 서버를 Railway/Fly.io에 상시 배포, Supabase Postgres, Sentry/Better Stack/UptimeRobot 모니터링, `api.techapi.dev` 도메인)을 서술하지만, 실제로는 그 서버가 한 번도 배포된 적이 없다. Railway/Fly.io 설정 파일이 리포에 존재하지 않고, `deploy-prod.yml`·`release.yml`·`weekly-stale.yml`도 존재하지 않는다. 실제 운영 중인 워크플로는 §16.1의 새 표를 참고.
+- **결정**: 문서를 실제와 일치시킨다. TechAPI는 **정적 JSON 덤프(`site/public/v1`) + GitHub Pages**로만 서비스한다.
+  - 데이터 원천은 `data/` 아래 파일 단위 JSON (Postgres/Supabase 아님). `app/config.py`의 `database_url` 기본값도 로컬 SQLite(`sqlite:///./techapi.db`)이며, 이는 덤프 생성 시 레코드를 메모리 안에서 재현하기 위한 임시 DB이지 상시 서비스 DB가 아니다.
+  - 배포는 `deploy-pages.yml`(TechAPI) 하나. 인증·동적 쿼리·요청 단위 과금이 필요해지면 그때 서버 모델을 재검토한다(ADR-010의 "재검토 트리거" 조건은 유효하게 유지).
+  - 운영·관측은 Sentry/Better Stack/UptimeRobot/Supabase 대시보드가 아니라 **TechMachine**(`GetTechAPI/TechMachine`, 매일 org 전체 워크플로 상태 점검 후 실패 목록이 바뀔 때만 메인테이너 멘션)이 담당한다. 상세는 §17 개정판 참고.
+- **영향**:
+  - ADR-002(Supabase Postgres)와 ADR-010(전용 서버/Railway·Fly.io)은 **폐기가 아니라 미실행 상태로 대체(superseded)** — Phase 4+에서 인증/동적 쿼리가 실제로 필요해지면 재소환 가능한 계획으로 남겨둔다.
+  - §16.1, §17을 이 ADR에 맞춰 갱신(아래).
+  - §3.1의 "목표 데이터 수"는 2026-05 최초 계획 당시 수치라 2026-09 기준 실제 규모와 크게 다름 — 실제 수치로 갱신.
+- **재검토 트리거**: ADR-010과 동일 — 인증이 필요해지거나(토큰 발급·요청 제한), 정적 파일로 표현 불가능한 동적 쿼리(전문 검색, 복합 필터)가 실제로 요청될 때.
 
 ---
 
