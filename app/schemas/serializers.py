@@ -29,6 +29,11 @@ from app.services.scoring import CPUScore, GPUScore, Hybrid, PhoneScore, SoCScor
 PREFIX = settings.api_version_prefix
 
 
+def _whole_as_int(value: float) -> int | float:
+    """8.0 → 8 so whole-GB phones keep their integer JSON; 0.125 stays a float."""
+    return int(value) if float(value).is_integer() else value
+
+
 def url_for(resource: str, slug: str) -> str:
     """Build a versioned resource URL, e.g. ``/v1/smartphones/galaxy-s25``."""
     return f"{PREFIX}/{resource}/{slug}"
@@ -250,7 +255,7 @@ def smartphone_read(
         soc=soc_summary(soc, soc_manufacturer),
         release_date=phone.release_date,
         msrp_usd=phone.msrp_usd,
-        ram_gb=phone.ram_gb,
+        ram_gb=_whole_as_int(phone.ram_gb),
         storage_options_gb=phone.storage_options_gb,
         variant=phone.variant,
         display=phone.display,

@@ -29,7 +29,7 @@ class Smartphone(SQLModel, table=True):
     msrp_usd: int | None = None
 
     # Memory
-    ram_gb: int
+    ram_gb: float  # sub-GB on 2006-2012 phones (original iPhone 0.125)
     storage_options_gb: list[int] = Field(default_factory=list, sa_column=Column(JSON))
     variant: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
 
