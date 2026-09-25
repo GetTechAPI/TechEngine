@@ -43,7 +43,7 @@ _LONG_DATE_RE = re.compile(
     re.IGNORECASE,
 )
 _SHORT_DATE_RE = re.compile(
-    r"\b(\d{1,2})\s+" + _MONTH_NAME + r"\s+(\d{4})\b",
+    r"\b(\d{1,2})\s+" + _MONTH_NAME + r",?\s+(\d{4})\b",
     re.IGNORECASE,
 )
 _QUARTER_RE = re.compile(r"\bQ([1-4])\s*'?(\d{2}|\d{4})\b", re.IGNORECASE)
