@@ -52,6 +52,8 @@ _BRAND_DISPLAY: dict[str, str] = {"nvidia": "NVIDIA", "amd": "AMD", "ati": "ATI"
 # The dataset keeps ATI-branded boards under ``ati``; AMD retired the ATI brand
 # in August 2010 and the curated records switch to ``amd`` from October 2010.
 _ATI_BRAND_END = date(2010, 10, 1)
+# GPU Boost / PowerTune Boost arrived in 2012; before that one core clock is both.
+_BOOST_ERA = date(2012, 1, 1)
 
 MEMORY_TYPES = (
     "GDDR7", "GDDR6X", "GDDR6", "GDDR5X", "GDDR5", "GDDR4", "GDDR3", "GDDR2",
@@ -301,9 +303,20 @@ def _build_candidate(
         return None
 
     base_clock, range_boost = _clock_mhz(text("base_clock"), unit("base_clock"))
+    unparenthesized = re.sub(r"\([^)]*\)", "", text("base_clock"))
+    if range_boost is None and len(re.findall(r"\d+", unparenthesized)) > 1:
+        # RDNA/Polaris "Core / Clock" cells stack game + boost ("1855 2495"): no base.
+        base_clock = None
     boost_clock = _clock_mhz(text("boost_clock"), unit("boost_clock"))[0] or range_boost
-    if boost_clock is None and base_clock is not None and "boost_clock" not in cells:
+    if (
+        boost_clock is None
+        and base_clock is not None
+        and "boost_clock" not in cells
+        and release_date is not None
+        and release_date < _BOOST_ERA
+    ):
         # Pre-boost boards: the dataset stores boost == base (586/586 pre-2010).
+        # Later single-clock cells are often a game clock, so they stay unknown.
         boost_clock = base_clock
 
     type_width = text("memory_type_width")
