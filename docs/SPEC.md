@@ -1990,6 +1990,7 @@ TechAPI의 **핵심 목표 중 하나**. TechPicks 외에 다양한 앱·플랫�
 - **배경 2 (TechPicks 3D 뷰어 요청)**: TechPicks가 기기별 `.glb` 3D 모델 + 부품 노드 + 카메라 배치 메타데이터를 요청(2026-09-24). 실제 3D 모델 파일(수백 종 스캔/모델링)은 TechAPI의 소싱 정책(§9, Wikipedia/제조사/CC 데이터셋만) 범위 밖이라 이번 결정에서 **제외** — 별도 트랙(무료/합법 3D 소스 존재 여부 조사)으로 추후 검토.
 - **결정**: 스키마 필드만 우선 추가한다 — `Smartphone.model_3d: dict | None`(url/version/bytes/sha256/license/attribution/parts[]/colors[]), `Smartphone.body: dict | None`(corner_radius_mm/back_color_hex/camera_layout, 3D 없을 때 2.5D 대체 렌더링용). 둘 다 전 레코드 `null` — 파일 소싱이 결정되기 전까지 콘텐츠는 비워둔다. `base_model_slug`는 이미 스키마에 존재하며 미채움 상태(별도 채우기 작업 필요, 이 ADR 범위 밖).
 - **영향**: `app/models/smartphone.py`, `app/schemas/smartphone.py`, `app/schemas/serializers.py`, SPEC §6.4·부록 C.
+- **후속 (2026-09-25)**: `base_model_slug`는 31,372건 채움(TechAPI #247), 실제 이미지는 Wikipedia Commons에서 47건 백필(`image_license`/`image_attribution` 포함, TechAPI #246). `body`는 계속 전 레코드 `null` — 기존 필드(`dimensions`는 높이·폭·두께만, `cameras`는 스펙만)로 모서리 반경·뒷판 색·카메라 배치를 유도할 근거가 없고, 추정값을 넣으면 §1.6 정확성 원칙 위반이라 채우지 않는다. 출처(제조사 도면 등)가 생기면 그때 채운다.
 
 ---
 
