@@ -96,6 +96,35 @@ TABLET_CROSSREF_PAGES: tuple[tuple[str, str, str], ...] = (
     ("google", "Google_Pixel_Tablet", "Google Pixel Tablet"),
 )
 
+WATCH_CROSSREF_PAGES: tuple[tuple[str, str, str], ...] = (
+    ("apple", "Apple_Watch", "Apple Watch"),
+    ("samsung", "Samsung_Galaxy_Watch_series", "Samsung Galaxy Watch series"),
+    ("samsung", "Samsung_Gear", "Samsung Gear"),
+    ("google", "Pixel_Watch", "Pixel Watch"),
+    ("fitbit", "List_of_Fitbit_products", "List of Fitbit products"),
+    ("garmin", "Garmin_Forerunner", "Garmin Forerunner"),
+    ("huawei", "Huawei_Watch", "Huawei Watch"),
+    ("pebble", "Pebble_(watch)", "Pebble (watch)"),
+)
+
+PDA_CROSSREF_PAGES: tuple[tuple[str, str, str], ...] = (
+    ("palm", "Palm_(companion)", "Palm (companion)"),
+    ("palm", "Palm_Treo", "Palm Treo"),
+    ("hp", "HP_iPAQ", "HP iPAQ"),
+    ("htc", "List_of_HTC_devices", "List of HTC devices"),
+    ("blackberry", "BlackBerry", "BlackBerry"),
+    ("sony", "CLIÉ", "CLIÉ"),
+    ("casio", "Casio_Cassiopeia", "Casio Cassiopeia"),
+    ("dell", "Dell_Axim", "Dell Axim"),
+)
+
+CATEGORY_CROSSREF_PAGES = {
+    "smartphone": CROSSREF_PAGES,
+    "tablet": TABLET_CROSSREF_PAGES,
+    "watch": WATCH_CROSSREF_PAGES,
+    "pda": PDA_CROSSREF_PAGES,
+}
+
 _BRAND_TOKENS = (
     "samsung",
     "apple",
@@ -121,6 +150,13 @@ _BRAND_TOKENS = (
     "meizu",
     "infinix",
     "tecno",
+    "palm",
+    "garmin",
+    "fitbit",
+    "pebble",
+    "hp",
+    "dell",
+    "casio",
 )
 
 # Header rules for parsing smartphone tables in list articles.
@@ -1182,10 +1218,10 @@ def backfill(
     cache_path: Path | None = None,
     category: str = "smartphone",
 ) -> RunResult:
-    if category not in {"smartphone", "tablet"}:
+    if category not in CATEGORY_CROSSREF_PAGES:
         raise ValueError(f"unsupported category: {category}")
     writing = apply and not dry_run
-    html_cache = data_root / "data" / "_verify" / "cache" / "wikipedia_html"
+    html_cache = None if dry_run else data_root / "data" / "_verify" / "cache" / "wikipedia_html"
     polite = PoliteWiki(sleep_s=sleep_s, cache_dir=html_cache) if fetch_page is None else None
     fetch = fetch_page or (polite.fetch if polite is not None else None)
     assert fetch is not None
@@ -1198,9 +1234,7 @@ def backfill(
     parsed_pages: set[str] = set()
 
     # Pre-parse list pages
-    target_pages = pages if pages is not None else (
-        TABLET_CROSSREF_PAGES if category == "tablet" else CROSSREF_PAGES
-    )
+    target_pages = pages if pages is not None else CATEGORY_CROSSREF_PAGES[category]
     for _mfg, page, _title in target_pages:
         status, final, html = fetch(page)
         _alive, reason = classify(f"https://en.wikipedia.org/wiki/{page}", status, final or None)
@@ -1259,7 +1293,7 @@ def backfill(
     if records is None:
         phone_dir, repo_root = smartphone_scan_root(data_root, category)
         chosen = sample_diverse_records(phone_dir, repo_root, limit, exclude_paths=cached_paths)
-        if category == "tablet" and limit is not None and len(chosen) < limit:
+        if category != "smartphone" and limit is not None and len(chosen) < limit:
             remaining = sample_diverse_records(
                 phone_dir,
                 repo_root,
@@ -1325,12 +1359,11 @@ def backfill(
             consider_fallback(phone.base, record_brand=rec_b)
             hits = matching_rows(name, fetcher.rows, record_brand=rec_b)
 
-        if category == "tablet":
+        if category != "smartphone":
             # A shared substring or a brand-omitted article is insufficient for
-            # the tablet batch: the article heading must name this exact model.
+            # these category batches: the article heading must name this exact model.
             hits = [
-                row for row in hits
-                if normalize_heading(phone.base) == normalize_heading(row.model)
+                row for row in hits if normalize_heading(phone.base) == normalize_heading(row.model)
             ]
 
         live = _liveness_for(hits[0].url if hits else None, page_liveness)
@@ -1415,7 +1448,7 @@ def render_summary(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-root", type=Path, default=Path("."), help="TechAPI repository root")
-    parser.add_argument("--category", choices=("smartphone", "tablet"), default="smartphone")
+    parser.add_argument("--category", choices=tuple(CATEGORY_CROSSREF_PAGES), default="smartphone")
     parser.add_argument("--limit", type=int, default=300, help="Max records to process")
     parser.add_argument(
         "--sleep", type=float, default=MIN_SLEEP_S, help="Sleep between Wikipedia calls"

@@ -5,8 +5,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
+from app.verify import wikipedia_smartphone_backfill as wiki_backfill
 from app.verify.crossref import _heading_matches
 from app.verify.wikipedia_smartphone_backfill import (
+    PDA_CROSSREF_PAGES,
+    WATCH_CROSSREF_PAGES,
     WikiRow,
     backfill,
     decide,
@@ -241,3 +246,72 @@ def test_apply_writes_only_confirmed_records(tmp_path: Path) -> None:
         "https://en.wikipedia.org/wiki/List_of_Samsung_Galaxy_smartphones#Galaxy_S_series"
         in updated["source_urls"]
     )
+
+
+@pytest.mark.parametrize(
+    ("category", "pages", "brand", "model"),
+    [
+        ("watch", WATCH_CROSSREF_PAGES, "apple", "Apple Watch Series 6"),
+        ("pda", PDA_CROSSREF_PAGES, "dell", "Dell Axim X5"),
+    ],
+)
+def test_category_pages_and_exact_heading(
+    tmp_path: Path,
+    category: str,
+    pages: tuple[tuple[str, str, str], ...],
+    brand: str,
+    model: str,
+) -> None:
+    page = next(page for page_brand, page, _ in pages if page_brand == brand)
+    html = f"""<table class="wikitable"><tr><th>Model</th><th>Released</th>
+    <th>RAM</th><th>Battery</th></tr><tr><td>{model}</td><td>2020</td>
+    <td>8 GB</td><td>4000 mAh</td></tr></table>"""
+    fetched: list[str] = []
+
+    def fetch(candidate: str) -> tuple[int, str, str]:
+        fetched.append(candidate)
+        return 200, f"https://en.wikipedia.org/wiki/{candidate}", html if candidate == page else ""
+
+    record = _sample_rec(name=model, brand=brand)
+    result = backfill(
+        tmp_path,
+        category=category,
+        records=[(f"data/{category}/{brand}/model.json", record)],
+        fetch_page=fetch,
+        search_fn=lambda _name: [],
+        cache_path=tmp_path / "cache.jsonl",
+    )
+    assert fetched == [item[1] for item in pages]
+    assert result.counts()["confirm"] == 1
+    assert result.written == 0
+
+    near_match = {**record, "name": f"{model} Pro"}
+    rejected = backfill(
+        tmp_path,
+        category=category,
+        records=[(f"data/{category}/{brand}/near.json", near_match)],
+        pages=[(brand, page, model)],
+        fetch_page=fetch,
+        search_fn=lambda _name: [],
+    )
+    assert rejected.counts()["confirm"] == 0
+
+
+@pytest.mark.parametrize("category", ["watch", "pda"])
+def test_category_cli_uses_category_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, category: str
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_backfill(data_root: Path, **kwargs: object) -> wiki_backfill.RunResult:
+        captured.update(kwargs)
+        return wiki_backfill.RunResult()
+
+    monkeypatch.setattr(wiki_backfill, "backfill", fake_backfill)
+    assert wiki_backfill.main(["--data-root", str(tmp_path), "--category", category]) == 0
+    assert captured["category"] == category
+    assert (
+        captured["cache_path"]
+        == tmp_path / "data" / "_verify" / "state" / f"wikipedia_{category}_cache.jsonl"
+    )
+    assert captured["apply"] is False
