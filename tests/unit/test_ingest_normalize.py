@@ -12,6 +12,7 @@ from app.ingest.normalize import (
     parse_cores_threads,
     parse_date,
     parse_frequency_ghz,
+    parse_frequency_range_ghz,
     parse_int,
     parse_tdp_w,
 )
@@ -38,10 +39,33 @@ def test_parse_frequency_ghz(text: str, expected: float | None) -> None:
         ("65/95 W", 65),
         ("125W", 125),
         ("none", None),
+        # Regression: "9.5 W" used to parse as 5 (the digits after the dot).
+        ("9.5 W", 10),
+        ("3.6 W", 4),
+        ("2.2/3 W", 2),
     ],
 )
 def test_parse_tdp_w(text: str, expected: int | None) -> None:
     assert parse_tdp_w(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("1.7–2.0 GHz", (1.7, 2.0)),
+        ("1.7-2.0 GHz", (1.7, 2.0)),
+        ("1600–2400 MHz", (1.6, 2.4)),
+        ("2.0 GHz", None),
+        ("2.0–1.7 GHz", None),
+        ("", None),
+    ],
+)
+def test_parse_frequency_range_ghz(text: str, expected: tuple[float, float] | None) -> None:
+    assert parse_frequency_range_ghz(text) == expected
+
+
+def test_parse_date_month_year_keeps_the_month() -> None:
+    assert parse_date("September 2013") == date(2013, 9, 1)
 
 
 @pytest.mark.parametrize(
