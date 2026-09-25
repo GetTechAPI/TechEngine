@@ -91,6 +91,44 @@ def _table_to_grid(table: Tag) -> list[list[str]]:
     return grid
 
 
+def parse_table_header_block(table: Tag) -> tuple[list[str], list[list[str]]]:
+    """Return ``(labels, data_rows)`` for tables with a multi-row ``<th>`` header.
+
+    Consecutive leading all-``<th>`` rows form the header block. Each column's
+    label joins the distinct texts stacked above it with ``" / "``, so a
+    ``Memory`` cell spanning ``Size (MiB) | Bus type | Bus width (bit)``
+    yields ``"Memory / Size (MiB)"`` etc. Body rows made only of ``<th>``
+    (repeated headers, group captions) are skipped. Citation markers
+    (``<sup class="reference">``) are dropped before reading text.
+    """
+    # Plain ``<sup>2</sup>`` note markers too, not just ``sup.reference``.
+    for sup in table.select("sup"):
+        sup.decompose()
+    rows = [r for r in table.select("tr") if isinstance(r, Tag)]
+    is_header = [
+        bool(cells) and all(c.name == "th" for c in cells)
+        for cells in (r.find_all(_HEADER_TAGS) for r in rows)
+    ]
+    grid = _table_to_grid(table)
+    block = 0
+    while block < len(grid) and block < len(is_header) and is_header[block]:
+        block += 1
+    if block == 0:
+        return [], []
+    width = max(len(row) for row in grid[:block])
+    labels: list[str] = []
+    for col in range(width):
+        parts: list[str] = []
+        for row in grid[:block]:
+            if col < len(row) and row[col] and row[col] not in parts:
+                parts.append(row[col])
+        labels.append(" / ".join(parts))
+    body = [
+        grid[i] for i in range(block, len(grid)) if i >= len(is_header) or not is_header[i]
+    ]
+    return labels, body
+
+
 def _detect_headers(
     grid: list[list[str]], header_rules: dict[str, list[str]]
 ) -> tuple[int, dict[int, str]] | None:
