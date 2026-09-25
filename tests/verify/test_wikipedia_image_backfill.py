@@ -143,3 +143,33 @@ def test_eligible_requires_explicit_null_image_url() -> None:
             json.dumps({"image_url": None, "source_urls": source}), encoding="utf-8"
         )
         assert [path.name for path, _, _ in eligible(root)] == ["null.json"]
+        assert [path.name for path, _, _ in eligible(root, include_missing_key=True)] == [
+            "missing.json",
+            "null.json",
+        ]
+
+
+def test_write_image_inserts_missing_fields_without_other_changes(tmp_path: Path) -> None:
+    path = tmp_path / "missing.json"
+    before = (
+        '{\r\n  "name": "Example",\r\n  "source_urls": '
+        '["https://en.wikipedia.org/wiki/Example"]\r\n}\r\n'
+    )
+    path.write_bytes(before.encode("utf-8"))
+    write_image(
+        path,
+        {
+            "image_url": "https://upload.wikimedia.org/a.jpg",
+            "image_license": "CC-BY-4.0",
+            "image_attribution": "Alice",
+        },
+    )
+    after = path.read_bytes().decode("utf-8")
+    assert after == before.replace(
+        '  "name":',
+        '  "image_url": "https://upload.wikimedia.org/a.jpg",\r\n'
+        '  "image_license": "CC-BY-4.0",\r\n'
+        '  "image_attribution": "Alice",\r\n'
+        '  "name":',
+        1,
+    )
