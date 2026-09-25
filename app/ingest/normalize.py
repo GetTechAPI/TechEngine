@@ -311,6 +311,17 @@ def guess_cpu_segment(name: str) -> str:
         return "server"
     if "threadripper" in lowered:
         return "hedt"
+    # Atom lines by Intel's own naming: C/P = microserver & network SoCs
+    # (Avoton, Rangeley, Denverton, Snow Ridge, Parker Ridge); Z/N/x3/x5/x7 =
+    # tablet/netbook/phone; D = desktop (Pineview); E/x6000 embedded fall
+    # through to desktop.
+    if (atom := re.search(r"\batom\s+([a-z]+)\d", lowered)) is not None:
+        line = atom.group(1)
+        if line in {"c", "p"}:
+            return "server"
+        if line in {"z", "n", "x"} and not re.search(r"\batom\s+x6\d{3}", lowered):
+            return "laptop"
+        return "desktop"
     # i7-13700K → desktop; i7-13700H → laptop. Look at the suffix on the model number.
     if re.search(r"\b\d{3,5}([a-z]{1,3})\b", lowered):
         match = re.search(r"\b\d{3,5}([a-z]{1,3})\b", lowered)

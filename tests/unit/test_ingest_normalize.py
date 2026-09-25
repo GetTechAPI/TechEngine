@@ -123,3 +123,19 @@ def test_guess_cpu_segment_classifies_common_naming() -> None:
     assert guess_cpu_segment("Intel Core i7-13700K") == "desktop"
     assert guess_cpu_segment("Intel Core i7-13700H") == "laptop"
     assert guess_cpu_segment("AMD Ryzen 9 7945HX") == "laptop"
+
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        ("Intel Atom C3950", "server"),
+        ("Intel Atom P5362", "server"),
+        ("Intel Atom Z3570", "laptop"),
+        ("Intel Atom x3-C3130", "laptop"),
+        ("Intel Atom N270", "laptop"),
+        ("Intel Atom D525", "desktop"),
+        ("Intel Atom x6414RE", "desktop"),
+    ],
+)
+def test_guess_cpu_segment_atom_lines(name: str, expected: str) -> None:
+    assert guess_cpu_segment(name) == expected
