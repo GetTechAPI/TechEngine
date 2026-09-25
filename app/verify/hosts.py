@@ -47,6 +47,7 @@ T2_HOSTS: frozenset[str] = frozenset(
         "geekbench.com",
         "kimovil.com",
         "devicespecifications.com",
+        "wikidata.org",
     }
 )
 

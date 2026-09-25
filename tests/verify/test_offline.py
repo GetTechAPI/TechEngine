@@ -15,9 +15,22 @@ def test_host_tiers():
     assert hosts.tier_of_host("en.wikipedia.org") == 1
     assert hosts.tier_of_host("ark.intel.com") == 1  # subdomain of intel.com
     assert hosts.tier_of_host("gsmarena.com") == 2
+    assert hosts.tier_of_host("www.wikidata.org") == 2
     assert hosts.tier_of_host("www.kaggle.com") == 3
     assert hosts.tier_of_host("example.org") == 0
     assert hosts.best_tier(["https://kaggle.com/x", "https://en.wikipedia.org/y"]) == 1
+
+
+def test_wikidata_item_is_a_tier_two_source_for_a_complete_brand():
+    rec = {
+        "slug": "google", "founded_year": 1998,
+        "description_en": "American technology company.",
+        "source_urls": ["https://www.wikidata.org/wiki/Q95"],
+    }
+    score = _score("brand", rec)
+    assert score.best_tier == 2
+    assert score.band == "green"
+    assert score.subscores["host"] == 18.0
 
 
 def test_complete_authoritative_cpu_is_green():
