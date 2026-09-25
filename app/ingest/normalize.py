@@ -121,15 +121,18 @@ def parse_int(text: str) -> int | None:
 
 
 def parse_cores_threads(text: str) -> tuple[int | None, int | None]:
-    """``"8 / 16"`` → ``(8, 16)``; ``"16"`` → ``(16, 16)`` (assumes SMT)."""
+    """``"8 / 16"`` → ``(8, 16)``; ``"16"`` → ``(16, None)``.
+
+    A bare core count says nothing about SMT, so threads stay unknown rather
+    than guessed (Atom/Xeon tables list "Cores" only; many of those parts have HT).
+    """
     if not text:
         return (None, None)
     nums = re.findall(r"\d+", text)
     if not nums:
         return (None, None)
     if len(nums) == 1:
-        cores = int(nums[0])
-        return (cores, cores)
+        return (int(nums[0]), None)
     return (int(nums[0]), int(nums[1]))
 
 

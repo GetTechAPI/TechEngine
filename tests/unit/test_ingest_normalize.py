@@ -86,7 +86,7 @@ def test_parse_cache_mb(text: str, expected: float | None) -> None:
     "text,expected",
     [
         ("8 / 16", (8, 16)),
-        ("16", (16, 16)),
+        ("16", (16, None)),
         ("24/32", (24, 32)),
         ("", (None, None)),
     ],
