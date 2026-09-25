@@ -52,14 +52,19 @@ def article_url(record: dict[str, Any]) -> str | None:
     return None
 
 
-def eligible(root: Path) -> list[tuple[Path, dict[str, Any], str]]:
+def eligible(
+    root: Path, *, include_missing_key: bool = False
+) -> list[tuple[Path, dict[str, Any], str]]:
     rows = []
     for path in sorted((root / "data" / "smartphone").rglob("*.json")):
         try:
             record = json.loads(path.read_text(encoding="utf-8-sig"))
         except (ValueError, OSError):
             continue
-        if isinstance(record, dict) and "image_url" in record and record["image_url"] is None:
+        if isinstance(record, dict) and (
+            ("image_url" in record and record["image_url"] is None)
+            or (include_missing_key and "image_url" not in record)
+        ):
             url = article_url(record)
             if url:
                 rows.append((path, record, url))
@@ -264,19 +269,33 @@ def inspect(url: str, fetcher: CommonsFetcher, name: str = "") -> dict[str, str]
 
 
 def write_image(path: Path, result: dict[str, str]) -> None:
-    text = path.read_text(encoding="utf-8")
+    text = path.read_bytes().decode("utf-8")
     record = json.loads(text)
     if record.get("image_url") is not None:
         return
+    newline = "\r\n" if "\r\n" in text else "\n"
     replacement = (
         '"image_url": ' + json.dumps(result["image_url"], ensure_ascii=False) + ",\n"
         '  "image_license": ' + json.dumps(result["image_license"], ensure_ascii=False) + ",\n"
         '  "image_attribution": ' + json.dumps(result["image_attribution"], ensure_ascii=False)
     )
-    updated, count = re.subn(r'"image_url"\s*:\s*null', lambda _match: replacement, text, count=1)
-    if count != 1:
-        raise ValueError(f"missing null image_url in {path}")
-    path.write_text(updated, encoding="utf-8")
+    replacement = replacement.replace("\n", newline)
+    if "image_url" in record:
+        updated, count = re.subn(
+            r'"image_url"\s*:\s*null', lambda _match: replacement, text, count=1
+        )
+        if count != 1:
+            raise ValueError(f"missing null image_url in {path}")
+    else:
+        if "image_license" in record or "image_attribution" in record:
+            raise ValueError(f"existing image metadata in {path}")
+        match = re.match(r'\{(?P<newline>\r?\n)(?P<indent>[ \t]+)(?=")', text)
+        if match is None:
+            raise ValueError(f"cannot insert image fields in {path}")
+        indent = match.group("indent")
+        fields = replacement.replace(newline + "  ", newline + indent)
+        updated = text[: match.end()] + fields + "," + newline + indent + text[match.end() :]
+    path.write_bytes(updated.encode("utf-8"))
 
 
 def run(
@@ -287,10 +306,13 @@ def run(
     apply: bool = False,
     sleep_s: float = 1.0,
     cache_path: Path | None = None,
+    include_missing_key: bool = False,
 ) -> list[dict[str, Any]]:
     cache_path = cache_path or root / "data" / "_verify" / "state" / "wikipedia_image_cache.jsonl"
     cache = load_decisions(cache_path)
-    rows = eligible(root)[offset : None if limit is None else offset + limit]
+    rows = eligible(root, include_missing_key=include_missing_key)[
+        offset : None if limit is None else offset + limit
+    ]
     fetcher = CommonsFetcher(sleep_s)
     results = []
     for index, (path, record, article) in enumerate(rows, 1):
@@ -349,9 +371,15 @@ def main() -> None:
     parser.add_argument("--limit", type=int)
     parser.add_argument("--sleep", type=float, default=1.0)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--include-missing-key", action="store_true")
     args = parser.parse_args()
     results = run(
-        args.data_root, offset=args.offset, limit=args.limit, apply=args.apply, sleep_s=args.sleep
+        args.data_root,
+        offset=args.offset,
+        limit=args.limit,
+        apply=args.apply,
+        sleep_s=args.sleep,
+        include_missing_key=args.include_missing_key,
     )
     print(
         json.dumps(
