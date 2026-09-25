@@ -32,30 +32,26 @@ _OS_VERSION_RE = re.compile(r"\b(\d{1,2}(?:\.\d+)?)\b")
 
 _ISO_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
 _NUMERIC_DATE_RE = re.compile(r"^(\d{4})/(\d{2})/(\d{2})$")
+# Full month names and common abbreviations ("Mar", "Sept.") — GPU list tables
+# write dates like "Mar 11, 2010" and "Dec 2024".
+_MONTH_NAME = (
+    r"(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|"
+    r"Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?"
+)
 _LONG_DATE_RE = re.compile(
-    r"\b("
-    r"January|February|March|April|May|June|July|"
-    r"August|September|October|November|December"
-    r")\s+(\d{1,2}),?\s+(\d{4})\b",
+    r"\b" + _MONTH_NAME + r"\s+(\d{1,2}),?\s+(\d{4})\b",
     re.IGNORECASE,
 )
 _SHORT_DATE_RE = re.compile(
-    r"\b(\d{1,2})\s+("
-    r"January|February|March|April|May|June|July|"
-    r"August|September|October|November|December"
-    r")\s+(\d{4})\b",
+    r"\b(\d{1,2})\s+" + _MONTH_NAME + r"\s+(\d{4})\b",
     re.IGNORECASE,
 )
 _QUARTER_RE = re.compile(r"\bQ([1-4])\s*'?(\d{2}|\d{4})\b", re.IGNORECASE)
-_MONTH_YEAR_RE = re.compile(
-    r"\b(January|February|March|April|May|June|July|"
-    r"August|September|October|November|December)\s+(\d{4})\b",
-    re.IGNORECASE,
-)
+_MONTH_YEAR_RE = re.compile(r"\b" + _MONTH_NAME + r"\s+(\d{4})\b", re.IGNORECASE)
 _YEAR_ONLY_RE = re.compile(r"\b(19\d{2}|20\d{2})\b")
 
 _MONTHS = {
-    name.lower(): index
+    name.lower()[:3]: index
     for index, name in enumerate(
         [
             "January", "February", "March", "April", "May", "June",
@@ -151,17 +147,17 @@ def parse_date(text: str) -> date | None:
         return _safe_date(year, month, day)
     if (match := _LONG_DATE_RE.search(stripped)):
         month_name, day_str, year_str = match.group(1), match.group(2), match.group(3)
-        return _safe_date(int(year_str), _MONTHS[month_name.lower()], int(day_str))
+        return _safe_date(int(year_str), _MONTHS[month_name.lower()[:3]], int(day_str))
     if (match := _SHORT_DATE_RE.search(stripped)):
         day_str, month_name, year_str = match.group(1), match.group(2), match.group(3)
-        return _safe_date(int(year_str), _MONTHS[month_name.lower()], int(day_str))
+        return _safe_date(int(year_str), _MONTHS[month_name.lower()[:3]], int(day_str))
     if (match := _QUARTER_RE.search(stripped)):
         quarter = int(match.group(1))
         year_raw = match.group(2)
         year = 2000 + int(year_raw) if len(year_raw) == 2 else int(year_raw)
         return _safe_date(year, (quarter - 1) * 3 + 1, 1)
     if (match := _MONTH_YEAR_RE.search(stripped)):
-        return _safe_date(int(match.group(2)), _MONTHS[match.group(1).lower()], 1)
+        return _safe_date(int(match.group(2)), _MONTHS[match.group(1).lower()[:3]], 1)
     if (match := _YEAR_ONLY_RE.search(stripped)):
         return _safe_date(int(match.group(1)), 1, 1)
     return None
@@ -221,6 +217,8 @@ def guess_gpu_segment(name: str) -> str:
         "instinct", "mi300", "mi325", "mi350",
         "data center", "datacenter", "professional", "radeon pro",
         "rtx 6000", "rtx 5000", "rtx 4500", "rtx 4000",
+        # Workstation lines, matching where the curated records file them.
+        "firepro", "nvs ", "rtx pro",
     )
     if any(token in lowered for token in enterprise_tokens):
         return "enterprise"
