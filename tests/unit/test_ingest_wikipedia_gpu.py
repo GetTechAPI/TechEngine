@@ -93,3 +93,28 @@ def test_codename_and_bus_helpers() -> None:
     assert normalize_bus_interface("AGP 8×") == "AGP 8x"
     assert normalize_bus_interface("AGP 4× PCI") == "AGP 4x"
     assert normalize_bus_interface("IGP") is None
+
+
+_RDNA_HTML = """
+<table class="wikitable">
+  <tr><th rowspan="2">Model</th><th rowspan="2">Launch</th><th rowspan="2">Architecture</th>
+      <th rowspan="2">Bus interface</th><th colspan="2">Core</th><th colspan="3">Memory</th>
+      <th rowspan="2">TDP</th></tr>
+  <tr><th>Clock (MHz)</th><th>Config</th><th>Size (GB)</th><th>Bus type</th>
+      <th>Bus width (bit)</th></tr>
+  <tr><th>Radeon Pro W7900 Dual Slot</th><td>June 19, 2024</td><td>RDNA 3</td>
+      <td>PCIe 4.0 ×16</td><td>1855 2495</td><td>6144:384:192</td><td>48</td><td>GDDR6</td>
+      <td>384</td><td>295 W</td></tr>
+  <tr><th>Radeon RX 6300M</th><td>January 4, 2022</td><td>RDNA 2</td>
+      <td>PCIe 4.0 ×4</td><td>1512</td><td>768:48:32</td><td>2</td><td>GDDR6</td>
+      <td>32</td><td>25 W</td></tr>
+</table>
+"""
+
+
+def test_game_clock_cells_do_not_become_base_and_boost() -> None:
+    page = "List_of_AMD_graphics_processing_units"
+    cards = {c.slug: c for c in WikipediaGpuIngest._extract(_RDNA_HTML, "amd", page, "")}
+    assert cards["radeon-pro-w7900-dual-slot"].record["base_clock_mhz"] is None
+    assert cards["radeon-rx-6300m"].record["boost_clock_mhz"] is None
+    assert not cards["radeon-rx-6300m"].is_complete
