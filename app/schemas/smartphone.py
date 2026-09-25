@@ -36,7 +36,7 @@ class SmartphoneRead(BaseModel):
     soc: SoCSummary
     release_date: date
     msrp_usd: int | None = None
-    ram_gb: int
+    ram_gb: int | float
     storage_options_gb: list[int]
     variant: dict[str, Any]
     display: dict[str, Any]
