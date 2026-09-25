@@ -88,3 +88,73 @@ def test_filters_non_model_rows_lacking_a_slug() -> None:
     # short and gets filtered out.
     slugs = {c.slug for c in candidates}
     assert all("raptor" not in slug for slug in slugs)
+
+
+# Atom-style table rendered from {{cpulist}}: an "L2 cache" column, a
+# base–turbo range in one frequency cell, a fractional TDP, a family-tier
+# group row and a footnoted model name.
+_ATOM_HTML = """
+<html><body>
+<h3>" Avoton " (22 nm)</h3>
+<table class="wikitable">
+  <tr>
+    <th>Model</th><th>Cores</th><th>Frequency</th><th>L2 cache</th>
+    <th>TDP</th><th>Released</th><th>Socket</th>
+  </tr>
+  <tr>
+    <td>Atom C2530</td><td>4</td><td>1.7–2.0 GHz</td><td>2 × 1 MB</td>
+    <td>9 W</td><td>September 2013</td><td>FC-BGA 1283</td>
+  </tr>
+  <tr>
+    <td>Atom C2508</td><td>4</td><td>1.25 GHz</td><td>2 × 1 MB</td>
+    <td>9.5 W</td><td>March 2014</td><td>FC-BGA 1283</td>
+  </tr>
+  <tr>
+    <td>Atom 3 [ 12 ]</td><td>4</td><td>1.0 GHz</td><td>1 MB</td>
+    <td>5 W</td><td>2014</td><td>BGA</td>
+  </tr>
+  <tr>
+    <td>Atom C2338 [ 7 ]</td><td>2</td><td>1.7 GHz</td><td>1 MB</td>
+    <td>7 W</td><td>2014</td><td>BGA</td>
+  </tr>
+</table>
+</body></html>
+"""
+
+
+def _atom() -> dict[str, dict[str, object]]:
+    candidates = WikipediaCpuIngest._extract(
+        _ATOM_HTML, "intel", "List_of_Intel_Atom_processors", "Intel Atom"
+    )
+    return {c.slug: c.record for c in candidates}
+
+
+def test_l2_cache_column_is_not_written_as_l3() -> None:
+    assert _atom()["atom-c2530"]["l3_cache_mb"] is None
+
+
+def test_frequency_range_splits_into_base_and_boost() -> None:
+    record = _atom()["atom-c2530"]
+    assert record["base_clock_ghz"] == 1.7
+    assert record["boost_clock_ghz"] == 2.0
+
+
+def test_fractional_tdp_rounds_instead_of_dropping_the_integer_part() -> None:
+    assert _atom()["atom-c2508"]["tdp_w"] == 10
+
+
+def test_month_year_release_keeps_the_month() -> None:
+    assert _atom()["atom-c2530"]["release_date"] == "2013-09-01"
+
+
+def test_family_tier_rows_and_footnotes_are_handled() -> None:
+    records = _atom()
+    assert "atom-3" not in records
+    assert "atom-c2338" in records
+    assert records["atom-c2338"]["name"] == "Intel Atom C2338"
+
+
+def test_quoted_heading_is_cleaned_and_node_extracted() -> None:
+    record = _atom()["atom-c2530"]
+    assert record["architecture"] == "Avoton"
+    assert record["process_node"] == "22 nm"

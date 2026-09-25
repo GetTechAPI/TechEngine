@@ -11,6 +11,7 @@ by the shared grid parser.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -25,6 +26,7 @@ from ..normalize import (
     parse_cores_threads,
     parse_date,
     parse_frequency_ghz,
+    parse_frequency_range_ghz,
     parse_int,
     parse_tdp_w,
 )
@@ -43,6 +45,15 @@ PAGES: list[tuple[str, str, str]] = [
     ("amd", "List_of_AMD_Threadripper_processors", "AMD Threadripper"),
 ]
 
+# Citation markers left in model cells ("7501 [ 32 ] [ 33 ]").
+_FOOTNOTE_RE = re.compile(r"\s*\[\s*[\w\s]{1,6}\]")
+# Rows naming only a family tier ("Ryzen 5", "Core i7", "Xeon 6") are group
+# headers, not SKUs; they pass the has-a-digit check but must never become records.
+_FAMILY_ONLY_RE = re.compile(
+    r"(?:ryzen|ryzen-pro|core|core-ultra|core-i|xeon|epyc|athlon|pentium|celeron|atom|opteron)"
+    r"-?\d{1,2}"
+)
+
 # Manufacturer keys are stored lowercase; these are their display forms used to
 # synthesize ``name`` when the model string omits the brand. Plain ``.upper()``
 # mangles "intel" → "INTEL" (an ingest casing artifact); AMD is genuinely
@@ -59,7 +70,9 @@ HEADER_RULES: dict[str, list[str]] = {
     "threads": ["threads", "thread"],
     "base_clock": ["base", "freq", "clock"],
     "boost_clock": ["boost", "turbo", "max"],
-    "l3_cache": ["l3", "cache"],
+    # Only an explicit L3 / Smart Cache column is L3. A bare "cache" match used
+    # to route "L2 cache" columns (e.g. every Atom table) into l3_cache_mb.
+    "l3_cache": ["l3", "smart cache"],
     "tdp": ["tdp", "power", "wattage"],
     "release_date": ["released", "release", "launched", "launch", "date"],
     "socket": ["socket"],
@@ -99,9 +112,11 @@ class WikipediaCpuIngest:
         for table in soup.select("table.wikitable"):
             section_label = _nearest_section_label(table) or fallback_arch
             for row in parse_table(table, HEADER_RULES):
-                model = row.cells.get("model", "")
+                model = _FOOTNOTE_RE.sub("", row.cells.get("model", "")).strip()
                 slug = slugify(model, manufacturer=manufacturer)
                 if len(slug) < 4 or not any(ch.isdigit() for ch in slug):
+                    continue
+                if _FAMILY_ONLY_RE.fullmatch(slug):
                     continue
                 architecture = row.cells.get("architecture") or section_label
                 yield _build_candidate(
@@ -112,6 +127,22 @@ class WikipediaCpuIngest:
                     row=row.cells,
                     source_url=source_url,
                 )
+
+
+_HEADING_NODE_RE = re.compile(r"\((\d+(?:\.\d+)?)\s*nm\)")
+
+
+def _clean_architecture(label: str) -> tuple[str, str | None]:
+    """``'" Denverton " (14 nm)'`` → ``("Denverton", "14 nm")``.
+
+    Section headings on the Atom/Core list pages quote the codename and carry
+    the node in parentheses; the raw heading text leaked both into
+    ``architecture``.
+    """
+    node_match = _HEADING_NODE_RE.search(label)
+    node = f"{node_match.group(1)} nm" if node_match else None
+    name = _HEADING_NODE_RE.sub("", label).replace('"', "").replace("“", "").replace("”", "")
+    return " ".join(name.split()) or label, node
 
 
 def _nearest_section_label(table: Tag) -> str | None:
@@ -139,10 +170,17 @@ def _build_candidate(
     release_date = parse_date(row.get("release_date", ""))
     base_clock = parse_frequency_ghz(row.get("base_clock", ""))
     boost_clock = parse_frequency_ghz(row.get("boost_clock", ""))
+    # "1.7–2.0 GHz" in a single frequency cell is base–boost; the plain parser
+    # would read only the number glued to the unit (2.0) as the base clock.
+    if (clock_range := parse_frequency_range_ghz(row.get("base_clock", ""))) is not None:
+        base_clock = clock_range[0]
+        boost_clock = boost_clock or clock_range[1]
     l3_cache = parse_cache_mb(row.get("l3_cache", ""))
     tdp = parse_tdp_w(row.get("tdp", ""))
     socket = row.get("socket") or None
     process_node = row.get("process_node") or None
+    architecture, node_from_heading = _clean_architecture(architecture)
+    process_node = process_node or node_from_heading
 
     segment = guess_cpu_segment(model)
     brand = _BRAND_DISPLAY.get(manufacturer, manufacturer.title())

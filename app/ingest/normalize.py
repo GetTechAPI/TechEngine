@@ -8,6 +8,7 @@ so callers can mark a row as a draft instead of crashing the pipeline.
 
 from __future__ import annotations
 
+import math
 import re
 from datetime import date
 
@@ -18,7 +19,12 @@ _CACHE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(MB|KB|GB)\b", re.IGNORECASE)
 _MEMORY_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(GB|MB)\b", re.IGNORECASE)
 _BUS_RE = re.compile(r"(\d{2,4})\s*-?\s*bit\b", re.IGNORECASE)
 _PCIE_RE = re.compile(r"PCI[-\s]?[Ee]?\s*(?:Gen\s*)?(\d(?:\.\d)?)", re.IGNORECASE)
-_TDP_RE = re.compile(r"(\d{1,4})(?:\s*/\s*\d{1,4})?\s*W\b", re.IGNORECASE)
+_TDP_RE = re.compile(
+    r"(?<![\d.])(\d{1,4}(?:\.\d+)?)(?:\s*/\s*\d{1,4}(?:\.\d+)?)?\s*W\b", re.IGNORECASE
+)
+_FREQ_RANGE_RE = re.compile(
+    r"(\d+(?:\.\d+)?)\s*(?:–|—|-|to)\s*(\d+(?:\.\d+)?)\s*(GHz|MHz)\b", re.IGNORECASE
+)
 _RAM_RE = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*(GB|MB)\b", re.IGNORECASE)
 _BATTERY_RE = re.compile(r"(\d{3,5})\s*m\s*A\s*h\b", re.IGNORECASE)
 _WEIGHT_RE = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*g\b")
@@ -41,6 +47,11 @@ _SHORT_DATE_RE = re.compile(
     re.IGNORECASE,
 )
 _QUARTER_RE = re.compile(r"\bQ([1-4])\s*'?(\d{2}|\d{4})\b", re.IGNORECASE)
+_MONTH_YEAR_RE = re.compile(
+    r"\b(January|February|March|April|May|June|July|"
+    r"August|September|October|November|December)\s+(\d{4})\b",
+    re.IGNORECASE,
+)
 _YEAR_ONLY_RE = re.compile(r"\b(19\d{2}|20\d{2})\b")
 
 _MONTHS = {
@@ -67,11 +78,24 @@ def parse_frequency_ghz(text: str) -> float | None:
 
 
 def parse_tdp_w(text: str) -> int | None:
-    """``"65 W"`` → ``65``; ``"65/95 W"`` → ``65`` (takes the lower bound)."""
+    """``"65 W"`` → ``65``; ``"65/95 W"`` → ``65``; ``"9.5 W"`` → ``10`` (half-up)."""
     if not text:
         return None
     match = _TDP_RE.search(text)
-    return int(match.group(1)) if match else None
+    return math.floor(float(match.group(1)) + 0.5) if match else None
+
+
+def parse_frequency_range_ghz(text: str) -> tuple[float, float] | None:
+    """``"1.7–2.0 GHz"`` → ``(1.7, 2.0)`` (base, boost); ``None`` if not a range."""
+    if not text:
+        return None
+    match = _FREQ_RANGE_RE.search(text)
+    if not match:
+        return None
+    low, high = float(match.group(1)), float(match.group(2))
+    if match.group(3).lower() == "mhz":
+        low, high = round(low / 1000, 3), round(high / 1000, 3)
+    return (low, high) if low < high else None
 
 
 def parse_cache_mb(text: str) -> float | None:
@@ -136,6 +160,8 @@ def parse_date(text: str) -> date | None:
         year_raw = match.group(2)
         year = 2000 + int(year_raw) if len(year_raw) == 2 else int(year_raw)
         return _safe_date(year, (quarter - 1) * 3 + 1, 1)
+    if (match := _MONTH_YEAR_RE.search(stripped)):
+        return _safe_date(int(match.group(2)), _MONTHS[match.group(1).lower()], 1)
     if (match := _YEAR_ONLY_RE.search(stripped)):
         return _safe_date(int(match.group(1)), 1, 1)
     return None
