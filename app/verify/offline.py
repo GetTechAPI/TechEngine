@@ -14,7 +14,10 @@ future release) force the band to red regardless of the numeric score.
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 from typing import Any, NamedTuple
+
+from app import validate
 
 from . import hosts, signals
 from .common import Record
@@ -67,7 +70,7 @@ def _get_path(data: dict[str, Any], path: str) -> Any:
 def _completeness(category: str, data: dict[str, Any]) -> float:
     fields = RICH_FIELDS.get(category, ())
     if not fields:
-        return W_COMPLETENESS
+        return 0.0
     present = sum(1 for f in fields if _get_path(data, f) not in (None, "", [], {}))
     return W_COMPLETENESS * present / len(fields)
 
@@ -108,6 +111,17 @@ def score_record(
     completeness = _completeness(rec.category, data)
     sigs = signals.signals_for(rec.category, data, now_year, soc_release)
     consistency, flags, hard_failed = _consistency(sigs)
+    if rec.category not in RICH_FIELDS:
+        # Only assess defined structural fields; absent domain rules earn no credit.
+        required = getattr(validate, f"{rec.category.upper()}_REQUIRED", {"slug", "name"})
+        completeness = W_COMPLETENESS * sum(k in data for k in required) / len(required)
+        consistency = 0.0
+        flags.append("domain_rules_unavailable")
+        if (not required.issubset(data) or data.get("slug") != Path(rec.path).stem
+                or not validate.SLUG_RE.fullmatch(str(data.get("slug", "")))
+                or (rec.verified and not urls)):
+            flags.append("!structural_integrity")
+            hard_failed = True
     host, best_tier = _host_score(urls)
     provenance = _provenance(data, best_tier)
 

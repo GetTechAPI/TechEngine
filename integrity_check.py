@@ -1,4 +1,4 @@
-"""One-off data-integrity scan for TechAPI CPU+GPU (structural + benchmark anomaly).
+"""One-off data-integrity scan for all TechAPI categories (structural + benchmark anomaly).
 
 Complements app/validate.py (schema) with: duplicate detection, slug/file match,
 verified-without-source, name/tier vs core-count consistency, single>multi sanity,
@@ -20,6 +20,7 @@ they are printed for review but never fail the gate.
 """
 from __future__ import annotations
 import os, json, math, re, statistics, sys
+from app.categories import CATEGORIES
 
 # Em-dash etc. in section headers must not crash on legacy consoles (e.g. cp949).
 try:
@@ -62,14 +63,18 @@ def mad_outliers(pairs, lo=0.34, hi=3.0):
 
 def section(t): print(f"\n### {t}")
 
-cpus = load("cpu"); gpus = load("gpu")
+records = {category: load(category) for category in CATEGORIES}
+cpus = records["cpu"]; gpus = records["gpu"]
+print(f"scope: {len(CATEGORIES)}/12 categories ? {sum(map(len, records.values()))} records")
 print(f"loaded CPU={len(cpus)} GPU={len(gpus)}")
 
 # --- 1. duplicates + slug/file + verified-no-source ---
 section("structural")
-for comp, recs in (("cpu", cpus), ("gpu", gpus)):
+for comp, recs in records.items():
     slugs, names = {}, {}
     for p, fn, d in recs:
+        if d.get("verified") is True and not d.get("source_urls"):
+            hard(f"  [{comp}] verified without sources: {fn}")
         slugs.setdefault(d.get("slug"), []).append(fn)
         names.setdefault(d.get("name"), []).append(fn)
         if d.get("slug") != fn:
@@ -77,7 +82,7 @@ for comp, recs in (("cpu", cpus), ("gpu", gpus)):
     for s, fl in slugs.items():
         if len(fl) > 1: hard(f"  [{comp}] DUP slug {s}: {sorted(fl)}")
     for n, fl in names.items():
-        if len(fl) > 1: hard(f"  [{comp}] DUP name {n!r}: {sorted(fl)}")
+        if comp in ("cpu", "gpu") and len(fl) > 1: hard(f"  [{comp}] DUP name {n!r}: {sorted(fl)}")
 
 # --- 2. AMD Ryzen line vs DESKTOP model tier-digit (2nd digit); APU/mobile excepted ---
 section("CPU name/tier consistency (desktop mainstream only)")

@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from app.categories import CATEGORIES
 from app.data_root import get_data_root
 
 DATA_DIR = get_data_root()
@@ -226,38 +227,16 @@ def _check_variant_path(
 def validate() -> list[str]:
     errors: list[str] = []
 
-    brands = _load("brand")
-    socs = _load("soc")
-    phones = _load("smartphone")
-    tablets = _load("tablet")
-    watches = _load("watch")
-    pdas = _load("pda")
-    gpus = _load("gpu")
-    cpus = _load("cpu")
-    laptops = _load("laptop")
-    monitors = _load("monitor")
-    software = _load("software")
-    websites = _load("website")
+    loaded = {category: _load(category) for category in CATEGORIES}
+    (brands, socs, phones, tablets, watches, pdas, gpus, cpus,
+     laptops, monitors, software, websites) = (loaded[category] for category in CATEGORIES)
 
     brand_slugs = {rec["slug"] for _, rec in brands if "slug" in rec}
     soc_slugs = {rec["slug"] for _, rec in socs if "slug" in rec}
     cpu_slugs = {rec["slug"] for _, rec in cpus if "slug" in rec}
     gpu_slugs = {rec["slug"] for _, rec in gpus if "slug" in rec}
 
-    for category, records in (
-        ("brand", brands),
-        ("soc", socs),
-        ("smartphone", phones),
-        ("tablet", tablets),
-        ("watch", watches),
-        ("pda", pdas),
-        ("gpu", gpus),
-        ("cpu", cpus),
-        ("laptop", laptops),
-        ("monitor", monitors),
-        ("software", software),
-        ("website", websites),
-    ):
+    for category, records in loaded.items():
         _check_unique_slugs(category, records, errors)
 
     for fname, rec in brands:

@@ -15,6 +15,12 @@ on:
       head_sha:
         description: "TechAPI commit SHA to verify"
         required: true
+      base_ref:
+        description: "TechAPI PR base branch (resolved from PR if omitted)"
+        required: false
+      base_sha:
+        description: "TechAPI PR base SHA (resolved from PR if omitted)"
+        required: false
 
 permissions:
   contents: read
@@ -30,6 +36,8 @@ jobs:
       PYTHONIOENCODING: utf-8
       TECHAPI_COMMENT_TOKEN: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN }}
       TECHAPI_PR_NUMBER: ${{ github.event.client_payload.pr_number || inputs.pr_number }}
+      TECHAPI_BASE_REF: ${{ github.event.client_payload.base_ref || inputs.base_ref }}
+      TECHAPI_BASE_SHA: ${{ github.event.client_payload.base_sha || inputs.base_sha }}
       TECHAPI_HEAD_SHA: ${{ github.event.client_payload.head_sha || inputs.head_sha }}
       REQUESTED_BY: ${{ github.event.client_payload.requested_by || github.actor }}
       TECHAPI_COMMENT_ID: ${{ github.event.client_payload.comment_id }}
@@ -59,6 +67,20 @@ jobs:
       - name: Checkout TechEngine
         uses: actions/checkout@v4
 
+      - name: Resolve actual PR base
+        env:
+          GH_TOKEN: ${{ env.TECHAPI_COMMENT_TOKEN || github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$TECHAPI_BASE_REF" ] || [ -z "$TECHAPI_BASE_SHA" ]; then
+            gh api "repos/GetTechAPI/TechAPI/pulls/$TECHAPI_PR_NUMBER" > pr-base.json
+            TECHAPI_BASE_REF=$(jq -r '.base.ref' pr-base.json)
+            TECHAPI_BASE_SHA=$(jq -r '.base.sha' pr-base.json)
+          fi
+          echo "TECHAPI_BASE_REF=$TECHAPI_BASE_REF" >> "$GITHUB_ENV"
+          echo "TECHAPI_BASE_SHA=$TECHAPI_BASE_SHA" >> "$GITHUB_ENV"
+
       - name: Checkout TechAPI PR head
         uses: actions/checkout@v4
         with:
@@ -83,19 +105,21 @@ jobs:
         env:
           TECHAPI_DATA_DIR: ${{ github.workspace }}/TechAPI/data
         run: |
-          git -C TechAPI fetch origin main --depth=1 || true
+          git -C TechAPI fetch --no-tags origin "$TECHAPI_BASE_SHA"
           {
             echo 'report<<VERIFY_EOF'
+            python -m app.dump_check --base "$TECHAPI_BASE_SHA" --base-ref "$TECHAPI_BASE_REF" --scope-only
+            echo ""
             if [ "${MODE}" = "tier0" ]; then
               echo "### Changed records in this PR"
               echo ""
-              python -m app.verify score --changed --no-cache --format md || echo "_app.verify unavailable on this ref._"
+              python -m app.verify score --base "$TECHAPI_BASE_SHA" --changed --no-cache --format md || echo "_app.verify unavailable on this ref._"
               echo ""
               echo "### Full-dataset baseline"
               echo ""
               python -m app.verify score --no-cache --format md || true
             else
-              python -m app.verify pr || echo "_app.verify unavailable on this ref._"
+              python -m app.verify pr --base "$TECHAPI_BASE_SHA" || echo "_app.verify unavailable on this ref._"
             fi
             echo VERIFY_EOF
           } >> "$GITHUB_OUTPUT"

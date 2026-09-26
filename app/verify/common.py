@@ -16,19 +16,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from app.categories import CATEGORIES as CATEGORIES
 from app.validate import DATA_DIR, _load
-
-# Categories the verifier knows about, in load order. Mirrors app.validate.validate.
-CATEGORIES: tuple[str, ...] = (
-    "brand",
-    "soc",
-    "smartphone",
-    "tablet",
-    "watch",
-    "pda",
-    "gpu",
-    "cpu",
-)
 
 VERIFY_DIR = DATA_DIR / "_verify"
 _RAW_CHIPSET_YEAR = re.compile(r"^[^,]+,\s*((?:19|20)\d{2})\s*,")
