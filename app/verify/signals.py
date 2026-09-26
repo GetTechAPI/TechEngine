@@ -286,9 +286,69 @@ def brand_signals(rec: dict[str, Any], now_year: int) -> list[Signal]:
     return [founded]
 
 
+def _positive_range(name: str, value: Any, lo: float, hi: float) -> Signal:
+    """Missing measurements are NA; impossible ones are hard, outliers soft."""
+    if value is None:
+        return Signal(name, "na")
+    number = _num(value)
+    if number is None:
+        return Signal(name, "fail")
+    if not math.isfinite(number) or number <= 0:
+        return Signal(name, "fail", hard=True)
+    return Signal(name, "pass" if lo <= number <= hi else "fail")
+
+
+def _resolution_signal(value: Any) -> Signal:
+    if value in (None, ""):
+        return Signal("resolution_parses", "na")
+    parsed = parse_resolution(value)
+    if parsed is None:
+        return Signal("resolution_parses", "fail")
+    if min(parsed) <= 0:
+        return Signal("resolution_parses", "fail", hard=True)
+    return Signal("resolution_parses", "pass")
+
+
+def _device_release_signal(rec: dict[str, Any], now_year: int) -> Signal:
+    # Future dates may describe announced products, so flag rather than force red.
+    year = _year_of(rec.get("release_date"))
+    if year is None:
+        return Signal("release_not_future", "na")
+    return Signal("release_not_future", "pass" if year <= now_year else "fail")
+
+
+def laptop_signals(rec: dict[str, Any], now_year: int) -> list[Signal]:
+    raw_display = rec.get("display")
+    display = raw_display if isinstance(raw_display, dict) else {}
+    return [
+        _positive_range("ram_plausible", rec.get("ram_gb"), 1, 256),
+        _positive_range("storage_plausible", rec.get("storage_gb"), 1, 16384),
+        _positive_range("display_size_plausible", display.get("size_inch"), 7, 21),
+        _positive_range("weight_plausible", rec.get("weight_g"), 400, 6000),
+        _resolution_signal(display.get("resolution")),
+        _ppi_signal(display),
+        _device_release_signal(rec, now_year),
+    ]
+
+
+def monitor_signals(rec: dict[str, Any], now_year: int) -> list[Signal]:
+    # Includes 7-inch touch monitors and 86-inch signage in the seed dataset.
+    return [
+        _positive_range("display_size_plausible", rec.get("size_inch"), 7, 86),
+        _positive_range("refresh_plausible", rec.get("refresh_hz"), 24, 600),
+        _resolution_signal(rec.get("resolution")),
+        _ppi_signal(rec),
+        _device_release_signal(rec, now_year),
+    ]
+
+
 def signals_for(
     category: str, rec: dict[str, Any], now_year: int, soc_release: dict[str, str]
 ) -> list[Signal]:
+    if category == "laptop":
+        return laptop_signals(rec, now_year)
+    if category == "monitor":
+        return monitor_signals(rec, now_year)
     if category == "cpu":
         return cpu_signals(rec, now_year)
     if category == "gpu":

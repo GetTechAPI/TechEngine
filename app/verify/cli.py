@@ -198,7 +198,7 @@ def _print_markdown(hist: dict[str, Counter[str]], scored: int, hard_flags: Coun
         )
     gtot = sum(totals.values()) or 1
     print(f"**{scored} record(s) assessed.**\n")
-    print("Laptop, monitor, software and website assess required fields and sources only; "
+    print("Software and website assess required fields and sources only; "
           "domain consistency rules are unavailable and these categories cannot earn green.\n")
 
     # Overall distribution as a Mermaid pie (rendered by GitHub). Mermaid colors
