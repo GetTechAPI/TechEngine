@@ -59,8 +59,8 @@ jobs:
       - name: Install TechEngine
         run: pip install -e .
 
-      - name: Tier 0 score (writes scores cache)
-        run: python -m app.verify score
+      - name: Tier 0 score (recomputed; no committed cache)
+        run: python -m app.verify score --no-cache
 
       - name: Tier 1 source-URL liveness
         run: python -m app.verify check-urls --max ${{ github.event.inputs.max_urls || '2000' }}

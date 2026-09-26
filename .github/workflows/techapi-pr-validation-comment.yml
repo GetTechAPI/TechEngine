@@ -21,6 +21,12 @@ on:
         type: string
         required: false
         default: ""
+      base_ref:
+        description: "TechAPI PR base branch (resolved from PR if omitted)"
+        required: false
+      base_sha:
+        description: "TechAPI PR base SHA (resolved from PR if omitted)"
+        required: false
 
 permissions:
   contents: read
@@ -35,6 +41,8 @@ jobs:
     env:
       TECHAPI_COMMENT_TOKEN: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN }}
       TECHAPI_PR_NUMBER: ${{ github.event.client_payload.pr_number || inputs.pr_number }}
+      TECHAPI_BASE_REF: ${{ github.event.client_payload.base_ref || inputs.base_ref }}
+      TECHAPI_BASE_SHA: ${{ github.event.client_payload.base_sha || inputs.base_sha }}
       TECHAPI_HEAD_SHA: ${{ github.event.client_payload.head_sha || inputs.head_sha }}
       TECHAPI_HEAD_REF: ${{ github.event.client_payload.head_ref || '' }}
       TECHAPI_PR_URL: ${{ github.event.client_payload.pr_url || inputs.pr_url }}
@@ -44,6 +52,20 @@ jobs:
     steps:
       - name: Checkout TechEngine
         uses: actions/checkout@v4
+
+      - name: Resolve actual PR base
+        env:
+          GH_TOKEN: ${{ env.TECHAPI_COMMENT_TOKEN || github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$TECHAPI_BASE_REF" ] || [ -z "$TECHAPI_BASE_SHA" ]; then
+            gh api "repos/GetTechAPI/TechAPI/pulls/$TECHAPI_PR_NUMBER" > pr-base.json
+            TECHAPI_BASE_REF=$(jq -r '.base.ref' pr-base.json)
+            TECHAPI_BASE_SHA=$(jq -r '.base.sha' pr-base.json)
+          fi
+          echo "TECHAPI_BASE_REF=$TECHAPI_BASE_REF" >> "$GITHUB_ENV"
+          echo "TECHAPI_BASE_SHA=$TECHAPI_BASE_SHA" >> "$GITHUB_ENV"
 
       - name: Checkout TechAPI PR head
         uses: actions/checkout@v4
@@ -57,16 +79,18 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: GetTechAPI/TechAPI
-          ref: develop
+          ref: ${{ env.TECHAPI_BASE_SHA }}
           path: TechAPI-base
           fetch-depth: 0
 
       - name: Pin PR base to the merge base
         shell: bash
         run: |
-          git -C TechAPI fetch --no-tags origin develop
-          base_sha="$(git -C TechAPI merge-base origin/develop HEAD)"
+          git -C TechAPI fetch --no-tags origin "$TECHAPI_BASE_SHA"
+          base_sha="$(git -C TechAPI merge-base "$TECHAPI_BASE_SHA" HEAD)"
+          git -C TechAPI-base fetch --no-tags origin "$base_sha"
           git -C TechAPI-base checkout --detach "$base_sha"
+          echo "TECHAPI_DIFF_BASE=$base_sha" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v6
         with:
@@ -165,15 +189,20 @@ jobs:
           PY
           )
 
+          python -m app.dump_check --base "$TECHAPI_BASE_SHA" --base-ref "$TECHAPI_BASE_REF" > dump-check.log 2>&1
+          dump_status=$?
+          cat dump-check.log >> validation.log
+          python -m app.dump_check --base "$TECHAPI_BASE_SHA" --base-ref "$TECHAPI_BASE_REF" --scope-only > scope.txt
           sed -i '/_status=/d' validation.log
 
           status="success"
-          if [ "${app_status:-1}" != "0" ] || [ "${integrity_status:-1}" != "0" ]; then
+          if [ "${app_status:-1}" != "0" ] || [ "${integrity_status:-1}" != "0" ] || [ "${dump_status:-1}" != "0" ]; then
             status="failure"
           fi
 
           echo "status=$status" >> "$GITHUB_OUTPUT"
           echo "app_status=${app_status:-1}" >> "$GITHUB_OUTPUT"
+          echo "dump_status=${dump_status:-1}" >> "$GITHUB_OUTPUT"
           echo "integrity_status=${integrity_status:-1}" >> "$GITHUB_OUTPUT"
 
       - name: Build TechAPI homepage
@@ -210,16 +239,8 @@ jobs:
 
           HEAD = Path("TechAPI/data")
           BASE = Path("TechAPI-base/data")
-          CATEGORIES = (
-              "brand",
-              "soc",
-              "smartphone",
-              "tablet",
-              "watch",
-              "pda",
-              "gpu",
-              "cpu",
-          )
+          import os
+          from app.categories import CATEGORIES
           MAX_WARNINGS = 20
 
           def load_json(path: Path) -> dict[str, Any]:
@@ -250,7 +271,7 @@ jobs:
                       "diff",
                       "--name-status",
                       "--no-renames",
-                      "origin/develop...HEAD",
+                      f"{os.environ['TECHAPI_BASE_SHA']}...HEAD",
                       "--",
                       "data",
                   ],
@@ -668,6 +689,8 @@ jobs:
             echo "<!-- techengine-pr-validation -->"
             echo "## TechEngine change review: ${result}"
             echo
+            cat scope.txt
+            echo
             echo "- PR: #${TECHAPI_PR_NUMBER}"
             echo "- Ref: \`${TECHAPI_HEAD_REF:-detached}\`"
             echo "- Commit: \`${short_sha}\`"
@@ -677,6 +700,7 @@ jobs:
             echo "| Check | Result |"
             echo "| --- | --- |"
             echo "| \`python -m app.validate\` | $([ "${{ steps.validate.outputs.app_status }}" = "0" ] && echo PASS || echo FAIL) |"
+            echo "| Changed dump JSON and manifest/index counts | $([ "${{ steps.validate.outputs.dump_status }}" = "0" ] && echo PASS || echo FAIL) |"
             echo "| New hard integrity anomalies vs PR base | $([ "${{ steps.validate.outputs.integrity_status }}" = "0" ] && echo PASS || echo FAIL) |"
             if [ "${site_changed}" = "true" ]; then
               echo "| \`cd TechAPI/site && npm ci && npm run build\` | $([ "${site_build_status}" = "0" ] && echo PASS || echo FAIL) |"
@@ -692,6 +716,8 @@ jobs:
           {
             echo "<!-- techengine-pr-validation-stats -->"
             echo "## TechEngine validation stats: ${result}"
+            echo
+            cat scope.txt
             echo
             echo "- PR: #${TECHAPI_PR_NUMBER}"
             echo "- Ref: \`${TECHAPI_HEAD_REF:-detached}\`"

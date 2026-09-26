@@ -42,25 +42,12 @@ def _now_iso() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _changed_data_slugs() -> set[str]:
-    """Repo-relative data/ paths changed vs origin/main (for CI --changed).
-
-    Direct two-tree diff (``origin/main HEAD``), NOT three-dot ``origin/main...HEAD``:
-    CI fetches main shallow (``--depth=1``), so there is no merge-base and the
-    three-dot form silently returns nothing. A direct tree diff only needs both
-    commit tips, which are always present.
-
-    Runs git in the *data* repository (DATA_DIR's parent), so it works whether this
-    package lives in TechAPI (data alongside) or TechEngine (data in a separate
-    TechAPI checkout pointed at by TECHAPI_DATA_DIR).
-    """
-    try:
-        out = subprocess.run(
-            ["git", "diff", "--name-only", "origin/main", "HEAD", "--", "data/"],
-            capture_output=True, text=True, check=True, cwd=DATA_DIR.parent,
-        ).stdout
-    except Exception:
-        out = ""
+def _changed_data_slugs(base: str = "origin/main") -> set[str]:
+    """Changed seed paths against the PR merge base; git errors must stay visible."""
+    out = subprocess.run(
+        ["git", "diff", "--name-only", f"{base}...HEAD", "--", "data/"],
+        capture_output=True, text=True, check=True, cwd=DATA_DIR.parent,
+    ).stdout
     # strip leading "data/" so it matches Record.path
     paths = set()
     for line in out.splitlines():
@@ -97,7 +84,7 @@ def cmd_score(args: argparse.Namespace) -> int:
     ts = _now_iso()
 
     categories = tuple(args.category) if args.category else CATEGORIES
-    changed = _changed_data_slugs() if args.changed else None
+    changed = _changed_data_slugs(args.base) if args.changed else None
 
     # The scores cache is a full-dataset snapshot; only rewrite it on a full run.
     full_scope = args.category is None and args.max is None and not args.changed
@@ -210,7 +197,9 @@ def _print_markdown(hist: dict[str, Counter[str]], scored: int, hard_flags: Coun
             f"| {cat} | {bar} | {tot} | {c['green']} | {c['yellow']} | {c['red']} | {gpct:.1f}% |"
         )
     gtot = sum(totals.values()) or 1
-    print(f"**{scored} record(s) scored.**\n")
+    print(f"**{scored} record(s) assessed.**\n")
+    print("Laptop, monitor, software and website assess required fields and sources only; "
+          "domain consistency rules are unavailable and these categories cannot earn green.\n")
 
     # Overall distribution as a Mermaid pie (rendered by GitHub). Mermaid colors
     # slices pie1/pie2/pie3 in declaration order, so pin them to green/amber/red
@@ -351,8 +340,8 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 def cmd_report(args: argparse.Namespace) -> int:
     if not SCORES_PATH.exists():
-        print("no scores cache — run `python -m app.verify score` first")
-        return 0
+        return cmd_score(argparse.Namespace(category=None, max=None, unverified_only=False,
+                                            changed=False, no_cache=True, format="text"))
     hist: dict[str, Counter[str]] = defaultdict(Counter)
     hard_flags: Counter[str] = Counter()
     for entry in ledger.iter_entries(SCORES_PATH):
@@ -584,13 +573,13 @@ def cmd_pr(args: argparse.Namespace) -> int:
 
     Tier 0 (offline score) + Tier 1 (source-URL liveness) + Tier 2 (external
     cross-reference) + Tier 3 (promotion decision, DRY-RUN — never writes). Network
-    tiers run only over the records changed vs origin/main, capped by --max.
+    tiers run only over the records changed vs the PR merge base, capped by --max.
     """
     records = load_all()
     _, _, soc_release = foreign_key_sets(records)
     now_year = offline.now_year_today()
 
-    changed = _changed_data_slugs()
+    changed = _changed_data_slugs(args.base)
     changed_recs = [
         rec for cat in CATEGORIES for rec in records[cat]
         if rec.slug and rec.path in changed
@@ -725,10 +714,11 @@ def build_parser() -> argparse.ArgumentParser:
     sc.add_argument("--category", nargs="*", choices=CATEGORIES, help="limit to categories")
     sc.add_argument("--max", type=int, default=None, help="cap number scored")
     sc.add_argument("--unverified-only", action="store_true", help="skip verified:true records")
-    sc.add_argument("--changed", action="store_true", help="only records changed vs origin/main")
+    sc.add_argument("--changed", action="store_true", help="only records changed vs PR merge base")
     sc.add_argument("--no-cache", action="store_true", help="do not write the scores cache")
     sc.add_argument("--format", choices=["text", "md"], default="text",
                     help="output format: text histogram (default) or markdown table")
+    sc.add_argument("--base", default="origin/main", help="PR base SHA or ref")
     sc.set_defaults(func=cmd_score)
 
     rp = sub.add_parser("report", help="summarize latest ledger state")
@@ -764,6 +754,7 @@ def build_parser() -> argparse.ArgumentParser:
     pm.set_defaults(func=cmd_promote)
 
     pr = sub.add_parser("pr", help="all-tiers (0-3) markdown report for a PR's changed records")
+    pr.add_argument("--base", default="origin/main", help="PR base SHA or ref")
     pr.add_argument("--max", type=int, default=40, help="cap changed records for network tiers")
     pr.set_defaults(func=cmd_pr)
 

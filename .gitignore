@@ -54,3 +54,6 @@ coverage.xml
 
 # Local Wikipedia SoC backfill cache and reports (never commit)
 .wikipedia-soc-backfill/
+
+# Recomputable verifier cache
+/data/_verify/state/
