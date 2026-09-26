@@ -203,7 +203,7 @@ jobs:
           path: ./techapi
           token: ${{ env.TECHAPI_WRITE_TOKEN }}
           branch: refresh/${{ steps.meta.outputs.date }}
-          base: main
+          base: develop
           add-paths: |
             data
             site/public/v1
@@ -224,13 +224,13 @@ jobs:
           branch="refresh/${{ steps.meta.outputs.date }}"
           title="chore(data): weekly refresh ${{ steps.meta.outputs.date }}"
           for attempt in 1 2 3; do
-            if gh pr list --repo GetTechAPI/TechAPI --head "$branch" --base main \
+            if gh pr list --repo GetTechAPI/TechAPI --head "$branch" --base develop \
               --state open --json number --jq 'length' | grep -qx '[1-9][0-9]*'; then
               exit 0
             fi
             # create-pull-request may have pushed the branch before its API call
             # failed. Retry just the PR API operation without repeating the scrape.
-            if gh pr create --repo GetTechAPI/TechAPI --head "$branch" --base main \
+            if gh pr create --repo GetTechAPI/TechAPI --head "$branch" --base develop \
               --title "$title" --body-file pr-body.md; then
               exit 0
             fi
