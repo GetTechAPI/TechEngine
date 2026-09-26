@@ -50,6 +50,10 @@ RICH_FIELDS: dict[str, tuple[str, ...]] = {
                "cameras", "os_version"),
     "watch": ("display.size_inch", "display.resolution", "os_version"),
     "pda": ("display.size_inch", "display.resolution", "os_version"),
+    "laptop": ("cpu_name", "ram_gb", "storage_gb", "display.size_inch",
+               "display.resolution", "weight_g", "gpu_name", "os", "release_date"),
+    "monitor": ("size_inch", "resolution", "refresh_hz", "panel_type", "ppi",
+                "aspect_ratio", "features.ports", "features.response_time_ms"),
     "brand": ("founded_year", "description_en"),
 }
 

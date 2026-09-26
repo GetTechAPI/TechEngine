@@ -2,58 +2,11 @@
 
 import pytest
 
-from app import validate
 from app.verify import hosts, offline
 from app.verify.common import Record
 
 NOW = 2026
 NO_SOC: dict[str, str] = {}
-
-
-@pytest.mark.parametrize("category,slug,fields,url,expected", [
-    ("laptop", "acer-chromebook-14-ammok-691",
-     {"ram_gb": 4, "os": "Chrome OS"},
-     "https://huggingface.co/datasets/Ammok/laptop_price_prediction", 53.8),
-    ("monitor", "acer-nitro-monitor-amazonmon-636",
-     {"size_inch": 23.8, "resolution": "1920x1080"},
-     "https://www.kaggle.com/datasets/durjoychandrapaul/amazon-products-sales-monitor-dataset",
-     58.5),
-])
-def test_structurally_valid_variants_are_yellow(category, slug, fields, url, expected):
-    base = "acer-chromebook-14" if category == "laptop" else "acer-nitro-monitor"
-    data = {
-        "slug": slug, "base_model_slug": base, "name": "Example", "brand": "acer",
-        "release_date": "2023-01-01", "verified": False, "source_urls": [url], **fields,
-    }
-    path = f"{category}/acer/2023/{base}/{slug}.json"
-    required = getattr(validate, f"{category.upper()}_REQUIRED")
-    errors = []
-    validate._check_required(path, data, required, errors)
-    validate._check_slug(path, slug, errors)
-    validate._check_source_urls(path, data, errors)
-    validate._check_variant_path(path, data, category, errors, allow_flat=True)
-    assert errors == []
-
-    def score():
-        return offline.score_record(Record(category, path, data), NOW, NO_SOC)
-
-    result = score()
-    assert result.band == "yellow"
-    assert result.score == expected
-    assert result.subscores["consistency"] == 0
-    assert result.flags == ["domain_rules_unavailable"]
-
-    # Strong sources can increase the normalized score, but cannot earn green
-    # without domain consistency rules.
-    data["source_urls"] = ["https://intel.com/example", "https://en.wikipedia.org/wiki/x"]
-    assert score().score >= offline.GREEN_MIN
-    assert score().band == "yellow"
-
-    del data[next(iter(fields))]
-    broken = score()
-    assert broken.score >= offline.RED_MAX  # hard fail, despite a good numeric score
-    assert broken.band == "red"
-    assert "!structural_integrity" in broken.flags
 
 
 def _score(category, data):
@@ -148,3 +101,32 @@ def test_model_key_of_a_standalone_record_is_itself():
     rec = Record("cpu", "cpu/intel/2023/desktop/core-i9-14900k.json",
                  {"slug": "core-i9-14900k"})
     assert rec.model_key == ("cpu", "core-i9-14900k")
+
+
+@pytest.mark.parametrize("category,fields", [
+    ("laptop", {"cpu_name": "Example CPU", "ram_gb": 16, "storage_gb": 512,
+                "display": {"size_inch": 14, "resolution": "1920x1080", "ppi": 157},
+                "weight_g": 1400, "gpu_name": "Integrated", "os": "Linux"}),
+    ("monitor", {"size_inch": 24, "resolution": "1920x1080", "refresh_hz": 144,
+                 "panel_type": "IPS", "ppi": 92, "aspect_ratio": "16:9",
+                 "features": {"ports": ["HDMI"], "response_time_ms": 1}}),
+])
+@pytest.mark.parametrize("url", ["https://intel.com/example", "https://wikidata.org/wiki/Q1"])
+def test_complete_laptop_monitor_can_be_green(category, fields, url):
+    data = {**fields, "release_date": "2023-01-01", "source_urls": [url]}
+    score = _score(category, data)
+    assert score.band == "green"
+    assert score.subscores["consistency"] == 35
+    assert score.flags == []
+    # A physical impossibility overrides an otherwise rich, well-sourced record.
+    data["ram_gb" if category == "laptop" else "size_inch"] = 0
+    assert _score(category, data).band == "red"
+
+
+@pytest.mark.parametrize("category", ["laptop", "monitor"])
+def test_sparse_bulk_laptop_monitor_stays_yellow(category):
+    data = {"release_date": "2023-01-01", "source_urls": ["https://kaggle.com/example"]}
+    score = _score(category, data)
+    assert score.band == "yellow"
+    assert "domain_rules_unavailable" not in score.flags
+    assert score.subscores["consistency"] == 35
