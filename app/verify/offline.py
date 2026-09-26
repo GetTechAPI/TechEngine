@@ -7,6 +7,10 @@ No network. Combines four sub-scores into 0..100 and a green/yellow/red band:
 * host trust     0..30  — authority of the cited ``source_urls`` (:mod:`hosts`)
 * provenance     0..10  — clean normalized data vs raw-blob-only imports
 
+Categories without domain rules omit consistency and normalize the remaining
+65 points to 0..100. Their subscores retain the original weights, and their band
+cannot be green until domain rules exist.
+
 Hard predicate violations (threads<cores, boost<base, chip postdates device,
 future release) force the band to red regardless of the numeric score.
 """
@@ -111,7 +115,8 @@ def score_record(
     completeness = _completeness(rec.category, data)
     sigs = signals.signals_for(rec.category, data, now_year, soc_release)
     consistency, flags, hard_failed = _consistency(sigs)
-    if rec.category not in RICH_FIELDS:
+    has_domain_rules = rec.category in RICH_FIELDS
+    if not has_domain_rules:
         # Only assess defined structural fields; absent domain rules earn no credit.
         required = getattr(validate, f"{rec.category.upper()}_REQUIRED", {"slug", "name"})
         completeness = W_COMPLETENESS * sum(k in data for k in required) / len(required)
@@ -126,6 +131,11 @@ def score_record(
     provenance = _provenance(data, best_tier)
 
     total = completeness + consistency + host + provenance
+    if not has_domain_rules:
+        # Missing domain rules remove an assessment dimension, not evidence of
+        # validity. Normalize the remaining weights onto the same 0..100 scale.
+        available = W_COMPLETENESS + W_HOST + W_PROVENANCE
+        total = total * 100.0 / available
     subscores = {
         "completeness": round(completeness, 1),
         "consistency": round(consistency, 1),
@@ -135,7 +145,7 @@ def score_record(
 
     if hard_failed:
         band = "red"
-    elif total >= GREEN_MIN and best_tier in (1, 2):
+    elif has_domain_rules and total >= GREEN_MIN and best_tier in (1, 2):
         band = "green"
     elif total < RED_MAX:
         band = "red"

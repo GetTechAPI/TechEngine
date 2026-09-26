@@ -1,10 +1,59 @@
 """Tier 0 scorer + host classification tests."""
 
+import pytest
+
+from app import validate
 from app.verify import hosts, offline
 from app.verify.common import Record
 
 NOW = 2026
 NO_SOC: dict[str, str] = {}
+
+
+@pytest.mark.parametrize("category,slug,fields,url,expected", [
+    ("laptop", "acer-chromebook-14-ammok-691",
+     {"ram_gb": 4, "os": "Chrome OS"},
+     "https://huggingface.co/datasets/Ammok/laptop_price_prediction", 53.8),
+    ("monitor", "acer-nitro-monitor-amazonmon-636",
+     {"size_inch": 23.8, "resolution": "1920x1080"},
+     "https://www.kaggle.com/datasets/durjoychandrapaul/amazon-products-sales-monitor-dataset",
+     58.5),
+])
+def test_structurally_valid_variants_are_yellow(category, slug, fields, url, expected):
+    base = "acer-chromebook-14" if category == "laptop" else "acer-nitro-monitor"
+    data = {
+        "slug": slug, "base_model_slug": base, "name": "Example", "brand": "acer",
+        "release_date": "2023-01-01", "verified": False, "source_urls": [url], **fields,
+    }
+    path = f"{category}/acer/2023/{base}/{slug}.json"
+    required = getattr(validate, f"{category.upper()}_REQUIRED")
+    errors = []
+    validate._check_required(path, data, required, errors)
+    validate._check_slug(path, slug, errors)
+    validate._check_source_urls(path, data, errors)
+    validate._check_variant_path(path, data, category, errors, allow_flat=True)
+    assert errors == []
+
+    def score():
+        return offline.score_record(Record(category, path, data), NOW, NO_SOC)
+
+    result = score()
+    assert result.band == "yellow"
+    assert result.score == expected
+    assert result.subscores["consistency"] == 0
+    assert result.flags == ["domain_rules_unavailable"]
+
+    # Strong sources can increase the normalized score, but cannot earn green
+    # without domain consistency rules.
+    data["source_urls"] = ["https://intel.com/example", "https://en.wikipedia.org/wiki/x"]
+    assert score().score >= offline.GREEN_MIN
+    assert score().band == "yellow"
+
+    del data[next(iter(fields))]
+    broken = score()
+    assert broken.score >= offline.RED_MAX  # hard fail, despite a good numeric score
+    assert broken.band == "red"
+    assert "!structural_integrity" in broken.flags
 
 
 def _score(category, data):
