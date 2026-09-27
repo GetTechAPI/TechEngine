@@ -79,28 +79,7 @@ class EntityCache:
                 pending.append(qid)
         for start in range(0, len(pending), 50):
             batch = pending[start:start + 50]
-            for attempt in range(3):
-                if self.last_request is not None:
-                    self.sleep(max(0.0, 1.0 - (time.monotonic() - self.last_request)))
-                self.last_request = time.monotonic()
-                try:
-                    response = self.client.get("https://www.wikidata.org/w/api.php", params={
-                        "action": "wbgetentities", "ids": "|".join(batch),
-                        "props": "info|claims|labels", "languages": "en",
-                        "format": "json", "maxlag": "5",
-                    }, headers={"User-Agent": USER_AGENT}, timeout=60)
-                    response.raise_for_status()
-                    payload = response.json()
-                    entities = payload.get("entities")
-                    if "error" in payload or not isinstance(entities, dict) or not all(
-                        isinstance(entities.get(qid), dict) for qid in batch
-                    ):
-                        raise ValueError("Wikidata error or incomplete entity batch")
-                    break
-                except (httpx.HTTPError, ValueError):
-                    if attempt == 2:
-                        raise
-                    self.sleep(5.0 * (attempt + 1))
+            entities = self._retrieve(batch)
             for qid in batch:
                 entity = compact(entities[qid])
                 result[qid] = entity
@@ -110,6 +89,41 @@ class EntityCache:
                 temporary.replace(path)
             print(f"Fetched {start + len(batch)}/{len(pending)} uncached entities", flush=True)
         return result
+
+    def _retrieve(self, batch: list[str]) -> dict[str, Any]:
+        for attempt in range(3):
+            if self.last_request is not None:
+                self.sleep(max(0.0, 1.0 - (time.monotonic() - self.last_request)))
+            self.last_request = time.monotonic()
+            try:
+                response = self.client.get("https://www.wikidata.org/w/api.php", params={
+                    "action": "wbgetentities", "ids": "|".join(batch),
+                    "props": "info|claims|labels", "languages": "en",
+                    "format": "json", "maxlag": "5",
+                }, headers={"User-Agent": USER_AGENT}, timeout=60)
+                response.raise_for_status()
+                payload = response.json()
+                entities = payload.get("entities")
+                if "error" in payload or not isinstance(entities, dict):
+                    raise ValueError(f"Wikidata API error: {payload.get('error')}")
+                missing = [qid for qid in batch if not isinstance(entities.get(qid), dict)]
+                if missing and "truncated" not in json.dumps(payload.get("warnings", {})):
+                    raise ValueError("Wikidata incomplete entity batch")
+                break
+            except (httpx.HTTPError, ValueError):
+                if attempt == 2:
+                    raise
+                self.sleep(5.0 * (attempt + 1))
+        if missing:
+            if len(batch) == 1:
+                raise ValueError(f"Wikidata entity exceeds response size limit: {batch[0]}")
+            # Only explicit size truncation permits smaller batches. Other
+            # incomplete responses remain uncached for retry.
+            size = max(1, len(batch) // 2)
+            for start in range(0, len(missing), size):
+                entities.update(self._retrieve(missing[start:start + size]))
+        complete: dict[str, Any] = entities
+        return complete
 
 
 def values(entity: dict[str, Any], prop: str) -> list[Any]:
