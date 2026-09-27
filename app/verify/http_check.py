@@ -244,16 +244,25 @@ class HostRateLimiter:
 # --- batch driver ----------------------------------------------------------------
 
 
+def url_key(u: str) -> tuple[str, str, str] | None:
+    """Identity of the fetched resource: host, path and query; the fragment is ignored."""
+    try:
+        p = urlparse(u)
+    except ValueError:
+        return None
+    return (p.netloc.lower(), p.path.rstrip("/"), p.query)
+
+
 def dedupe_urls(urls: Iterable[str]) -> list[str]:
-    """Collapse to one representative per (host, path) — kaggle dumps share a URL."""
-    seen: dict[tuple[str, str], str] = {}
+    """Collapse to one representative per fetched resource — kaggle dumps share a URL.
+
+    The query stays in the key (``cpu.php?cpu=X`` pages are distinct resources).
+    """
+    seen: dict[tuple[str, str, str], str] = {}
     for u in urls:
-        try:
-            p = urlparse(u)
-        except Exception:
-            continue
-        key = (p.netloc.lower(), p.path.rstrip("/"))
-        seen.setdefault(key, u)
+        key = url_key(u)
+        if key is not None:
+            seen.setdefault(key, u)
     return list(seen.values())
 
 

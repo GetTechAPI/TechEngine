@@ -76,6 +76,16 @@ def test_dedupe_by_host_and_path():
     assert len(http_check.dedupe_urls(urls)) == 2
 
 
+def test_dedupe_keeps_query_and_ignores_fragment():
+    urls = [
+        "https://www.cpubenchmark.net/cpu.php?cpu=A",
+        "https://www.cpubenchmark.net/cpu.php?cpu=B",
+        "https://en.wikipedia.org/wiki/List#One",
+        "https://en.wikipedia.org/wiki/List#Two",
+    ]
+    assert http_check.dedupe_urls(urls) == urls[:3]
+
+
 def test_cache_freshness():
     from datetime import datetime
     now = datetime(2026, 6, 22, tzinfo=UTC)
