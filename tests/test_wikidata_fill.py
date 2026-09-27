@@ -164,3 +164,10 @@ def test_truncated_response_retries_omitted_entities_in_smaller_batches(tmp_path
         assert len(cache.fetch(f"Q{i}" for i in range(1, 51))) == 50
     assert sizes == [50, 25, 24]
     assert len(list(tmp_path.glob("*.json"))) == 50
+
+
+def test_pre_web_inception_is_not_a_website_launch():
+    entity = {"id": "Q1", "claims": {"P571": [claim(timestamp(time="+1785-01-01T00:00:00Z"))]}}
+    assert "launch_date" not in fill({}, "website", entity, {})
+    entity = {"id": "Q1", "claims": {"P577": [claim(timestamp(time="+1985-11-20T00:00:00Z"))]}}
+    assert fill({}, "software", entity, {})["release_date"] == "1985-11-20"
