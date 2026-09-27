@@ -84,7 +84,7 @@ def test_api_failure_is_not_cached(tmp_path):
         lambda request: httpx.Response(200, json={"error": {"code": "maxlag"}})
     )) as client:
         cache = EntityCache(tmp_path, client, lambda _: None)
-        with pytest.raises(ValueError, match="incomplete"):
+        with pytest.raises(ValueError, match="API error"):
             cache.fetch(["Q1"])
     assert not list(tmp_path.glob("*.json"))
 
@@ -145,3 +145,22 @@ def test_compact_cache_keeps_only_fill_properties(tmp_path):
     assert "references" not in cached["claims"]["P178"][0]
     assert "sitelinks" not in cached
     assert cached["labels"] == entity["labels"]
+
+
+def test_truncated_response_retries_omitted_entities_in_smaller_batches(tmp_path):
+    sizes = []
+
+    def handler(request):
+        ids = request.url.params["ids"].split("|")
+        sizes.append(len(ids))
+        returned = ids[:1] if len(ids) == 50 else ids
+        payload = {"entities": {qid: {"id": qid} for qid in returned}}
+        if len(ids) == 50:
+            payload["warnings"] = {"result": {"*": "This result was truncated"}}
+        return httpx.Response(200, json=payload)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        cache = EntityCache(tmp_path, client, lambda _: None)
+        assert len(cache.fetch(f"Q{i}" for i in range(1, 51))) == 50
+    assert sizes == [50, 25, 24]
+    assert len(list(tmp_path.glob("*.json"))) == 50
