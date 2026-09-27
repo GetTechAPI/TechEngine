@@ -462,9 +462,19 @@ def cmd_check_urls(args: argparse.Namespace) -> int:
     # A rate-limited answer is not a verdict — leave it out so the next run asks
     # again instead of parking the URL as dead for the whole TTL.
     throttled = sum(1 for r in results if r.transient)
+    # Promotion looks citations up by exact URL, so every citation of a checked
+    # resource (e.g. other #fragments of the same page) gets the verdict.
+    by_key: dict[tuple[str, str, str], list[str]] = defaultdict(list)
+    for u in urls:
+        key = http_check.url_key(u)
+        if key is not None:
+            by_key[key].append(u)
     for r in results:
         if not r.transient:
-            cache[r.url] = http_check.result_to_entry(r, ts)
+            entry = http_check.result_to_entry(r, ts)
+            key = http_check.url_key(r.url)
+            for u in (by_key.get(key, []) if key is not None else []) or [r.url]:
+                cache[u] = entry
     http_check.save_cache(cache)
     if throttled:
         print(
