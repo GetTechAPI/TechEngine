@@ -27,6 +27,7 @@ MAPPINGS = {
                 "P127": "owners"},
 }
 DATES = {"release_date", "launch_date"}
+WEB_EPOCH = "1991-01-01"
 PROPERTIES = {prop for mapping in MAPPINGS.values() for prop in mapping}
 
 
@@ -159,6 +160,9 @@ def fill(record: dict[str, Any], category: str, entity: dict[str, Any],
         candidates = values(entity, prop)
         if field in DATES:
             dates = [parsed for v in candidates if (parsed := calendar_date(v))]
+            if field == "launch_date":
+                # P571 is the owner's inception; before the Web it can't be a site launch.
+                dates = [d for d in dates if d >= WEB_EPOCH]
             if dates:
                 updated[field] = min(dates)
         elif field == "homepage_url":
