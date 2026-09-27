@@ -213,3 +213,31 @@ def test_host_backoff_is_capped():
     for _ in range(20):
         limiter.back_off("gsmarena.com")
     assert limiter.interval_for("gsmarena.com") == http_check.MAX_HOST_INTERVAL_S
+
+
+def test_check_urls_frontier_skips_fully_cached_records(monkeypatch, capsys):
+    """Already-checked top records must not fill --max and starve unchecked ones."""
+    import argparse
+    from datetime import datetime
+
+    from app.verify import cli
+    from app.verify.common import Record
+
+    recs = [Record("cpu", f"cpu/{i}.json",
+                   {"slug": f"c{i}", "verified": False,
+                    "source_urls": [f"https://en.wikipedia.org/wiki/C{i}"]}) for i in range(3)]
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    cache = {"https://en.wikipedia.org/wiki/C0": {"alive": False, "status": 404, "checked_at": now}}
+    monkeypatch.setattr(cli, "load_all", lambda *a, **k: {"cpu": recs})
+    monkeypatch.setattr(cli, "foreign_key_sets", lambda r: (set(), set(), {}))
+    monkeypatch.setattr(cli, "_ranked_unverified", lambda *a: list(recs))
+    monkeypatch.setattr(http_check, "load_cache", lambda *a: dict(cache))
+    monkeypatch.setattr(http_check, "is_fresh", lambda e, now, ttl: True)
+    checked = []
+    monkeypatch.setattr(http_check, "check_urls",
+                        lambda urls, **k: checked.extend(urls) or [])
+    monkeypatch.setattr(http_check, "save_cache", lambda *a, **k: None)
+    args = argparse.Namespace(category=["cpu"], max=1, recheck=False, ttl_days=30,
+                              workers=1, min_interval=0.0)
+    cli.cmd_check_urls(args)
+    assert checked == ["https://en.wikipedia.org/wiki/C1"]

@@ -416,7 +416,19 @@ def cmd_check_urls(args: argparse.Namespace) -> int:
     now_year = offline.now_year_today()
     categories = tuple(args.category) if args.category else CATEGORIES
 
+    cache = http_check.load_cache()
+    now = datetime.now(UTC)
+
+    def _fresh(u: str) -> bool:
+        return u in cache and http_check.is_fresh(cache[u], now, args.ttl_days)
+
     frontier = _ranked_unverified(records, soc_release, now_year, categories)
+    if not args.recheck:
+        # Records whose citations are all fresh would fill the quota every run and
+        # starve lower-ranked records that were never checked.
+        frontier = [rec for rec in frontier if not all(
+            _fresh(u) for u in rec.data.get("source_urls", []) if isinstance(u, str)
+        )]
     if args.max is not None:
         frontier = frontier[: args.max]
 
@@ -425,14 +437,10 @@ def cmd_check_urls(args: argparse.Namespace) -> int:
         urls.extend(u for u in rec.data.get("source_urls", []) if isinstance(u, str))
     targets = http_check.dedupe_urls(urls)
 
-    cache = http_check.load_cache()
-    now = datetime.now(UTC)
     if args.recheck:
         todo = targets
     else:
-        todo = [u for u in targets if not (
-            u in cache and http_check.is_fresh(cache[u], now, args.ttl_days)
-        )]
+        todo = [u for u in targets if not _fresh(u)]
 
     print(
         f"check-urls: {len(frontier)} record(s) -> {len(targets)} unique URL(s); "
