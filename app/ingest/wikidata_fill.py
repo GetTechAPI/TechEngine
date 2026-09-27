@@ -32,8 +32,10 @@ PROPERTIES = {prop for mapping in MAPPINGS.values() for prop in mapping}
 
 def compact(entity: dict[str, Any]) -> dict[str, Any]:
     """Discard unrelated claims, qualifiers and references from the fill cache."""
-    result = {key: entity[key] for key in ("id", "missing", "redirect", "lastrevid", "labels")
-              if key in entity}
+    result: dict[str, Any] = {
+        key: entity[key] for key in ("id", "missing", "redirect", "lastrevid", "labels")
+        if key in entity
+    }
     result["claims"] = {
         prop: [{"rank": s.get("rank", "normal"), "mainsnak": s.get("mainsnak", {})}
                for s in statements]
