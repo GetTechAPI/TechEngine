@@ -22,7 +22,7 @@ from typing import Any
 
 from app.validate import DATA_DIR
 
-from . import crossref, http_check, ledger, offline, promote
+from . import crossref, http_check, ledger, offline, promote, wikidata
 from .common import (
     CATEGORIES,
     SCORES_PATH,
@@ -198,8 +198,6 @@ def _print_markdown(hist: dict[str, Counter[str]], scored: int, hard_flags: Coun
         )
     gtot = sum(totals.values()) or 1
     print(f"**{scored} record(s) assessed.**\n")
-    print("Software and website assess required fields and sources only; "
-          "domain consistency rules are unavailable and these categories cannot earn green.\n")
 
     # Overall distribution as a Mermaid pie (rendered by GitHub). Mermaid colors
     # slices pie1/pie2/pie3 in declaration order, so pin them to green/amber/red
@@ -384,6 +382,34 @@ def _ranked_unverified(
     return [rec for _score, rec in scored]
 
 
+def cmd_check_wikidata(args: argparse.Namespace) -> int:
+    records = load_all(args.category or ("software", "website"))
+    cache = http_check.load_cache()
+    now = datetime.now(UTC)
+    grouped: dict[str, list[str]] = {}
+    for rows in records.values():
+        for rec in rows:
+            for url in rec.data.get("source_urls", []):
+                qid = wikidata.qid_of(url)
+                if qid and (args.recheck or url not in cache
+                            or not str(cache[url].get("reason", "")).startswith("wikidata-")
+                            or not http_check.is_fresh(cache[url], now, args.ttl_days)):
+                    grouped.setdefault(qid, []).append(url)
+    selected = list(grouped)[:args.max]
+    urls = list(dict.fromkeys(u for qid in selected for u in grouped[qid]))
+    checked = alive = 0
+    for results in wikidata.check_batches(urls):
+        for result in results:
+            cache[result.url] = http_check.result_to_entry(result, _now_iso())
+            checked += 1
+            alive += result.alive
+        if results:
+            http_check.save_cache(cache)
+    print(f"check-wikidata: {len(selected)} QIDs; {checked} URLs checked, {alive} alive; "
+          "indeterminate results remain uncached")
+    return 0
+
+
 def cmd_check_urls(args: argparse.Namespace) -> int:
     records = load_all()
     _, _, soc_release = foreign_key_sets(records)
@@ -418,10 +444,13 @@ def cmd_check_urls(args: argparse.Namespace) -> int:
 
     ts = _now_iso()
     results = http_check.check_urls(
-        todo,
+        [u for u in todo if not wikidata.qid_of(u)],
         max_workers=args.workers,
         min_interval=args.min_interval,
     )
+    # A redirect entity must not become alive again through a generic HTTP 200.
+    for batch in wikidata.check_batches([u for u in todo if wikidata.qid_of(u)]):
+        results.extend(batch)
     # A rate-limited answer is not a verdict — leave it out so the next run asks
     # again instead of parking the URL as dead for the whole TTL.
     throttled = sum(1 for r in results if r.transient)
@@ -739,6 +768,13 @@ def build_parser() -> argparse.ArgumentParser:
                     help="cache freshness")
     cu.add_argument("--recheck", action="store_true", help="ignore cache freshness")
     cu.set_defaults(func=cmd_check_urls)
+
+    wd = sub.add_parser("check-wikidata", help="Batched Wikidata source liveness")
+    wd.add_argument("--category", nargs="*", choices=CATEGORIES)
+    wd.add_argument("--max", type=int, default=20000, help="maximum uncached QIDs")
+    wd.add_argument("--ttl-days", type=int, default=http_check.DEFAULT_TTL_DAYS)
+    wd.add_argument("--recheck", action="store_true")
+    wd.set_defaults(func=cmd_check_wikidata)
 
     cr = sub.add_parser("crossref", help="Tier 2: external cross-reference (exact heading)")
     cr.add_argument("--category", nargs="*", choices=CATEGORIES, help="limit to categories")

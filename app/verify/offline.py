@@ -38,6 +38,9 @@ RED_MAX = 45.0  # strictly below -> red
 # "Rich" fields per category: presence (non-null) signals a fleshed-out record.
 # Dotted paths index into nested dicts (e.g. "display.ppi").
 RICH_FIELDS: dict[str, tuple[str, ...]] = {
+    "software": ("release_date", "developers", "operating_systems", "licenses", "genres",
+                 "programming_languages", "publishers"),
+    "website": ("homepage_url", "launch_date", "languages", "owners"),
     "cpu": ("architecture", "base_clock_ghz", "boost_clock_ghz", "l3_cache_mb",
             "socket", "tdp_w", "passmark_cpu_mark"),
     "gpu": ("architecture", "boost_clock_mhz", "memory_type", "memory_bandwidth_gbps",
