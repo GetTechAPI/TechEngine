@@ -16,7 +16,11 @@ from __future__ import annotations
 
 import math
 import re
+from datetime import date
 from typing import Any, NamedTuple
+from urllib.parse import urlparse
+
+from .wikidata import qid_of
 
 # Range table mirrored from app.validate's _check_range call sites, keyed by
 # (category, field) -> (lo, hi). A parity smoke test asserts this stays in sync.
@@ -342,9 +346,63 @@ def monitor_signals(rec: dict[str, Any], now_year: int) -> list[Signal]:
     ]
 
 
+def _digital_date(rec: dict[str, Any], field: str, now_year: int, earliest: int) -> Signal:
+    value = rec.get(field)
+    name = f"{field}_plausible"
+    if value in (None, ""):
+        return Signal(name, "na")
+    try:
+        parsed = date.fromisoformat(value) if isinstance(value, str) else None
+    except ValueError:
+        parsed = None
+    if parsed is None:
+        return Signal(name, "fail", hard=True)
+    # Imported dates can describe the publisher's founding (290 websites predate
+    # the Web), or a planned release. These are ambiguous, not impossibilities.
+    return Signal(name, "pass" if earliest <= parsed.year <= now_year else "fail")
+
+
+def digital_signals(category: str, rec: dict[str, Any], now_year: int) -> list[Signal]:
+    urls = rec.get("source_urls")
+    has_qid = isinstance(urls, list) and any(qid_of(u) for u in urls)
+    out = [Signal("wikidata_qid_source", "pass" if has_qid else "fail")]
+    fields = ("release_date",) if category == "software" else (
+        "launch_date", "release_date", "founded_date",
+    )
+    for field in fields:
+        earliest = 1950 if category == "software" else (1800 if field == "founded_date" else 1989)
+        out.append(_digital_date(rec, field, now_year, earliest))
+    if category == "software":
+        for field in ("developers", "operating_systems", "licenses", "genres"):
+            value = rec.get(field)
+            valid = isinstance(value, list) and bool(value) and all(
+                isinstance(v, str) and bool(v.strip()) for v in value
+            )
+            out.append(Signal(f"{field}_string_list", "na" if value is None else (
+                "pass" if valid else "fail"
+            )))
+    else:
+        value = rec.get("homepage_url")
+        try:
+            parsed = urlparse(value) if isinstance(value, str) else None
+            valid = isinstance(value, str) and parsed is not None and parsed.scheme in {
+                "http", "https",
+            } and bool(
+                parsed.hostname
+            ) and not any(c.isspace() for c in value)
+        except ValueError:
+            valid = False
+        out.append(Signal("homepage_http_url", "na" if value is None else (
+            "pass" if valid else "fail"
+        )))
+    return out
+
+
 def signals_for(
     category: str, rec: dict[str, Any], now_year: int, soc_release: dict[str, str]
 ) -> list[Signal]:
+    if category in {"software", "website"}:
+        return digital_signals(category, rec, now_year)
     if category == "laptop":
         return laptop_signals(rec, now_year)
     if category == "monitor":

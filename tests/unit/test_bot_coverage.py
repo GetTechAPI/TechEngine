@@ -21,7 +21,7 @@ def test_all_categories_share_registry():
     }
 
 
-@pytest.mark.parametrize("category", ["software", "website", "future"])
+@pytest.mark.parametrize("category", ["future"])
 def test_missing_domain_rules_never_earn_green(category):
     score = offline.score_record(Record(category, "example.json", {
         "slug": "example", "name": "Example", "source_urls": ["https://intel.com/example"],
