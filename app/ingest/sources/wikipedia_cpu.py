@@ -31,16 +31,16 @@ from ..normalize import (
     parse_tdp_w,
 )
 from .base import IngestCandidate
-from .wikitable import parse_table
+from .cpu_tables import parse_cpu_table
 
-# (manufacturer, page, architecture-fallback). Architecture is overridden
-# per-row when the table has an explicit ``Architecture`` / ``Codename``
-# column, and per-table from the preceding section heading otherwise.
+# (manufacturer, page, product family for bare model numbers). Architecture
+# comes from an explicit column or a preceding section, never this family.
 PAGES: list[tuple[str, str, str]] = [
     ("intel", "List_of_Intel_Core_processors", "Intel Core"),
     ("intel", "List_of_Intel_Xeon_processors", "Intel Xeon"),
     ("intel", "List_of_Intel_Atom_processors", "Intel Atom"),
     ("amd", "List_of_AMD_Ryzen_processors", "AMD Ryzen"),
+    ("amd", "List_of_AMD_Opteron_processors", "AMD Opteron"),
     ("amd", "List_of_AMD_Epyc_processors", "AMD EPYC"),
     ("amd", "List_of_AMD_Threadripper_processors", "AMD Threadripper"),
 ]
@@ -59,25 +59,6 @@ _FAMILY_ONLY_RE = re.compile(
 # mangles "intel" → "INTEL" (an ingest casing artifact); AMD is genuinely
 # all-caps so it gets an explicit entry rather than title-casing.
 _BRAND_DISPLAY: dict[str, str] = {"intel": "Intel", "amd": "AMD"}
-
-# Lowercased header tokens → canonical field name. Order matters: the first
-# matching fragment per cell wins (so a "Cores/Threads" column maps to
-# ``cores`` rather than ``threads``).
-HEADER_RULES: dict[str, list[str]] = {
-    "model": ["model", "processor", "cpu", "name"],
-    "architecture": ["architecture", "codename", "code name", "core name"],
-    "cores": ["cores", "core"],
-    "threads": ["threads", "thread"],
-    "base_clock": ["base", "freq", "clock"],
-    "boost_clock": ["boost", "turbo", "max"],
-    # Only an explicit L3 / Smart Cache column is L3. A bare "cache" match used
-    # to route "L2 cache" columns (e.g. every Atom table) into l3_cache_mb.
-    "l3_cache": ["l3", "smart cache"],
-    "tdp": ["tdp", "power", "wattage"],
-    "release_date": ["released", "release", "launched", "launch", "date"],
-    "socket": ["socket"],
-    "process_node": ["process", "fab", "node", "lithography"],
-}
 
 
 class WikipediaCpuIngest:
@@ -110,23 +91,43 @@ class WikipediaCpuIngest:
         soup = BeautifulSoup(html, "html.parser")
         source_url = f"https://en.wikipedia.org/wiki/{page}"
         for table in soup.select("table.wikitable"):
-            section_label = _nearest_section_label(table) or fallback_arch
-            for row in parse_table(table, HEADER_RULES):
-                model = _FOOTNOTE_RE.sub("", row.cells.get("model", "")).strip()
+            section_label = _nearest_section_label(table) or ""
+            for row in parse_cpu_table(table):
+                model = _FOOTNOTE_RE.sub("", row.get("model", "")).strip()
+                family = row.get("family", "")
+                if family and not model.lower().startswith(family.lower()):
+                    model = f"{family} {model}"
+                elif not family and re.fullmatch(
+                    r"[A-Za-z0-9]*\d[A-Za-z0-9]*(?:\s+(?:HE|EE|SE))?", model
+                ):
+                    # Bare SKUs use the product family explicitly named by the page.
+                    page_family = fallback_arch
+                    section = table.find_previous("h2")
+                    if section and "embedded" in section.get_text().lower():
+                        page_family += " Embedded"
+                    model = f"{page_family} {model}"
                 slug = slugify(model, manufacturer=manufacturer)
                 if len(slug) < 4 or not any(ch.isdigit() for ch in slug):
                     continue
                 if _FAMILY_ONLY_RE.fullmatch(slug):
                     continue
-                architecture = row.cells.get("architecture") or section_label
-                yield _build_candidate(
-                    manufacturer=manufacturer,
-                    architecture=architecture,
-                    model=model,
-                    slug=slug,
-                    row=row.cells,
-                    source_url=source_url,
-                )
+                architecture = row.get("architecture") or section_label
+                # Parenthesized PRO denotes both ordinary and PRO models in one row.
+                models = [model]
+                if re.search(r"\(\s*PRO\s*\)", model):
+                    models = [
+                        re.sub(r"\(\s*PRO\s*\)", replacement, model) for replacement in ("", "PRO")
+                    ]
+                for variant in models:
+                    variant = " ".join(variant.split())
+                    yield _build_candidate(
+                        manufacturer=manufacturer,
+                        architecture=architecture,
+                        model=variant,
+                        slug=slugify(variant, manufacturer=manufacturer),
+                        row=row,
+                        source_url=source_url,
+                    )
 
 
 _HEADING_NODE_RE = re.compile(r"\((\d+(?:\.\d+)?)\s*nm\)")

@@ -9,6 +9,7 @@ from pathlib import Path
 
 from app.coverage.curated import curated_slugs
 
+from .cpu_identity import cpu_key, curated_cpu_keys, same_cpu
 from .sources.base import IngestCandidate
 
 
@@ -59,12 +60,24 @@ def run(
     result = IngestResult()
     curated_by_category: dict[tuple[str, str], set[str]] = {}
     written_slugs: set[tuple[str, str, str]] = set()
+    cpu_keys: dict[str, set[str]] = {}
 
     for candidate in candidates:
         key = (candidate.category, candidate.manufacturer)
+        if candidate.category == "cpu":
+            if candidate.manufacturer not in cpu_keys:
+                cpu_keys[candidate.manufacturer] = curated_cpu_keys(
+                    data_root, candidate.manufacturer
+                )
+            identity = cpu_key(candidate.slug, candidate.manufacturer)
+            if any(same_cpu(identity, other) for other in cpu_keys[candidate.manufacturer]):
+                result.skipped_existing.append(candidate)
+                continue
         if key not in curated_by_category:
-            curated_by_category[key] = curated_slugs(
-                candidate.category, candidate.manufacturer
+            curated_by_category[key] = (
+                set()
+                if candidate.category == "cpu"
+                else curated_slugs(candidate.category, candidate.manufacturer)
             )
         if candidate.slug in curated_by_category[key]:
             result.skipped_existing.append(candidate)
@@ -78,6 +91,8 @@ def run(
             continue
 
         written_slugs.add(run_key)
+        if candidate.category == "cpu":
+            cpu_keys[candidate.manufacturer].add(identity)
         target = data_root / candidate.output_path
         if not dry_run:
             target.parent.mkdir(parents=True, exist_ok=True)
