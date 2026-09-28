@@ -33,11 +33,11 @@ class MobileDeviceFields(SQLModel):
     display: dict[str, Any] = Field(default_factory=dict, sa_type=JSON)
     cameras: list[dict[str, Any]] = Field(default_factory=list, sa_type=JSON)
 
-    battery_mah: int
+    battery_mah: int | None = None
     charging_wired_w: float | None = None
     charging_wireless_w: float | None = None
 
-    weight_g: float
+    weight_g: float | None = None
     dimensions: dict[str, Any] = Field(default_factory=dict, sa_type=JSON)
     ip_rating: str | None = None
 

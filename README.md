@@ -76,6 +76,11 @@ python -m app.dump              # generate ./dump/v1/... static tree
 
 `TECHAPI_DATA_DIR=/path/to/TechAPI/data` overrides the data location.
 
+For tablets, watches, and PDAs, `battery_mah` and `weight_g` are optional:
+seed records may omit them or use `null` when no source value is known, and API
+detail responses and static dumps preserve unknown values as `null`.
+Smartphones continue to require numeric values for both fields.
+
 ### Docker Compose (Postgres)
 
 ```bash
