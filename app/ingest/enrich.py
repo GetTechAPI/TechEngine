@@ -149,7 +149,12 @@ def enrich(
                 break
             processed += 1
             name = rec.get("name", "")
-            out = resolver(client, name, overrides.get(name))
+            if resolver is topcpu.resolve or resolver is topcpu.resolve_gpu:
+                out = resolver(
+                    client, name, overrides.get(name), architecture=rec.get("architecture")
+                )
+            else:
+                out = resolver(client, name, overrides.get(name))
             if sleep:
                 time.sleep(sleep)
             if out is None:

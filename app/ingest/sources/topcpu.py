@@ -60,6 +60,32 @@ _BOLD = re.compile(r"font-bold")
 _DIGITS = re.compile(r"[^0-9]")
 _NUM = re.compile(r"[\d,]+\.?\d*")
 
+# Architecture families, including versioned labels such as Tesla 2.0 and
+# TeraScale 3. These cannot provide the DX12 driver required by Time Spy (FL11_0).
+# AMD's Windows driver support matrix separates HD5000/6000 (DX11) from GCN:
+# https://www.amd.com/en/resources/support-articles/faqs/GPU-615.html
+# NVIDIA's DX12 support starts at Fermi, INCLUDING Fermi and early Kepler:
+# https://nvidia.custhelp.com/app/answers/detail/a_id/3711
+# https://support.benchmarks.ul.com/support/solutions/articles/44002136075
+_PRE_DX12_ARCHITECTURE = re.compile(
+    r"\b(?:TeraScale|Tesla|Curie|Rankine|Kelvin|Celsius|Ultra[- ]Threaded SE|"
+    r"R100|R200|R300|R400)\b",
+    re.IGNORECASE,
+)
+_DX12_FIELDS = frozenset({"timespy_score", "timespy_extreme_score", "speedway_score"})
+
+
+def is_pre_dx12(architecture: str | None) -> bool:
+    """Recognize known unsupported architectures; unknown labels are not guessed.
+
+    Use the record's microarchitecture, never its release year or product brand
+    (e.g. a Tesla-branded card may have a newer, DX12-capable architecture).
+    This is a pre-DX12 exclusion, not a complete Speed Way/Ultimate eligibility
+    check. OctaneBench uses CUDA, and FP32 is a spec, so neither is DX12-filtered.
+    """
+    return bool(architecture and _PRE_DX12_ARCHITECTURE.search(architecture))
+
+
 # Cached normalized score maps, keyed by (url, normalizer name).
 _caches: dict[str, dict[str, float]] = {}
 
@@ -110,9 +136,15 @@ def reset_cache() -> None:
 
 
 def resolve(
-    client: httpx.Client, name: str, id_override: str | None = None
+    client: httpx.Client,
+    name: str,
+    id_override: str | None = None,
+    *,
+    architecture: str | None = None,
 ) -> tuple[dict[str, int], str] | None:
     """GPU Time Spy resolver: ``({"timespy_score": score}, url)`` or None."""
+    if is_pre_dx12(architecture):
+        return None
     hit = _load_map(client, TIMESPY_URL, normalize_gpu).get(normalize_gpu(name))
     if hit is None:
         return None
@@ -140,23 +172,26 @@ def resolve_cpu(
 
 
 def resolve_gpu(
-    client: httpx.Client, name: str, id_override: str | None = None
+    client: httpx.Client,
+    name: str,
+    id_override: str | None = None,
+    *,
+    architecture: str | None = None,
 ) -> tuple[dict[str, float], str] | None:
     """GPU breadth resolver: Time Spy Extreme / Speed Way / OctaneBench / FP32.
 
-    WARNING: topcpu publishes unreliable *estimated* 3DMark/Octane scores for
-    pre-DX12 cards that can't actually run them (e.g. Radeon HD 5670 "Time Spy"
-    3897 — physically impossible; contradicts its PassMark G3D). The same applies
-    to ``resolve`` (Time Spy). When enriching, GUARD on DX12 capability
-    (release year >= 2011 / GCN/Kepler+) before writing timespy*/speedway/
-    octanebench — only fp32_tflops (a spec) is era-safe. See
-    TechAPI/.claude/benchmark_fill_progress.md pt.7.
+    topcpu publishes estimated DX12 scores for cards that cannot run those
+    benchmarks. Pass the record's architecture to suppress Time Spy Extreme
+    and Speed Way for known pre-DX12 families, regardless of release year.
+    Non-DX12 dimensions retain their existing behavior.
     """
     key = normalize_gpu(name)
     if not key:
         return None
     scores: dict[str, float] = {}
     for url, field, as_float in _GPU_FAMILIES:
+        if field in _DX12_FIELDS and is_pre_dx12(architecture):
+            continue
         v = _load_map(client, url, normalize_gpu, as_float=as_float).get(key)
         if v is not None:
             scores[field] = v
