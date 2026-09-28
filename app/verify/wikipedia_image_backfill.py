@@ -1,7 +1,9 @@
 """Backfill freely licensed Commons photos from already cited Wikipedia articles.
 
 Run a dry sample first, then use --apply --offset/--limit for sequential batches.
-The append-only decision cache is shared between dry runs and apply runs.
+Select data/<category> with --category (default: smartphone).
+The append-only decision cache is shared between categories, dry runs and apply
+runs; repository-relative paths keep each category's decisions distinct.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ from app.verify.wikipedia_smartphone_backfill import (
 )
 
 VERSION = 7
+CATEGORIES = ("smartphone", "laptop", "monitor", "tablet", "watch", "pda")
 BAD_IMAGE = re.compile(
     r"(?<![A-Za-z0-9])(?:logo|logotype|wordmark|icon|emblem|flag|symbol|diagram|chart|screenshot|placeholder|render|advertisement|battery|headquarters?|building|campus|series|lineup|packaging|시리즈)(?![A-Za-z0-9])",
     re.I,
@@ -38,7 +41,10 @@ FREE_LICENSE = re.compile(
 
 
 def article_url(record: dict[str, Any]) -> str | None:
-    for url in record.get("source_urls") or []:
+    sources = record.get("source_urls") or []
+    if not isinstance(sources, list):
+        return None
+    for url in sources:
         if not isinstance(url, str):
             continue
         parsed = urlparse(url)
@@ -53,17 +59,25 @@ def article_url(record: dict[str, Any]) -> str | None:
 
 
 def eligible(
-    root: Path, *, include_missing_key: bool = False
+    root: Path, *, category: str = "smartphone", include_missing_key: bool = False
 ) -> list[tuple[Path, dict[str, Any], str]]:
+    if category not in CATEGORIES:
+        raise ValueError(f"unsupported category: {category}")
     rows = []
-    for path in sorted((root / "data" / "smartphone").rglob("*.json")):
+    for path in sorted((root / "data" / category).rglob("*.json")):
         try:
             record = json.loads(path.read_text(encoding="utf-8-sig"))
-        except (ValueError, OSError):
+        except (ValueError, OSError) as exc:
+            print(f"Skipping {path}: unreadable record ({exc})", flush=True)
             continue
-        if isinstance(record, dict) and (
-            ("image_url" in record and record["image_url"] is None)
-            or (include_missing_key and "image_url" not in record)
+        if not isinstance(record, dict):
+            print(f"Skipping {path}: record must be a JSON object", flush=True)
+            continue
+        if record.get("source_urls") is not None and not isinstance(record["source_urls"], list):
+            print(f"Skipping {path}: source_urls must be a list", flush=True)
+            continue
+        if ("image_url" in record and record["image_url"] is None) or (
+            include_missing_key and "image_url" not in record
         ):
             url = article_url(record)
             if url:
@@ -269,10 +283,15 @@ def inspect(url: str, fetcher: CommonsFetcher, name: str = "") -> dict[str, str]
 
 
 def write_image(path: Path, result: dict[str, str]) -> None:
-    text = path.read_bytes().decode("utf-8")
+    original = path.read_bytes()
+    text = original.decode("utf-8-sig")
     record = json.loads(text)
+    if not isinstance(record, dict):
+        raise ValueError(f"record must be a JSON object in {path}")
     if record.get("image_url") is not None:
         return
+    if "image_license" in record or "image_attribution" in record:
+        raise ValueError(f"existing image metadata in {path}")
     newline = "\r\n" if "\r\n" in text else "\n"
     replacement = (
         '"image_url": ' + json.dumps(result["image_url"], ensure_ascii=False) + ",\n"
@@ -287,20 +306,20 @@ def write_image(path: Path, result: dict[str, str]) -> None:
         if count != 1:
             raise ValueError(f"missing null image_url in {path}")
     else:
-        if "image_license" in record or "image_attribution" in record:
-            raise ValueError(f"existing image metadata in {path}")
         match = re.match(r'\{(?P<newline>\r?\n)(?P<indent>[ \t]+)(?=")', text)
         if match is None:
             raise ValueError(f"cannot insert image fields in {path}")
         indent = match.group("indent")
         fields = replacement.replace(newline + "  ", newline + indent)
         updated = text[: match.end()] + fields + "," + newline + indent + text[match.end() :]
-    path.write_bytes(updated.encode("utf-8"))
+    encoding = "utf-8-sig" if original.startswith(b"\xef\xbb\xbf") else "utf-8"
+    path.write_bytes(updated.encode(encoding))
 
 
 def run(
     root: Path,
     *,
+    category: str = "smartphone",
     offset: int = 0,
     limit: int | None = None,
     apply: bool = False,
@@ -310,7 +329,7 @@ def run(
 ) -> list[dict[str, Any]]:
     cache_path = cache_path or root / "data" / "_verify" / "state" / "wikipedia_image_cache.jsonl"
     cache = load_decisions(cache_path)
-    rows = eligible(root, include_missing_key=include_missing_key)[
+    rows = eligible(root, category=category, include_missing_key=include_missing_key)[
         offset : None if limit is None else offset + limit
     ]
     fetcher = CommonsFetcher(sleep_s)
@@ -318,6 +337,15 @@ def run(
     for index, (path, record, article) in enumerate(rows, 1):
         rel = path.relative_to(root).as_posix()
         decision = cache.get(rel)
+        if not isinstance(record.get("name"), str) or not record["name"].strip():
+            decision = {
+                "path": rel,
+                "reason": "invalid_record",
+                "error": "name must be a nonempty string",
+            }
+            results.append(decision)
+            print(f"Skipping {rel}: {decision['error']}", flush=True)
+            continue
         if (
             decision is not None
             and decision.get("version") == 6
@@ -354,11 +382,15 @@ def run(
             if decision["reason"] != "error":
                 append_cache(decision, cache_path)
         if apply and decision["reason"] == "accepted":
-            write_image(path, decision)
+            try:
+                write_image(path, decision)
+            except (ValueError, OSError) as exc:
+                decision = dict(decision, reason="invalid_record", error=str(exc))
         results.append(decision)
         message = (
             f"[{index}/{len(rows)}] {decision['reason']}: "
             f"{record.get('name')} ({decision.get('file', '')})"
+            + (f": {decision['error']}" if decision.get("error") else "")
         )
         print(message.encode("ascii", "backslashreplace").decode("ascii"), flush=True)
     return results
@@ -367,6 +399,7 @@ def run(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-root", type=Path, required=True)
+    parser.add_argument("--category", choices=CATEGORIES, default="smartphone")
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--sleep", type=float, default=1.0)
@@ -375,6 +408,7 @@ def main() -> None:
     args = parser.parse_args()
     results = run(
         args.data_root,
+        category=args.category,
         offset=args.offset,
         limit=args.limit,
         apply=args.apply,
