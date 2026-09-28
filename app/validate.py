@@ -56,8 +56,6 @@ MOBILE_DEVICE_REQUIRED = {
     "brand",
     "release_date",
     "ram_gb",
-    "battery_mah",
-    "weight_g",
     "os",
     "source_urls",
     "verified",

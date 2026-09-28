@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app import validate
 
 
@@ -25,6 +27,21 @@ def test_range_checker_flags_out_of_range() -> None:
     errors: list[str] = []
     validate._check_range("x.json", "ram_gb", 999, 1, 64, errors)
     assert errors
+
+
+@pytest.mark.parametrize("field,lo,hi", [("battery_mah", 50, 20000), ("weight_g", 10, 2000)])
+def test_mobile_spec_ranges_allow_null_but_reject_invalid_values(
+    field: str,
+    lo: float,
+    hi: float,
+) -> None:
+    errors: list[str] = []
+    validate._check_range("x.json", field, None, lo, hi, errors)
+    assert errors == []
+    for value in (0, hi + 1, "unknown"):
+        errors = []
+        validate._check_range("x.json", field, value, lo, hi, errors)
+        assert errors
 
 
 def test_date_checker_requires_iso_format() -> None:
