@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +57,33 @@ def _write_json(path: Path, data: object) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def _prune_orphaned_pages(collection_dir: Path, valid_slugs: set[str]) -> list[str]:
+    """Remove per-record page directories that no longer back a current record.
+
+    The dump writes each record to ``<collection_dir>/<slug>/index.json`` (and,
+    for scored collections, ``<slug>/score/index.json``). When a source record
+    is deleted or renamed, its old ``<slug>/`` directory is otherwise left on
+    disk forever. This deletes any immediate child *directory* of
+    ``collection_dir`` whose name is not in ``valid_slugs``.
+
+    Only per-slug subdirectories the dump itself owns are touched. The
+    collection's own ``index.json`` list file (and any other non-directory
+    entry) is left alone, so top-level manifests, ``openapi.json``, etc. are
+    never at risk — this only ever runs inside a per-category directory.
+    """
+    if not collection_dir.is_dir():
+        return []
+    pruned: list[str] = []
+    for child in collection_dir.iterdir():
+        if not child.is_dir():
+            continue
+        if child.name in valid_slugs:
+            continue
+        shutil.rmtree(child)
+        pruned.append(child.name)
+    return pruned
+
+
 def _fetch_all(client: TestClient, resource: str) -> tuple[int, list[dict[str, Any]]]:
     """Follow pagination to collect every list item for a resource."""
     items: list[dict[str, Any]] = []
@@ -95,6 +123,10 @@ def generate(
                 _write_json(output_dir / "v1" / resource / slug / "score" / "index.json", score)
                 if score.get("overall") is not None:
                     scored += 1
+        # Self-heal: drop any per-record page directory whose source record no
+        # longer exists, so the dump stays a deterministic mirror of the data.
+        valid_slugs = {item["slug"] for item in items}
+        _prune_orphaned_pages(output_dir / "v1" / resource, valid_slugs)
         counts[resource] = len(items)
         manifest_collections = manifest["collections"]
         assert isinstance(manifest_collections, dict)

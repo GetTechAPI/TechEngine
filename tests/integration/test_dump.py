@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.dump import COLLECTIONS, generate, resolve_collections
+from app.dump import COLLECTIONS, _prune_orphaned_pages, generate, resolve_collections
 from tests.integration.mobile_device_fixtures import ensure_mobile_device_fixtures
 
 
@@ -64,3 +64,76 @@ def test_resolve_collections_drops_excluded_and_keeps_order() -> None:
 def test_resolve_collections_rejects_unknown_names() -> None:
     with pytest.raises(ValueError, match="unknown collection"):
         resolve_collections(["gmaes"])
+
+
+def test_dump_prunes_output_pages_for_deleted_records(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """A record whose source is gone must lose its output page on the next run.
+
+    Reproduces the real-world bug found during the Atom CPU dedup: a record is
+    removed, but re-running the dump used to leave its ``<slug>/`` page tree on
+    disk forever. Here we seed fixtures, dump, delete one record from the
+    database, re-dump, and assert the deleted record's output directory is gone
+    while a surviving record's page (and the collection list file) remain.
+    """
+    from sqlmodel import Session, select
+
+    from app.database import engine
+    from app.models.mobile_device import Tablet
+
+    ensure_mobile_device_fixtures()
+    collections = ["tablets"]
+
+    generate(client, output_dir=tmp_path, collections=collections)
+    tablets_dir = tmp_path / "v1" / "tablets"
+    deleted_slug = "ipad-pro-11-m4-wifi-8gb-256gb"
+    deleted_page = tablets_dir / deleted_slug / "index.json"
+    assert deleted_page.exists()
+
+    # Delete the record from the database, mimicking a removed source record.
+    with Session(engine) as session:
+        tablet = session.exec(select(Tablet).where(Tablet.slug == deleted_slug)).one()
+        session.delete(tablet)
+        session.commit()
+    try:
+        # Confirm the record is truly gone from the live API before re-dumping.
+        assert client.get(f"/v1/tablets/{deleted_slug}").status_code == 404
+        surviving = [
+            item["slug"]
+            for item in client.get("/v1/tablets?limit=100").json()["results"]
+        ]
+        assert deleted_slug not in surviving
+
+        generate(client, output_dir=tmp_path, collections=collections)
+
+        # The deleted record's whole page directory is pruned...
+        assert not (tablets_dir / deleted_slug).exists()
+        # ...while the collection list file and any surviving pages remain.
+        assert (tablets_dir / "index.json").exists()
+        for slug in surviving:
+            assert (tablets_dir / slug / "index.json").exists()
+    finally:
+        # Restore the fixture so later tests relying on it still find the record.
+        ensure_mobile_device_fixtures()
+
+
+def test_prune_orphaned_pages_leaves_files_and_valid_slugs(tmp_path: Path) -> None:
+    collection_dir = tmp_path / "v1" / "cpus"
+    (collection_dir / "keep-me").mkdir(parents=True)
+    (collection_dir / "keep-me" / "index.json").write_text("{}\n", encoding="utf-8")
+    (collection_dir / "drop-me").mkdir()
+    (collection_dir / "drop-me" / "index.json").write_text("{}\n", encoding="utf-8")
+    # The collection's own list file must never be touched (it is not a dir).
+    (collection_dir / "index.json").write_text('{"count": 0}\n', encoding="utf-8")
+
+    pruned = _prune_orphaned_pages(collection_dir, valid_slugs={"keep-me"})
+
+    assert pruned == ["drop-me"]
+    assert (collection_dir / "keep-me").is_dir()
+    assert not (collection_dir / "drop-me").exists()
+    assert (collection_dir / "index.json").read_text() == '{"count": 0}\n'
+
+
+def test_prune_orphaned_pages_noop_when_dir_missing(tmp_path: Path) -> None:
+    assert _prune_orphaned_pages(tmp_path / "does-not-exist", valid_slugs=set()) == []
