@@ -15,7 +15,10 @@ unambiguous corruption that must block the weekly refresh PR: duplicate slugs,
 slug/filename mismatches, and physically-impossible single>multi benchmarks.
 The statistical cross-source/era outliers stay advisory (a heterogeneous catalog
 of server + desktop + mobile parts legitimately produces many ratio outliers), so
-they are printed for review but never fail the gate.
+they are printed for review but never fail the gate. The CPU cross-source ratio
+check regresses out the core-count trend so it compares each part against the
+ratio expected for its own core count instead of a desktop-dominated global
+median (see mad_outliers).
 ``--hard-report`` writes a JSON list of hard anomalies for baseline comparison.
 """
 from __future__ import annotations
@@ -91,19 +94,87 @@ def load(comp):
                 recs.append((p, fn[:-5], json.load(open(p, encoding="utf-8"))))
     return recs
 
-def mad_outliers(pairs, lo=0.34, hi=3.0):
-    """pairs: list of (label, a, b); flag log(a/b) outliers via median±3*MAD."""
-    rs = [(l, math.log(a / b)) for l, a, b in pairs if a and b]
-    if len(rs) < 8:
+# Cross-source ratio outliers: same wrong-variant detector as the era rule, but
+# statistical. The original computed ONE global median±MAD over the whole CPU
+# catalog for ratios like cinebench_r23_multi/geekbench_multi. That ratio is not
+# scale-free across the catalog — it is confounded by core/thread count, because
+# the two benchmarks scale differently with parallelism: Cinebench R23 multi
+# scales near-linearly with cores while Geekbench multicore compresses at high
+# core counts, so the R23/GB ratio climbs monotonically with thread count
+# (measured on live data: ~1.05 at 1-4T rising to ~1.48 at 65T+, Pearson
+# corr(threads, log-ratio) ≈ +0.52; the PassMark/R23 ratio falls with threads,
+# corr ≈ -0.59). A single global median therefore flags entire legitimate
+# core-count strata — every many-core EPYC/Threadripper/Xeon and, at the other
+# end, the low-core parts — as "contamination" (90 of 739 R23/GB pairs, median
+# 56 threads vs 16 overall, all with genuine scores). That is the same shape of
+# bug as the flat era ceiling: a fixed reference blind to a variable that
+# legitimately shifts what "normal" looks like.
+#
+# Fix (mirrors PR #111's cores-aware era rule, which divided the score by thread
+# count): regress the confounder out. When a per-part covariate is supplied we
+# fit a robust (Theil–Sen) line of log-ratio against log(covariate) and run the
+# median±MAD test on the *residuals*, so a part is measured against the ratio
+# expected for its own core count rather than a desktop-dominated global median.
+# The systematic core-count gradient no longer flags; a part whose ratio is
+# anomalous for its own class — the real wrong-variant signal — still does
+# (live R23/GB flags drop 90 → 10, and the survivors are genuine per-class
+# outliers). Coarse banding was rejected: it removes the between-band trend but
+# shrinks the within-band MAD envelope, netting *more* false positives.
+# Callers with no meaningful covariate (e.g. GPUs) omit it and get the original
+# single-population behaviour unchanged.
+def _theil_sen(xs: list[float], ys: list[float]) -> tuple[float, float]:
+    """Robust slope/intercept via median of pairwise slopes (Theil–Sen)."""
+    slopes = [
+        (ys[j] - ys[i]) / (xs[j] - xs[i])
+        for i in range(len(xs)) for j in range(i + 1, len(xs))
+        if xs[j] != xs[i]
+    ]
+    slope = statistics.median(slopes) if slopes else 0.0
+    intercept = statistics.median(y - slope * x for x, y in zip(xs, ys, strict=True))
+    return slope, intercept
+
+def mad_outliers(pairs):
+    """Flag log(a/b) outliers via median±4*MAD.
+
+    ``pairs`` is a list of ``(label, a, b)`` or ``(label, a, b, covariate)``.
+    With a positive per-part ``covariate`` (e.g. thread count) the log-ratio is
+    first detrended against ``log(covariate)`` with a robust Theil–Sen fit and
+    the outlier test runs on the residuals, so a variable that legitimately
+    shifts the ratio does not turn a whole stratum into false positives. Fewer
+    than 8 usable points returns nothing — too few to estimate a robust
+    median/MAD. Omitting the covariate reproduces the original global test.
+    """
+    rows: list[tuple[str, float, float | None]] = []
+    for item in pairs:
+        label, a, b = item[0], item[1], item[2]
+        cov = item[3] if len(item) > 3 else None
+        if a and b:
+            rows.append((label, math.log(a / b), cov))
+    if len(rows) < 8:
         return []
-    med = statistics.median(r for _, r in rs)
-    mad = statistics.median(abs(r - med) for _, r in rs) or 1e-9
-    return [(l, round(math.exp(r), 2)) for l, r in rs if abs(r - med) > 4 * mad]
+    ys = [r for _, r, _ in rows]
+    xs = [math.log(c) for _, _, c in rows if c and c > 0]
+    if len(xs) == len(rows) and len({round(x, 9) for x in xs}) > 1:
+        slope, intercept = _theil_sen(xs, ys)
+        scores = [y - (slope * x + intercept) for x, y in zip(xs, ys, strict=True)]
+    else:
+        scores = ys  # no usable covariate -> original global behaviour
+    med = statistics.median(scores)
+    mad = statistics.median(abs(s - med) for s in scores) or 1e-9
+    return [
+        (rows[i][0], round(math.exp(ys[i]), 2))
+        for i in range(len(rows)) if abs(scores[i] - med) > 4 * mad
+    ]
 
 def section(t): print(f"\n### {t}")
 
 def collect(recs, fa, fb):
     return [(d["name"], d[fa], d[fb]) for p, fn, d in recs if d.get(fa) and d.get(fb)]
+
+def collect_cpu(recs, fa, fb):
+    """Like ``collect`` but tags each pair with its thread-count covariate."""
+    return [(d["name"], d[fa], d[fb], d.get("threads") or d.get("cores") or 1)
+            for p, fn, d in recs if d.get(fa) and d.get(fb)]
 
 def main() -> None:
     records = {category: load(category) for category in CATEGORIES}
@@ -157,16 +228,25 @@ def main() -> None:
             print(msg)
 
     # --- 5. cross-source correlation outliers (KEY contamination detector) ---
+    # Thread-count-aware (see mad_outliers): the ratio between two CPU benchmarks
+    # is confounded by core count, so the core-count trend is regressed out and
+    # each part is judged against the ratio expected for its own core count
+    # rather than a desktop-dominated global median.
     section("CPU cross-source ratio outliers (possible wrong-variant)")
     for fa, fb in [("passmark_cpu_mark","cinebench_r23_multi"),
                    ("passmark_cpu_mark","geekbench_multi"),
                    ("cinebench_r23_multi","geekbench_multi"),
                    ("cinebench_2024_multi","cinebench_r23_multi")]:
-        out = mad_outliers(collect(cpus, fa, fb))
+        out = mad_outliers(collect_cpu(cpus, fa, fb))
         for label, ratio in out:
             print(f"  [{fa}/{fb}] {label!r}: ratio={ratio}")
 
     # --- 6. GPU cross-source + sanity ---
+    # Left as a single population on purpose: unlike the CPU thread-count
+    # confounder, the GPU ratios mix a theoretical spec (fp32_tflops) with
+    # empirical benchmarks across gaming vs. compute cards and many hardware
+    # eras, so there is no single clean stratifying variable. These stay
+    # advisory-only and are surfaced for human review rather than gated.
     section("GPU cross-source ratio outliers + sanity")
     for fa, fb in [("passmark_g3d_mark","timespy_score"),
                    ("timespy_score","blender_score"),
