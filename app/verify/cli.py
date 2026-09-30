@@ -78,13 +78,13 @@ def _iter_selected(
 
 
 def cmd_score(args: argparse.Namespace) -> int:
-    records = load_all()
+    changed = _changed_data_slugs(args.base) if args.changed else None
+    records = load_all(only=changed)
     _, _, soc_release = foreign_key_sets(records)
     now_year = offline.now_year_today()
     ts = _now_iso()
 
     categories = tuple(args.category) if args.category else CATEGORIES
-    changed = _changed_data_slugs(args.base) if args.changed else None
 
     # The scores cache is a full-dataset snapshot; only rewrite it on a full run.
     full_scope = args.category is None and args.max is None and not args.changed
@@ -622,7 +622,7 @@ def cmd_pr(args: argparse.Namespace) -> int:
     cross-reference) + Tier 3 (promotion decision, DRY-RUN — never writes). Network
     tiers run only over the records changed vs the PR merge base, capped by --max.
     """
-    records = load_all()
+    records = load_all()  # full: the baseline below scores everything (see status.json)
     _, _, soc_release = foreign_key_sets(records)
     now_year = offline.now_year_today()
 

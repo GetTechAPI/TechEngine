@@ -126,13 +126,25 @@ WEBSITE_REQUIRED = {
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
-def _load(subdir: str) -> list[tuple[str, dict[str, Any]]]:
+def _load(subdir: str, only: set[str] | None = None) -> list[tuple[str, dict[str, Any]]]:
+    """Load every ``*.json`` under ``subdir``; with ``only``, just those paths.
+
+    ``only`` holds DATA_DIR-relative posix paths (as ``git diff`` prints them
+    minus the ``data/`` prefix), so a scoped run never walks the whole tree.
+    """
     path = DATA_DIR / subdir
     if not path.exists():
         return []
+    if only is not None:
+        files = sorted(
+            f for rel in only
+            if rel.startswith(f"{subdir}/") and (f := DATA_DIR / rel).is_file()
+        )
+    else:
+        files = sorted(path.rglob("*.json"))  # recurse into brand subfolders
     return [
         (str(f.relative_to(DATA_DIR)), json.loads(f.read_text(encoding="utf-8-sig")))
-        for f in sorted(path.rglob("*.json"))  # recurse into brand subfolders
+        for f in files
     ]
 
 
