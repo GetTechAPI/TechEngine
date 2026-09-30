@@ -169,12 +169,15 @@ jobs:
           } > validation.log 2>&1
           app_status=$(grep "app_validate_status=" validation.log | tail -n 1 | cut -d= -f2)
 
+          # Scope the integrity scan to the records this PR touches (hard anomalies
+          # are per-record + duplicate checks); the same list is used on the base.
+          git -C TechAPI diff --name-only --diff-filter=ACMR "$TECHAPI_DIFF_BASE...HEAD" -- data/             | sed 's|^data/||' | grep '\.json$' > changed-paths.txt || true
           {
             echo
-            echo "## integrity_check.py (PR head compared with PR base)"
-            python integrity_check.py TechAPI/data --hard-report head-hard.json
+            echo "## integrity_check.py (PR head compared with PR base, changed records only)"
+            python integrity_check.py TechAPI/data --only changed-paths.txt --hard-report head-hard.json
             echo "head_integrity_scan_status=$?"
-            python integrity_check.py TechAPI-base/data --hard-report base-hard.json > baseline-integrity.log
+            python integrity_check.py TechAPI-base/data --only changed-paths.txt --hard-report base-hard.json > baseline-integrity.log
             echo "base_integrity_scan_status=$?"
           } >> validation.log 2>&1
           integrity_status=$(python - <<'PY'

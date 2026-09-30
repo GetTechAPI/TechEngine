@@ -37,6 +37,13 @@ _report_index = _argv.index("--hard-report") if "--hard-report" in _argv else -1
 HARD_REPORT = _argv[_report_index + 1] if _report_index >= 0 else None
 if _report_index >= 0:
     del _argv[_report_index:_report_index + 2]
+# --only FILE: scope to the data-relative paths listed in FILE (one per line).
+# Only the per-record hard checks (+ duplicate slug/name) run; the population-based
+# advisory sections need the whole catalog and are skipped.
+_only_index = _argv.index("--only") if "--only" in _argv else -1
+ONLY_FILE = _argv[_only_index + 1] if _only_index >= 0 else None
+if _only_index >= 0:
+    del _argv[_only_index:_only_index + 2]
 _positional = [a for a in _argv if not a.startswith("-")]
 ROOT = _positional[0] if _positional else r"C:\Users\29\Desktop\TechAPI\data"
 
@@ -85,8 +92,20 @@ def era_score_outliers(rec: dict) -> list[str]:
         )
     return findings
 
-def load(comp):
+ONLY: set[str] | None = None
+if ONLY_FILE:
+    with open(ONLY_FILE, encoding="utf-8") as _f:
+        ONLY = {ln.strip() for ln in _f if ln.strip()}
+
+
+def load(comp, full=False):
     recs = []
+    if ONLY is not None and not full:
+        for rel in sorted(ONLY):
+            p = os.path.join(ROOT, rel)
+            if rel.startswith(comp + "/") and os.path.isfile(p) and not os.path.basename(p).startswith("_"):
+                recs.append((p, os.path.basename(p)[:-5], json.load(open(p, encoding="utf-8"))))
+        return recs
     for dp, _, fs in os.walk(os.path.join(ROOT, comp)):
         for fn in fs:
             if fn.endswith(".json") and not fn.startswith("_"):
@@ -179,6 +198,7 @@ def collect_cpu(recs, fa, fb):
 def main() -> None:
     records = {category: load(category) for category in CATEGORIES}
     cpus = records["cpu"]; gpus = records["gpu"]
+    scoped = ONLY is not None
     print(f"scope: {len(CATEGORIES)}/12 categories ? {sum(map(len, records.values()))} records")
     print(f"loaded CPU={len(cpus)} GPU={len(gpus)}")
 
@@ -197,6 +217,25 @@ def main() -> None:
             if len(fl) > 1: hard(f"  [{comp}] DUP slug {s}: {sorted(fl)}")
         for n, fl in names.items():
             if comp in ("cpu", "gpu") and len(fl) > 1: hard(f"  [{comp}] DUP name {n!r}: {sorted(fl)}")
+        if scoped and recs:
+            # Changed records vs the rest of the catalog. File names equal slugs by
+            # convention, so listing names finds a slug clash without parsing.
+            changed_fn = {fn for _, fn, _ in recs}
+            stems = {}
+            for dp, _, fs in os.walk(os.path.join(ROOT, comp)):
+                for f in fs:
+                    if f.endswith(".json") and not f.startswith("_"):
+                        stems.setdefault(f[:-5], []).append(os.path.join(dp, f))
+            for s, fl in slugs.items():
+                if len(stems.get(s, [])) > len(fl):
+                    hard(f"  [{comp}] DUP slug {s}: {sorted(os.path.basename(x) for x in stems[s])}")
+            if comp in ("cpu", "gpu") and names:
+                known = {}
+                for p, fn, d in load(comp, full=True):
+                    known.setdefault(d.get("name"), []).append(fn)
+                for n in names:
+                    if len(known.get(n, [])) > len(names[n]):
+                        hard(f"  [{comp}] DUP name {n!r}: {sorted(known[n])}")
 
     # --- 2. AMD Ryzen line vs DESKTOP model tier-digit (2nd digit); APU/mobile excepted ---
     section("CPU name/tier consistency (desktop mainstream only)")
@@ -233,7 +272,7 @@ def main() -> None:
     # each part is judged against the ratio expected for its own core count
     # rather than a desktop-dominated global median.
     section("CPU cross-source ratio outliers (possible wrong-variant)")
-    for fa, fb in [("passmark_cpu_mark","cinebench_r23_multi"),
+    for fa, fb in [] if scoped else [("passmark_cpu_mark","cinebench_r23_multi"),
                    ("passmark_cpu_mark","geekbench_multi"),
                    ("cinebench_r23_multi","geekbench_multi"),
                    ("cinebench_2024_multi","cinebench_r23_multi")]:
@@ -248,7 +287,7 @@ def main() -> None:
     # eras, so there is no single clean stratifying variable. These stay
     # advisory-only and are surfaced for human review rather than gated.
     section("GPU cross-source ratio outliers + sanity")
-    for fa, fb in [("passmark_g3d_mark","timespy_score"),
+    for fa, fb in [] if scoped else [("passmark_g3d_mark","timespy_score"),
                    ("timespy_score","blender_score"),
                    ("fp32_tflops","timespy_score"),
                    ("passmark_g3d_mark","fp32_tflops")]:
