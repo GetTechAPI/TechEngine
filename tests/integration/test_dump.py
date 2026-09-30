@@ -8,7 +8,13 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.dump import COLLECTIONS, _prune_orphaned_pages, generate, resolve_collections
+from app.dump import (
+    COLLECTIONS,
+    _prune_orphaned_pages,
+    collections_for_changes,
+    generate,
+    resolve_collections,
+)
 from tests.integration.mobile_device_fixtures import ensure_mobile_device_fixtures
 
 
@@ -137,3 +143,23 @@ def test_prune_orphaned_pages_leaves_files_and_valid_slugs(tmp_path: Path) -> No
 
 def test_prune_orphaned_pages_noop_when_dir_missing(tmp_path: Path) -> None:
     assert _prune_orphaned_pages(tmp_path / "does-not-exist", valid_slugs=set()) == []
+
+
+def test_partial_dump_keeps_other_manifest_entries(client: TestClient, tmp_path: Path) -> None:
+    generate(client, output_dir=tmp_path, collections=["cpus", "gpus"])
+    generate(client, output_dir=tmp_path, collections=["cpus"])
+    manifest = json.loads((tmp_path / "v1" / "index.json").read_text())
+    assert set(manifest["collections"]) == {"cpus", "gpus"}
+
+
+def test_resolve_collections_only() -> None:
+    assert resolve_collections(only=["laptops", "cpus"]) == ["cpus", "laptops"]
+    with pytest.raises(ValueError):
+        resolve_collections(only=["nope"])
+
+
+def test_collections_for_changes_maps_dependents() -> None:
+    assert collections_for_changes({"website/a/x.json"}) == ["websites"]
+    assert collections_for_changes({"cpu/i/1/x.json"}) == ["cpus", "laptops"]
+    assert collections_for_changes({"_verify/status.json"}) == []
+    assert collections_for_changes({"brand/us/acme.json"}) == COLLECTIONS

@@ -19,6 +19,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from app.categories import COLLECTIONS as CATEGORY_COLLECTIONS
+from app.validate import changed_paths
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "dump"
 
@@ -29,12 +30,21 @@ SCORED = {"smartphones", "cpus", "gpus", "socs"}
 PAGE_LIMIT = 100  # API max page size (§7.3)
 
 
-def resolve_collections(exclude: list[str] | None = None) -> list[str]:
-    """Return the collections to dump, minus ``exclude``.
+def resolve_collections(
+    exclude: list[str] | None = None, only: list[str] | None = None
+) -> list[str]:
+    """Return the collections to dump: just ``only`` if given, minus ``exclude``.
 
     Unknown names raise instead of being ignored, so a typo in a workflow fails
     loudly rather than silently dumping everything.
     """
+    if only:
+        unknown = sorted(set(only) - set(COLLECTIONS))
+        if unknown:
+            raise ValueError(
+                f"unknown collection(s) {unknown}; valid names: {', '.join(COLLECTIONS)}"
+            )
+        return [r for r in COLLECTIONS if r in set(only) and r not in set(exclude or [])]
     if not exclude:
         return list(COLLECTIONS)
     unknown = sorted(set(exclude) - set(COLLECTIONS))
@@ -43,6 +53,31 @@ def resolve_collections(exclude: list[str] | None = None) -> list[str]:
             f"unknown collection(s) {unknown}; valid names: {', '.join(COLLECTIONS)}"
         )
     return [resource for resource in COLLECTIONS if resource not in set(exclude)]
+
+
+# Extra collections whose pages embed another category's data. ``None`` = everything.
+# Scored collections (smartphones/cpus/gpus/socs) are always re-dumped whole: scores
+# are partly relative to the population, so one record can move its neighbours.
+DEPENDENTS: dict[str, list[str] | None] = {
+    "brand": None,
+    "soc": ["socs", "smartphones", "tablets", "watches", "pdas"],
+    "cpu": ["cpus", "laptops"],
+    "gpu": ["gpus", "laptops"],
+}
+
+
+def collections_for_changes(paths: set[str]) -> list[str]:
+    """Collections a set of changed seed paths (``data/`` stripped) can affect."""
+    affected: set[str] = set()
+    for path in paths:
+        category = path.split("/", 1)[0]
+        if category not in CATEGORY_COLLECTIONS:
+            continue  # e.g. _verify/: not part of the dump
+        deps = DEPENDENTS.get(category, [CATEGORY_COLLECTIONS[category]])
+        if deps is None:
+            return list(COLLECTIONS)
+        affected.update(deps)
+    return [resource for resource in COLLECTIONS if resource in affected]
 
 
 def _write_json(path: Path, data: object) -> None:
@@ -105,6 +140,14 @@ def generate(
     """Write the full static dump. Returns the number of detail files per collection."""
     counts: dict[str, int] = {}
     manifest: dict[str, object] = {"version": "v1", "collections": {}}
+    if collections is not None and set(collections) != set(COLLECTIONS):
+        # Partial run: keep the entries of collections we are not touching.
+        try:
+            previous = json.loads((output_dir / "v1" / "index.json").read_text(encoding="utf-8"))
+            if isinstance(previous.get("collections"), dict):
+                manifest["collections"] = previous["collections"]
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
 
     for resource in collections or COLLECTIONS:
         count, items = _fetch_all(client, resource)
@@ -142,14 +185,21 @@ def generate(
     return counts
 
 
-def run(output_dir: Path = OUTPUT_DIR, exclude: list[str] | None = None) -> None:
+def run(
+    output_dir: Path = OUTPUT_DIR,
+    exclude: list[str] | None = None,
+    only: list[str] | None = None,
+) -> None:
     from sqlmodel import Session
 
     from app.database import create_db_and_tables, engine
     from app.main import app
     from app.seed import seed
 
-    collections = resolve_collections(exclude)
+    collections = resolve_collections(exclude, only)
+    if not collections:
+        print("Nothing to dump.")
+        return
 
     create_db_and_tables()
     with Session(engine) as session:
@@ -176,5 +226,23 @@ if __name__ == "__main__":
             "writing hundreds of thousands of files that are discarded anyway."
         ),
     )
+    parser.add_argument(
+        "--only",
+        action="append",
+        default=[],
+        metavar="COLLECTION",
+        help="dump just this collection, repeatable; other manifest entries are kept",
+    )
+    parser.add_argument(
+        "--changed-since",
+        metavar="BASE",
+        help="dump only the collections affected by data changed since BASE",
+    )
     args = parser.parse_args()
-    run(args.output, args.exclude)
+    only = args.only
+    if args.changed_since:
+        only = only + collections_for_changes(changed_paths(args.changed_since))
+        if not only:
+            print("No dump-relevant data changed.")
+            raise SystemExit(0)
+    run(args.output, args.exclude, only)
