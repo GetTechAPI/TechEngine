@@ -9,6 +9,11 @@ on:
         type: string
         required: false
         default: "main"
+      base-sha:
+        description: "PR base SHA; when set only records changed since it are validated"
+        type: string
+        required: false
+        default: ""
   workflow_dispatch:
     inputs:
       data-ref:
@@ -27,10 +32,20 @@ jobs:
           repository: GetTechAPI/TechAPI
           ref: ${{ inputs.data-ref }}
           path: TechAPI
+          # Scoped runs need the diff back to the merge base, not the full history.
+          fetch-depth: ${{ inputs.base-sha != '' && 100 || 1 }}
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Validate seed JSON (§9.3, §15.3)
         env:
           TECHAPI_DATA_DIR: ${{ github.workspace }}/TechAPI/data
-        run: python -m app.validate
+        run: |
+          if [ -n "${{ inputs.base-sha }}" ]; then
+            git -C TechAPI fetch --no-tags --depth=100 origin "${{ inputs.base-sha }}"
+            git -C TechAPI merge-base "${{ inputs.base-sha }}" HEAD >/dev/null 2>&1 \
+              || git -C TechAPI fetch --no-tags --unshallow origin
+            python -m app.validate --changed-since "${{ inputs.base-sha }}"
+          else
+            python -m app.validate
+          fi

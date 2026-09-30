@@ -13,14 +13,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 from collections import Counter, defaultdict
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from app.validate import DATA_DIR
+from app.validate import changed_paths
 
 from . import crossref, http_check, ledger, offline, promote, wikidata
 from .common import (
@@ -44,17 +43,7 @@ def _now_iso() -> str:
 
 def _changed_data_slugs(base: str = "origin/main") -> set[str]:
     """Changed seed paths against the PR merge base; git errors must stay visible."""
-    out = subprocess.run(
-        ["git", "diff", "--name-only", f"{base}...HEAD", "--", "data/"],
-        capture_output=True, text=True, check=True, cwd=DATA_DIR.parent,
-    ).stdout
-    # strip leading "data/" so it matches Record.path
-    paths = set()
-    for line in out.splitlines():
-        line = line.strip()
-        if line.startswith("data/") and line.endswith(".json"):
-            paths.add(line[len("data/"):])
-    return paths
+    return changed_paths(base)
 
 
 def _iter_selected(

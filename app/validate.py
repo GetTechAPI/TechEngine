@@ -10,8 +10,10 @@ overridden via the ``TECHAPI_DATA_DIR`` environment variable.
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -148,6 +150,52 @@ def _load(subdir: str, only: set[str] | None = None) -> list[tuple[str, dict[str
     ]
 
 
+# Categories other records reference by slug (brand/soc/cpu/gpu). A scoped run
+# still loads these whole (~9k files) so foreign-key checks stay exact.
+FK_CATEGORIES = ("brand", "soc", "cpu", "gpu")
+
+
+def changed_paths(base: str) -> set[str]:
+    """Seed paths (``data/`` stripped) changed between ``base`` and HEAD."""
+    out = subprocess.run(
+        ["git", "diff", "--name-only", f"{base}...HEAD", "--", "data/"],
+        capture_output=True, text=True, check=True, cwd=DATA_DIR.parent,
+    ).stdout
+    return {
+        line[len("data/"):] for line in map(str.strip, out.splitlines())
+        if line.startswith("data/") and line.endswith(".json")
+    }
+
+
+def _check_unique_slugs_scoped(
+    category: str,
+    records: list[tuple[str, dict[str, Any]]],
+    errors: list[str],
+) -> None:
+    """Scoped uniqueness: changed records vs each other and vs every file *name*.
+
+    Filenames equal slugs by convention, so listing names (no JSON parsing) finds
+    a clash with an unchanged record. A clash where the name differs from the slug
+    is only caught by the full run (push to develop/main, nightly).
+    """
+    changed = {fname for fname, _ in records}
+    stems: dict[str, list[str]] = {}
+    for f in (DATA_DIR / category).rglob("*.json"):
+        stems.setdefault(f.stem, []).append(str(f.relative_to(DATA_DIR)))
+    seen: dict[str, str] = {}
+    for fname, rec in records:
+        slug = rec.get("slug")
+        if not isinstance(slug, str):
+            continue
+        if slug in seen:
+            errors.append(f"{fname}: duplicate {category} slug '{slug}' (also in {seen[slug]})")
+            continue
+        seen[slug] = fname
+        for other in stems.get(slug, []):
+            if other not in changed:
+                errors.append(f"{fname}: duplicate {category} slug '{slug}' (also in {other})")
+
+
 def _check_required(
     name: str, record: dict[str, Any], required: set[str], errors: list[str]
 ) -> None:
@@ -234,10 +282,14 @@ def _check_variant_path(
         errors.append(f"{fname}: filename must match slug '{rec.get('slug')}'")
 
 
-def validate() -> list[str]:
+def validate(only: set[str] | None = None) -> list[str]:
+    """Validate the seed data; with ``only``, just those paths (+ whole FK targets)."""
     errors: list[str] = []
 
-    loaded = {category: _load(category) for category in CATEGORIES}
+    loaded = {
+        category: _load(category, None if category in FK_CATEGORIES else only)
+        for category in CATEGORIES
+    }
     (brands, socs, phones, tablets, watches, pdas, gpus, cpus,
      laptops, monitors, software, websites) = (loaded[category] for category in CATEGORIES)
 
@@ -247,7 +299,10 @@ def validate() -> list[str]:
     gpu_slugs = {rec["slug"] for _, rec in gpus if "slug" in rec}
 
     for category, records in loaded.items():
-        _check_unique_slugs(category, records, errors)
+        if only is not None and category not in FK_CATEGORIES:
+            _check_unique_slugs_scoped(category, records, errors)
+        else:
+            _check_unique_slugs(category, records, errors)
 
     for fname, rec in brands:
         _check_required(fname, rec, BRAND_REQUIRED, errors)
@@ -413,13 +468,13 @@ def validate() -> list[str]:
     return errors
 
 
-def run() -> int:
+def run(only: set[str] | None = None) -> int:
     # The ✅/❌ status glyphs must not crash on legacy consoles (e.g. cp949).
     try:
         sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
     except Exception:
         pass
-    errors = validate()
+    errors = validate(only)
     if errors:
         print(f"❌ Data validation failed ({len(errors)} issue(s)):")
         for err in errors:
@@ -430,4 +485,10 @@ def run() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(run())
+    parser = argparse.ArgumentParser(description="Validate TechAPI seed data")
+    parser.add_argument(
+        "--changed-since", metavar="BASE",
+        help="validate only records changed vs BASE (full run when omitted)",
+    )
+    args = parser.parse_args()
+    sys.exit(run(changed_paths(args.changed_since) if args.changed_since else None))
