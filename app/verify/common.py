@@ -70,14 +70,28 @@ class Record:
         return f"Record({self.category}, {self.slug!r})"
 
 
-def load_category(category: str) -> list[Record]:
+# Categories other records point at (brand/soc FKs, SoC release dates). A scoped
+# load keeps these whole (~2.3k files) so foreign-key checks stay exact.
+FK_CATEGORIES = ("brand", "soc")
+
+
+def load_category(category: str, only: set[str] | None = None) -> list[Record]:
     """Load one category's records as :class:`Record` objects."""
-    return [Record(category, path, data) for path, data in _load(category)]
+    return [Record(category, path, data) for path, data in _load(category, only)]
 
 
-def load_all(categories: Iterable[str] = CATEGORIES) -> dict[str, list[Record]]:
-    """Load every category into ``{category: [Record, ...]}``."""
-    return {cat: load_category(cat) for cat in categories}
+def load_all(
+    categories: Iterable[str] = CATEGORIES, only: set[str] | None = None
+) -> dict[str, list[Record]]:
+    """Load every category into ``{category: [Record, ...]}``.
+
+    ``only`` (data-relative paths) restricts non-FK categories to those files so
+    a PR touching a handful of records does not parse all ~190k.
+    """
+    return {
+        cat: load_category(cat, None if cat in FK_CATEGORIES else only)
+        for cat in categories
+    }
 
 
 def foreign_key_sets(
