@@ -73,7 +73,8 @@ jobs:
           repository: GetTechAPI/TechAPI
           ref: ${{ env.TECHAPI_HEAD_SHA }}
           path: TechAPI
-          fetch-depth: 0
+          # Shallow; deepened to the merge base in the next-but-one step.
+          fetch-depth: 1
 
       - name: Checkout TechAPI PR base
         uses: actions/checkout@v4
@@ -81,14 +82,16 @@ jobs:
           repository: GetTechAPI/TechAPI
           ref: ${{ env.TECHAPI_BASE_SHA }}
           path: TechAPI-base
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Pin PR base to the merge base
         shell: bash
         run: |
-          git -C TechAPI fetch --no-tags origin "$TECHAPI_BASE_SHA"
+          git -C TechAPI fetch --no-tags --depth=100 origin "$TECHAPI_BASE_SHA"
+          # Fall back to full history only if the PR branched from far back.
+          git -C TechAPI merge-base "$TECHAPI_BASE_SHA" HEAD >/dev/null 2>&1 ||             git -C TechAPI fetch --no-tags --unshallow origin
           base_sha="$(git -C TechAPI merge-base "$TECHAPI_BASE_SHA" HEAD)"
-          git -C TechAPI-base fetch --no-tags origin "$base_sha"
+          git -C TechAPI-base fetch --no-tags --depth=1 origin "$base_sha"
           git -C TechAPI-base checkout --detach "$base_sha"
           echo "TECHAPI_DIFF_BASE=$base_sha" >> "$GITHUB_ENV"
 
@@ -161,7 +164,7 @@ jobs:
           set +e
           {
             echo "## app.validate"
-            python -m app.validate
+            python -m app.validate --changed-since "$TECHAPI_DIFF_BASE"
             echo "app_validate_status=$?"
           } > validation.log 2>&1
           app_status=$(grep "app_validate_status=" validation.log | tail -n 1 | cut -d= -f2)
