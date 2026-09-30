@@ -87,7 +87,9 @@ jobs:
           repository: GetTechAPI/TechAPI
           ref: ${{ env.TECHAPI_HEAD_SHA }}
           path: TechAPI
-          fetch-depth: 0
+          # Shallow: the diff only needs history back to the merge base, fetched
+          # below. A full clone was ~58% of this job's runtime.
+          fetch-depth: 1
 
       - uses: actions/setup-python@v6
         with:
@@ -105,7 +107,11 @@ jobs:
         env:
           TECHAPI_DATA_DIR: ${{ github.workspace }}/TechAPI/data
         run: |
-          git -C TechAPI fetch --no-tags origin "$TECHAPI_BASE_SHA"
+          # Deepen just enough for `base...HEAD` to find a merge base; fall back
+          # to the full history only if the PR branched from far back.
+          git -C TechAPI fetch --no-tags --depth=100 origin "$TECHAPI_BASE_SHA" "$TECHAPI_HEAD_SHA"
+          git -C TechAPI merge-base "$TECHAPI_BASE_SHA" "$TECHAPI_HEAD_SHA" >/dev/null 2>&1 \
+            || git -C TechAPI fetch --no-tags --unshallow origin
           {
             echo 'report<<VERIFY_EOF'
             python -m app.dump_check --base "$TECHAPI_BASE_SHA" --base-ref "$TECHAPI_BASE_REF" --scope-only
@@ -117,7 +123,9 @@ jobs:
               echo ""
               echo "### Full-dataset baseline"
               echo ""
-              python -m app.verify score --no-cache --format md || true
+              # Read the daily aggregate (verify-status.yml) instead of rescoring
+              # all ~190k records on every PR.
+              python -m app.verify.baseline "$TECHAPI_DATA_DIR/_verify/status.json" || true
             else
               python -m app.verify pr --base "$TECHAPI_BASE_SHA" || echo "_app.verify unavailable on this ref._"
             fi
