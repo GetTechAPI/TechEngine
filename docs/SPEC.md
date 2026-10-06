@@ -973,6 +973,8 @@ algorithm_version: "1.2.0"
 | **DeviceSpecifications** | ToS 제한 | ⭐⭐⭐⭐ | ⚠️ 참조용, 보류(ADR-013 범위 아님) |
 | **TechPowerUp (GPU)** | 비공개 | ⭐⭐⭐⭐⭐ | ⚠️ 참조용 |
 | **Blender Open Data** | CC-BY-SA | ⭐⭐⭐⭐ | ✅ |
+| **Google Play `supported_devices.csv`** | 공개 파일, 라이선스 표기 없음 | ⭐⭐⭐⭐ (식별 정보) | ✅ 식별 정보 전용(ADR-016) — 브랜드·판매명·코드명·모델 번호만, 스펙 필드 없음 |
+| **Google Play Console 기기 카탈로그 내보내기** | 개발자 계정 내보내기, 배포 계약상 기밀·재배포 제한 조항 없음 | ⭐⭐⭐⭐ | ✅ `device_catalog` 한정(ADR-016) — RAM·SoC·GPU·해상도·밀도·SDK 범위만, 출시일로 쓰지 않음 |
 | **사용자 제출 PR** | 기여자 라이선스 | 가변 | ✅ (검증 필수) |
 
 ### 9.3 검증 절차
@@ -1991,6 +1993,20 @@ TechAPI의 **핵심 목표 중 하나**. TechPicks 외에 다양한 앱·플랫�
 - **결정**: 스키마 필드만 우선 추가한다 — `Smartphone.model_3d: dict | None`(url/version/bytes/sha256/license/attribution/parts[]/colors[]), `Smartphone.body: dict | None`(corner_radius_mm/back_color_hex/camera_layout, 3D 없을 때 2.5D 대체 렌더링용). 둘 다 전 레코드 `null` — 파일 소싱이 결정되기 전까지 콘텐츠는 비워둔다. `base_model_slug`는 이미 스키마에 존재하며 미채움 상태(별도 채우기 작업 필요, 이 ADR 범위 밖).
 - **영향**: `app/models/smartphone.py`, `app/schemas/smartphone.py`, `app/schemas/serializers.py`, SPEC §6.4·부록 C.
 - **후속 (2026-09-25)**: `base_model_slug`는 31,372건 채움(TechAPI #247), 실제 이미지는 Wikipedia Commons에서 47건 백필(`image_license`/`image_attribution` 포함, TechAPI #246). `body`는 계속 전 레코드 `null` — 기존 필드(`dimensions`는 높이·폭·두께만, `cameras`는 스펙만)로 모서리 반경·뒷판 색·카메라 배치를 유도할 근거가 없고, 추정값을 넣으면 §1.6 정확성 원칙 위반이라 채우지 않는다. 출처(제조사 도면 등)가 생기면 그때 채운다.
+
+
+### ADR-016: Google Play 기기 목록 + Play Console 카탈로그 — 식별 정보 보강 및 `device_catalog`
+
+- **날짜**: 2026-10-06
+- **상태**: Accepted
+- **배경**: 공개 휴대폰 데이터셋은 모두 소진됐다(신규 대량 기기 없음). Google Play의 공개 `supported_devices.csv`(54,073행: 브랜드·판매명·코드명·모델 번호)와 메인테이너 개발자 계정의 Play Console 기기 카탈로그 내보내기(25,111대: RAM·폼팩터·SoC·GPU·해상도·밀도·SDK 목록)를 확보했다. 스펙(배터리·무게·출시일)은 없다.
+- **결정**:
+  1. 기존 레코드는 **식별 정보만** 보강한다(`model_numbers`, `codenames`). 기존 스펙 값은 덮어쓰지 않는다.
+  2. 신규 기기는 스마트폰/태블릿 레코드로 만들지 않고 `device_catalog`(연도 폴더 없음)에 넣는다. 콘솔의 최저 SDK는 출시 연도의 **추정 근거가 아니다**(저가 기기는 1~2년 지난 안드로이드로 출시, 반대로 Play가 오래된 빌드를 목록에서 빼기도 함) — 출시 연도는 모델 코드 규칙(`release_year_source: model_code`)으로만 채운다.
+  3. 국가 등 원천에 없는 값은 지어내지 않는다(브랜드 `country` null 허용, `brand/unknown/`).
+  4. 매칭은 단계별 검증(모델 번호 → 코드명 → 정규화 이름 → 토큰 집합, 계열 묶기, 브랜드 확인된 콘솔 조인, SoC 동치류, 중복 스윕)과 표본 감사(3회)를 거쳐, 감사 정밀도가 높은 세트만 반영한다: 보강 확정 97%, 소형 브랜드 + 콘솔 행 있는 신규 98%. 대형 브랜드 신규·충돌·중복 의심은 검토 대기.
+- **근거(약관)**: Play 개발자 배포 계약에 콘솔 제공 정보의 기밀·재배포 제한 조항이 없고, 같은 내보내기를 Apache-2.0으로 공개한 저장소(hossain-khan/android-device-catalog-parser)가 있다. 명시적 허락도 없으므로 사실 정보(사양 수치)만 담고 원본 파일은 저장소에 넣지 않는다.
+- **영향**: TechEngine #121(스키마), TechAPI 데이터 PR(보강·카탈로그·브랜드).
 
 ---
 
