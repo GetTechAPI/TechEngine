@@ -22,7 +22,7 @@ from typing import Any
 
 from app.validate import DATA_DIR
 
-from . import crossref, http_check, ledger, offline, promote, wikidata
+from . import catalog_candidates, crossref, http_check, ledger, offline, promote, wikidata
 from .common import (
     CATEGORIES,
     SCORES_PATH,
@@ -363,6 +363,28 @@ def cmd_report(args: argparse.Namespace) -> int:
         print("\npromoted to verified (ledger):")
         for cat, n in promoted.most_common():
             print(f"  {n:>7}  {cat}")
+    return 0
+
+
+def cmd_candidates(args: argparse.Namespace) -> int:
+    """Gate Play new-device candidates against the dataset (see catalog_candidates)."""
+    rows = [json.loads(line) for line in args.input.read_text(encoding="utf-8").splitlines()
+            if line.strip()]
+    all_rows = [catalog_candidates.Candidate.from_row(r) for r in rows]
+    cands = [catalog_candidates.Candidate.from_row(r) for r in rows
+             if r.get("bucket", args.bucket) == args.bucket]
+    cats = ("brand", "smartphone", "tablet", "watch", "pda", "device_catalog")
+    records = load_all(cats)
+    index = catalog_candidates.Index(
+        (r for c in cats[1:] for r in records[c]), (r.slug for r in records["brand"] if r.slug)
+    )
+    decisions = catalog_candidates.gate(cands, all_rows, index)
+    with args.out.open("w", encoding="utf-8") as f:
+        for d in decisions:
+            f.write(json.dumps(d.as_row(), ensure_ascii=False) + "\n")
+    tally = Counter(d.reasons[0].split(":")[0] if d.reasons else "accept" for d in decisions)
+    for key, n in tally.most_common():
+        print(f"  {n:>7}  {key}")
     return 0
 
 
@@ -811,6 +833,12 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--base", default="origin/main", help="PR base SHA or ref")
     pr.add_argument("--max", type=int, default=40, help="cap changed records for network tiers")
     pr.set_defaults(func=cmd_pr)
+
+    ca = sub.add_parser("candidates", help="gate new-device candidates for device_catalog")
+    ca.add_argument("input", type=Path, help="JSONL of Play rows (all rows: brand stats use them)")
+    ca.add_argument("--out", type=Path, required=True, help="JSONL with decision + reasons")
+    ca.add_argument("--bucket", default="new_catalog", help="rows with this bucket are candidates")
+    ca.set_defaults(func=cmd_candidates)
 
     return p
 
