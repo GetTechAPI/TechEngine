@@ -60,7 +60,8 @@ def scope(repo: Path, base_ref: str, base_sha: str) -> str:
     count = sum(1 for category in CATEGORIES
                 for p in (repo / "data" / category).rglob("*.json")
                 if not p.name.startswith("_"))
-    return f"12/12 categories ? {count:,} records ? diff base {base_ref}@{base_sha[:7]}"
+    n = len(CATEGORIES)
+    return f"{n}/{n} categories ? {count:,} records ? diff base {base_ref}@{base_sha[:7]}"
 
 
 def main() -> int:

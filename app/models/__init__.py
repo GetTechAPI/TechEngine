@@ -5,6 +5,7 @@ Importing this package registers every table on ``SQLModel.metadata``.
 
 from app.models.brand import Brand
 from app.models.cpu import CPU
+from app.models.device_catalog import DeviceCatalog
 from app.models.gpu import DiscreteGPU
 from app.models.laptop import Laptop
 from app.models.mobile_device import PDA, Tablet, Watch
@@ -25,4 +26,5 @@ __all__ = [
     "Laptop",
     "Monitor",
     "Software",
+    "DeviceCatalog",
 ]

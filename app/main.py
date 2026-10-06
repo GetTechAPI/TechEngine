@@ -17,6 +17,7 @@ from app.errors import register_error_handlers
 from app.routers import (
     brands,
     cpus,
+    device_catalog,
     gpus,
     laptops,
     meta,
@@ -90,6 +91,7 @@ app.include_router(laptops.router, prefix=PREFIX)
 app.include_router(monitors.router, prefix=PREFIX)
 app.include_router(software.router, prefix=PREFIX)
 app.include_router(websites.router, prefix=PREFIX)
+app.include_router(device_catalog.router, prefix=PREFIX)
 
 
 @app.get("/", include_in_schema=False)

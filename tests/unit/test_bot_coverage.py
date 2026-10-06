@@ -14,10 +14,10 @@ from app.verify.common import Record
 
 def test_all_categories_share_registry():
     assert VERIFY_CATEGORIES is CATEGORIES
-    assert len(CATEGORIES) == len(set(CATEGORIES)) == 12
+    assert len(CATEGORIES) == len(set(CATEGORIES)) == 13
     assert set(CATEGORIES) == {
         "smartphone", "tablet", "watch", "pda", "cpu", "gpu", "soc", "laptop",
-        "monitor", "software", "website", "brand",
+        "monitor", "software", "website", "brand", "device_catalog",
     }
 
 
@@ -81,7 +81,7 @@ def test_dump_checks_parse_manifest_and_indices(monkeypatch, tmp_path):
     write(tmp_path / "site/public/v1/laptops/index.json", {"count": 2, "results": []})
     assert any("laptops: index" in e for e in dump_check.check_dump(tmp_path, "base"))
     write(tmp_path / "site/public/v1/index.json", {"collections": {}})
-    assert sum("manifest count" in e for e in dump_check.check_dump(tmp_path, "base")) == 12
+    assert sum("manifest count" in e for e in dump_check.check_dump(tmp_path, "base")) == 13
 
 
 def test_dump_deletion_still_checks_counts(monkeypatch, tmp_path):
@@ -102,7 +102,7 @@ def test_dump_no_changes_skips_missing_dump(monkeypatch, tmp_path):
 def test_scope_includes_all_records_and_base(tmp_path):
     fixture_dump(tmp_path)
     assert dump_check.scope(tmp_path, "develop", "abcdef1234") == (
-        "12/12 categories ? 12 records ? diff base develop@abcdef1"
+        "13/13 categories ? 13 records ? diff base develop@abcdef1"
     )
 
 
@@ -142,7 +142,7 @@ def test_integrity_scans_non_chip_categories(tmp_path):
         ["python", "integrity_check.py", str(tmp_path), "--hard-report", str(report)],
         capture_output=True, text=True, encoding="utf-8", check=True,
     )
-    assert "12/12 categories" in result.stdout
+    assert "13/13 categories" in result.stdout
     anomalies = json.loads(report.read_text(encoding="utf-8"))
     for category in ("laptop", "monitor", "software", "website"):
         assert any(f"[{category}] DUP slug" in item for item in anomalies)

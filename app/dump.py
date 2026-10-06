@@ -60,7 +60,7 @@ def resolve_collections(
 # are partly relative to the population, so one record can move its neighbours.
 DEPENDENTS: dict[str, list[str] | None] = {
     "brand": None,
-    "soc": ["socs", "smartphones", "tablets", "watches", "pdas"],
+    "soc": ["socs", "smartphones", "tablets", "watches", "pdas", "device-catalog"],
     "cpu": ["cpus", "laptops"],
     "gpu": ["gpus", "laptops"],
 }

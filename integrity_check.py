@@ -199,7 +199,8 @@ def main() -> None:
     records = {category: load(category) for category in CATEGORIES}
     cpus = records["cpu"]; gpus = records["gpu"]
     scoped = ONLY is not None
-    print(f"scope: {len(CATEGORIES)}/12 categories ? {sum(map(len, records.values()))} records")
+    ncat = len(CATEGORIES)
+    print(f"scope: {ncat}/{ncat} categories ? {sum(map(len, records.values()))} records")
     print(f"loaded CPU={len(cpus)} GPU={len(gpus)}")
 
     # --- 1. duplicates + slug/file + verified-no-source ---

@@ -84,13 +84,13 @@ def _camera(cameras: list[dict[str, Any]], scales: dict[str, ReferenceScale]) ->
 
 
 def _battery(
-    battery_mah: int,
+    battery_mah: int | None,
     wired_w: float | None,
     wireless_w: float | None,
     process_nm: float | None,
     scales: dict[str, ReferenceScale],
 ) -> float | None:
-    if battery_mah <= 0:
+    if not battery_mah or battery_mah <= 0:  # unknown capacity: no battery score
         return None
     capacity = capability(float(battery_mah), scales["battery_mah"])
     if capacity is None:
