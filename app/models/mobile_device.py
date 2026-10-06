@@ -24,7 +24,13 @@ class MobileDeviceFields(SQLModel):
     soc_id: int | None = Field(default=None, foreign_key="socs.id", index=True)
 
     release_date: date
+    # day | month | year | year_estimated; None = unspecified (legacy records).
+    release_date_precision: str | None = None
     msrp_usd: int | None = None
+
+    # Identity keys from the vendor / Google Play device list (never derived).
+    model_numbers: list[str] = Field(default_factory=list, sa_type=JSON)
+    codenames: list[str] = Field(default_factory=list, sa_type=JSON)
 
     ram_gb: float
     storage_options_gb: list[int] = Field(default_factory=list, sa_type=JSON)

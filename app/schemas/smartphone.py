@@ -35,16 +35,19 @@ class SmartphoneRead(BaseModel):
     brand: BrandSummary
     soc: SoCSummary
     release_date: date
+    release_date_precision: str | None = None
     msrp_usd: int | None = None
+    model_numbers: list[str] = []
+    codenames: list[str] = []
     ram_gb: int | float
     storage_options_gb: list[int]
     variant: dict[str, Any]
     display: dict[str, Any]
     cameras: list[dict[str, Any]]
-    battery_mah: int
+    battery_mah: int | None = None
     charging_wired_w: float | None = None
     charging_wireless_w: float | None = None
-    weight_g: float
+    weight_g: float | None = None
     dimensions: dict[str, Any]
     ip_rating: str | None = None
     os: str

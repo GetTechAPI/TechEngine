@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.config import settings
 from app.models.brand import Brand
 from app.models.cpu import CPU
+from app.models.device_catalog import DeviceCatalog
 from app.models.gpu import DiscreteGPU
 from app.models.laptop import Laptop
 from app.models.mobile_device import MobileDeviceFields
@@ -16,6 +17,7 @@ from app.models.website import Website
 from app.schemas.brand import BrandRead, BrandSummary
 from app.schemas.common import HybridRead, ManufacturerRef, ResourceRef
 from app.schemas.cpu import CPURead, CPUScoreRead
+from app.schemas.device_catalog import DeviceCatalogRead
 from app.schemas.gpu import GPURead, GPUScoreRead
 from app.schemas.laptop import LaptopRead
 from app.schemas.mobile_device import MobileDeviceRead
@@ -254,7 +256,10 @@ def smartphone_read(
         brand=brand_summary(brand),
         soc=soc_summary(soc, soc_manufacturer),
         release_date=phone.release_date,
+        release_date_precision=phone.release_date_precision,
         msrp_usd=phone.msrp_usd,
+        model_numbers=phone.model_numbers,
+        codenames=phone.codenames,
         ram_gb=_whole_as_int(phone.ram_gb),
         storage_options_gb=phone.storage_options_gb,
         variant=phone.variant,
@@ -299,7 +304,10 @@ def mobile_device_read(
         brand=brand_summary(brand),
         soc=soc_summary(soc, soc_manufacturer) if soc and soc_manufacturer else None,
         release_date=device.release_date,
+        release_date_precision=device.release_date_precision,
         msrp_usd=device.msrp_usd,
+        model_numbers=device.model_numbers,
+        codenames=device.codenames,
         ram_gb=device.ram_gb,
         storage_options_gb=device.storage_options_gb,
         variant=device.variant,
@@ -427,4 +435,41 @@ def website_read(website: Website) -> WebsiteRead:
         created_at=website.created_at,
         updated_at=website.updated_at,
         url=url_for("websites", website.slug),
+    )
+
+
+def device_catalog_read(
+    entry: DeviceCatalog,
+    brand: Brand,
+    soc: SoC | None,
+    soc_manufacturer: Brand | None,
+) -> DeviceCatalogRead:
+    assert entry.id is not None
+    return DeviceCatalogRead(
+        id=entry.id,
+        slug=entry.slug,
+        base_model_slug=entry.base_model_slug,
+        name=entry.name,
+        brand=brand_summary(brand),
+        soc=soc_summary(soc, soc_manufacturer) if soc and soc_manufacturer else None,
+        model_numbers=entry.model_numbers,
+        codenames=entry.codenames,
+        marketing_names=entry.marketing_names,
+        form_factor=entry.form_factor,
+        device_type_guess=entry.device_type_guess,
+        ram_gb=entry.ram_gb,
+        soc_raw=entry.soc_raw,
+        gpu_raw=entry.gpu_raw,
+        screen_resolution=entry.screen_resolution,
+        screen_density_dpi=entry.screen_density_dpi,
+        android_sdk_min=entry.android_sdk_min,
+        android_sdk_max=entry.android_sdk_max,
+        release_year=entry.release_year,
+        release_year_source=entry.release_year_source,
+        promoted_to=entry.promoted_to,
+        verified=entry.verified,
+        source_urls=entry.source_urls,
+        created_at=entry.created_at,
+        updated_at=entry.updated_at,
+        url=url_for("device-catalog", entry.slug),
     )

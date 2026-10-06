@@ -116,11 +116,11 @@ def test_mobile_specs_openapi_contract(client: TestClient) -> None:
     schemas = client.get("/openapi.json").json()["components"]["schemas"]
     mobile = schemas["MobileDeviceRead"]
     phone = schemas["SmartphoneRead"]
-    for field, numeric_type in (("battery_mah", "integer"), ("weight_g", "number")):
-        assert field not in mobile["required"]
-        assert {variant["type"] for variant in mobile["properties"][field]["anyOf"]} == {
-            numeric_type,
-            "null",
-        }
-        assert field in phone["required"]
-        assert phone["properties"][field]["type"] == numeric_type
+    # Smartphones too: an unknown battery/weight stays null, never estimated.
+    for schema in (mobile, phone):
+        for field, numeric_type in (("battery_mah", "integer"), ("weight_g", "number")):
+            assert field not in schema["required"]
+            assert {variant["type"] for variant in schema["properties"][field]["anyOf"]} == {
+                numeric_type,
+                "null",
+            }

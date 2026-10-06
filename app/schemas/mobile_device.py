@@ -21,7 +21,10 @@ class MobileDeviceRead(BaseModel):
     brand: BrandSummary
     soc: SoCSummary | None = None
     release_date: date
+    release_date_precision: str | None = None
     msrp_usd: int | None = None
+    model_numbers: list[str] = Field(default_factory=list)
+    codenames: list[str] = Field(default_factory=list)
     ram_gb: float
     storage_options_gb: list[int]
     variant: dict[str, Any]

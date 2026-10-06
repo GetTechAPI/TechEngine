@@ -28,6 +28,7 @@ from app.data_root import get_data_root
 from app.database import create_db_and_tables, engine
 from app.models.brand import Brand
 from app.models.cpu import CPU
+from app.models.device_catalog import DeviceCatalog
 from app.models.gpu import DiscreteGPU
 from app.models.laptop import Laptop
 from app.models.mobile_device import PDA, Tablet, Watch
@@ -165,6 +166,7 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
         "monitors": 0,
         "software": 0,
         "websites": 0,
+        "device-catalog": 0,
     }
 
     # --- Brands ---
@@ -338,6 +340,29 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
             continue
         session.add(_row(Website, record, taken, stamps))
         counts["websites"] += 1
+    session.commit()
+
+    # --- Device catalog (identity-only; brand [required], soc [optional]) ---
+    catalog_slugs = _existing_slugs(session, DeviceCatalog)
+    for record in _load_dir(data_dir / "device_catalog"):
+        if record["slug"] in catalog_slugs:
+            continue
+        brand_slug = record.pop("brand")
+        soc_slug = record.pop("soc", None)
+        brand_id = brand_id_by_slug.get(brand_slug)
+        soc_id = soc_id_by_slug.get(soc_slug) if soc_slug else None
+        if brand_id is None:
+            raise ValueError(
+                f"Device catalog '{record['slug']}' references unknown brand '{brand_slug}'"
+            )
+        if soc_slug and soc_id is None:
+            raise ValueError(
+                f"Device catalog '{record['slug']}' references unknown SoC '{soc_slug}'"
+            )
+        session.add(
+            _row(DeviceCatalog, record, taken, stamps, brand_id=brand_id, soc_id=soc_id)
+        )
+        counts["device-catalog"] += 1
     session.commit()
 
     return counts

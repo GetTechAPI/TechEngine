@@ -26,7 +26,13 @@ class Smartphone(SQLModel, table=True):
     soc_id: int = Field(foreign_key="socs.id", index=True)
 
     release_date: date
+    # day | month | year | year_estimated; None = unspecified (legacy records).
+    release_date_precision: str | None = None
     msrp_usd: int | None = None
+
+    # Identity keys from the vendor / Google Play device list (never derived).
+    model_numbers: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    codenames: list[str] = Field(default_factory=list, sa_column=Column(JSON))
 
     # Memory
     ram_gb: float  # sub-GB on 2006-2012 phones (original iPhone 0.125)
@@ -40,12 +46,12 @@ class Smartphone(SQLModel, table=True):
     cameras: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
 
     # Battery
-    battery_mah: int
+    battery_mah: int | None = None  # null = unknown, never estimated
     charging_wired_w: float | None = None
     charging_wireless_w: float | None = None
 
     # Physical
-    weight_g: float
+    weight_g: float | None = None
     dimensions: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     ip_rating: str | None = None
 
