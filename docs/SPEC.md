@@ -501,7 +501,7 @@ class Brand:
     name: str                   # "Samsung"
     country: str                # ISO 3166: "KR"
     founded_year: int | None
-    logo_url: str | None
+    logo_url: str | None       # Wikimedia Commons file only, else null (ADR-017)
     website: str | None
     source_urls: list[str]
     description_en: str | None
@@ -587,8 +587,8 @@ class Smartphone:
     connectivity: dict          # {wifi, bluetooth, nfc, usb}
 
     # Assets
-    image_url: str | None       # real hotlinked source host (gsmarena.com, aitoolbuzz.com, ...),
-                                 # NOT a TechAPI-hosted CDN — no such mirror exists (ADR-015)
+    image_url: str | None       # upload.wikimedia.org/wikipedia/commons file only, else null (ADR-017);
+                                 # the record also stores image_license + image_attribution
     images: list[str] = []
 
     # 3D (optional, sparse — added 2026-09-24 for TechPicks' 3D viewer, ADR-015)
@@ -975,6 +975,7 @@ algorithm_version: "1.2.0"
 | **Blender Open Data** | CC-BY-SA | ⭐⭐⭐⭐ | ✅ |
 | **Google Play `supported_devices.csv`** | 공개 파일, 라이선스 표기 없음 | ⭐⭐⭐⭐ (식별 정보) | ✅ 식별 정보 전용(ADR-016) — 브랜드·판매명·코드명·모델 번호만, 스펙 필드 없음 |
 | **Google Play Console 기기 카탈로그 내보내기** | 개발자 계정 내보내기, 배포 계약상 기밀·재배포 제한 조항 없음 | ⭐⭐⭐⭐ | ✅ `device_catalog` 한정(ADR-016) — RAM·SoC·GPU·해상도·밀도·SDK 범위만, 출시일로 쓰지 않음 |
+| **Wikimedia Commons (사진·로고)** | 파일별 자유 라이선스(CC BY/BY-SA, CC0, PD) | — | ✅ `image_url`·`logo_url` 한정(ADR-017) — 파일별 라이선스·저작자 저장, 다른 이미지 호스트 금지 |
 | **사용자 제출 PR** | 기여자 라이선스 | 가변 | ✅ (검증 필수) |
 
 ### 9.3 검증 절차
@@ -1986,7 +1987,7 @@ TechAPI의 **핵심 목표 중 하나**. TechPicks 외에 다양한 앱·플랫�
 ### ADR-015: `image_url` 예시 오류 정정 + `model_3d`/`body` 스키마 필드 추가 (필드만, 콘텐츠 없음)
 
 - **날짜**: 2026-09-24
-- **상태**: Accepted
+- **상태**: Accepted — `image_url` 서술은 ADR-017로 대체
 - **배경 1 (버그 근본 원인)**: §6.4·부록 C의 스마트폰 응답 예시가 `image_url`을 `https://cdn.jsdelivr.net/gh/GetTechAPI/images/smartphones/galaxy-s25.webp` 형태로 서술했으나, `GetTechAPI/images` 리포는 존재한 적이 없다. 실제 데이터의 `image_url`은 원본 호스트(gsmarena.com, aitoolbuzz.com 등)를 그대로 가리키는 hotlink다. 이 문서 예시를 그대로 믿고 만든 외부 소비자(TechPicks)가 존재하지 않는 CDN 경로로 이미지를 요청해 전부 404를 겪었다 — **TechAPI 데이터 결함이 아니라 문서 결함이 실제 버그를 유발한 사례**.
 - **결정**: 부록 C·§6.4 예시를 실제 hotlink 형태로 정정. 앞으로 응답 예시는 실제 `app/dump.py` 산출물에서 표본을 뜨거나, 최소한 존재하는 도메인만 쓴다.
 - **배경 2 (TechPicks 3D 뷰어 요청)**: TechPicks가 기기별 `.glb` 3D 모델 + 부품 노드 + 카메라 배치 메타데이터를 요청(2026-09-24). 실제 3D 모델 파일(수백 종 스캔/모델링)은 TechAPI의 소싱 정책(§9, Wikipedia/제조사/CC 데이터셋만) 범위 밖이라 이번 결정에서 **제외** — 별도 트랙(무료/합법 3D 소스 존재 여부 조사)으로 추후 검토.
@@ -2007,6 +2008,33 @@ TechAPI의 **핵심 목표 중 하나**. TechPicks 외에 다양한 앱·플랫�
   4. 매칭은 단계별 검증(모델 번호 → 코드명 → 정규화 이름 → 토큰 집합, 계열 묶기, 브랜드 확인된 콘솔 조인, SoC 동치류, 중복 스윕)과 표본 감사(3회)를 거쳐, 감사 정밀도가 높은 세트만 반영한다: 보강 확정 97%, 소형 브랜드 + 콘솔 행 있는 신규 98%. 대형 브랜드 신규·충돌·중복 의심은 검토 대기.
 - **근거(약관)**: Play 개발자 배포 계약에 콘솔 제공 정보의 기밀·재배포 제한 조항이 없고, 같은 내보내기를 Apache-2.0으로 공개한 저장소(hossain-khan/android-device-catalog-parser)가 있다. 명시적 허락도 없으므로 사실 정보(사양 수치)만 담고 원본 파일은 저장소에 넣지 않는다.
 - **영향**: TechEngine #121(스키마), TechAPI 데이터 PR(보강·카탈로그·브랜드).
+
+### ADR-017: 사진·로고는 Wikimedia Commons 파일만 — 제3자 hotlink 제거
+
+- **날짜**: 2026-10-07
+- **상태**: Accepted (ADR-015의 `image_url` 서술을 대체)
+- **배경**: 2026-10-07 저작권 점검에서 `image_url` 값 17,397개가 이용 허락 없는 제3자 제품 사진을 hotlink하고 있었다. 레코드로는 17,384건이고, `raw_merged_records` 중첩 사본도 포함된다.
+  - 호스트별로 aitoolbuzz.com 11,871개, mobiledokan.com 2,985개, cdn2.gsmarena.com 2,541개였다.
+  - 사이트가 이 사진들을 기기 카드에 `<img>`로 그렸고, CC BY-SA 4.0 정적 API에도 실렸다.
+  - 브랜드 `logo_url` 3개도 회사·쇼핑몰 CDN을 가리켰다.
+  - 별도로 백필 도구의 Wikipedia 문서 HTML 캐시(`data/_verify/cache/wikipedia_html/`, 325개, 61 MB)가 실수로 커밋돼 있었다.
+- **결정**:
+  1. `image_url`에는 `https://upload.wikimedia.org/wikipedia/commons/…` 파일만 넣는다. 값을 넣으면 `image_license`와 `image_attribution`도 함께 둔다.
+  2. `logo_url`에는 Commons 파일만 넣는다. `upload.wikimedia.org/wikipedia/commons/…`와 `commons.wikimedia.org/wiki/Special:FilePath/…` 형식을 모두 허용한다.
+  3. 1·2에 맞지 않는 값은 `null`로 둔다. `app/validate.py`가 이 규칙을 강제하며, 중첩된 `raw_merged_records`도 검사한다.
+  4. 사진은 `app/verify/wikipedia_image_backfill.py`로만 채운다. 이 도구는 무료 라이선스이고 저작자 표기가 있는 Commons 파일만 받는다.
+  5. 라이선스 주장이 의심스러운 Commons 파일은 쓰지 않는다. 예를 들어 회사 로고를 "own work"로 올린 최근 업로드가 여기에 해당한다.
+  6. 사이트는 Commons 사진만 표시한다. 출처는 저작자와 라이선스가 적힌 파일 페이지로 가는 링크로 밝힌다. CC 라이선스는 매체에 맞는 합리적 방식의 표시를 허용하며, 링크도 그중 하나다(CC BY-SA 4.0 §3(a)(2)).
+  7. 백필 도구의 페이지 캐시(`data/_verify/cache/`)는 로컬 전용으로 두고 `.gitignore`에 넣는다.
+- **근거**:
+  - 제품 사진은 저작물인데, 출처 사이트에서 이용 허락을 받은 적이 없다. aitoolbuzz는 다른 사이트의 사진을 재게시하는 곳이다.
+  - 링크 자체보다 두 가지가 위험하다. 하나는 우리 사이트에 임베드해 노출한 것이다. 다른 하나는 CC BY-SA 데이터에 섞여서 그 라이선스가 사진에도 적용되는 것처럼 보인 것이다.
+  - 목적은 배포 중단이다. git 이력은 재작성하지 않는다.
+- **영향**:
+  - TechAPI #365: 데이터 17,384건과 로고 3개의 값을 지우고, 캐시를 제거하고, `data/LICENSE.md`에 사진 조항을 추가한다.
+  - TechAPI #366: 사이트.
+  - 이 문서: §6 스키마 주석, §9.2 소스 카탈로그, 부록 C 예시.
+  - 해당 레코드의 썸네일은 Commons 백필 전까지 비어 있다.
 
 ---
 
@@ -2211,7 +2239,7 @@ SCORING_CONFIG_PATH=./config/scoring.yaml
     "nfc": true,
     "usb": "USB-C 3.2"
   },
-  "image_url": "https://cdn2.gsmarena.com/vv/bigpic/samsung-galaxy-s25.jpg",
+  "image_url": null,
   "model_3d": null,
   "body": null,
   "score": {
