@@ -26,7 +26,7 @@ from app.verify.wikipedia_smartphone_backfill import (
     variant_conflict,
 )
 
-VERSION = 7
+VERSION = 8
 CATEGORIES = ("smartphone", "laptop", "monitor", "tablet", "watch", "pda")
 BAD_IMAGE = re.compile(
     r"(?<![A-Za-z0-9])(?:logo|logotype|wordmark|icon|emblem|flag|symbol|diagram|chart|screenshot|placeholder|render|advertisement|battery|headquarters?|building|campus|series|lineup|packaging|시리즈)(?![A-Za-z0-9])",
@@ -34,6 +34,8 @@ BAD_IMAGE = re.compile(
 )
 GROUP_IMAGE = re.compile(r"_and_.*(?:Xiaomi|Samsung|Huawei|OnePlus|Oppo|Vivo)", re.I)
 NON_PHONE_MODEL = re.compile(r"^(?:Surface \d+|Palm TX)$", re.I)
+# A maker's own marketing shot re-tagged free by a third-party uploader is not a free file.
+CORPORATE_SOURCE = re.compile(r"\b(?:web ?site|press|newsroom|media kit|official)\b", re.I)
 BAD_LICENSE = re.compile(r"non.free|fair.use|all.rights.reserved|unknown|unclear|copyrighted", re.I)
 FREE_LICENSE = re.compile(
     r"^(?:CC[- ]?BY(?:[- ]?SA)?[- ]?[1-4](?:\.0)?|CC0(?:[- ]?1\.0)?|PUBLIC DOMAIN)$", re.I
@@ -178,7 +180,7 @@ def load_decisions(path: Path) -> dict[str, dict[str, Any]]:
                 item = json.loads(line)
             except ValueError:
                 continue
-            if item.get("version") in {6, VERSION} and isinstance(item.get("path"), str):
+            if item.get("version") == VERSION and isinstance(item.get("path"), str):
                 decisions[item["path"]] = item
     return decisions
 
@@ -271,6 +273,11 @@ def inspect(url: str, fetcher: CommonsFetcher, name: str = "") -> dict[str, str]
         attribution = metadata_value(metadata, "Artist") or metadata_value(metadata, "Credit")
         if not attribution:
             return {"reason": "bad_license", "file": filename, "raw_license": license_id}
+        maker = name.split()[0].lower() if name.split() else ""
+        if CORPORATE_SOURCE.search(metadata_value(metadata, "Credit")) or (
+            maker and attribution.strip().lower() == maker
+        ):
+            return {"reason": "bad_license", "file": filename, "raw_license": license_id}
         return {
             "reason": "accepted",
             "file": filename,
@@ -346,27 +353,6 @@ def run(
             results.append(decision)
             print(f"Skipping {rel}: {decision['error']}", flush=True)
             continue
-        if (
-            decision is not None
-            and decision.get("version") == 6
-            and decision.get("article") == article
-        ):
-            decision = dict(decision, version=VERSION)
-            if decision.get("reason") == "accepted" and (
-                BAD_IMAGE.search(str(decision.get("file") or ""))
-                or GROUP_IMAGE.search(str(decision.get("file") or ""))
-                or NON_PHONE_MODEL.search(str(record.get("name") or ""))
-                or not filename_matches_model(
-                    str(record.get("name") or ""), str(decision.get("file") or "")
-                )
-                or variant_conflict(
-                    str(record.get("name") or ""), str(decision.get("file") or "").replace("_", " ")
-                )
-            ):
-                decision["reason"] = "logo_like"
-                for key in ("image_url", "image_license", "image_attribution"):
-                    decision.pop(key, None)
-            append_cache(decision, cache_path)
         if (
             decision is None
             or decision.get("article") != article
