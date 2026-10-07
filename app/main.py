@@ -50,7 +50,8 @@ app = FastAPI(
     version=__version__,
     description=DESCRIPTION,
     lifespan=lifespan,
-    license_info={"name": "MIT", "url": "https://opensource.org/licenses/MIT"},
+    # The API serves the dataset, so it carries the data license; the engine code is MIT.
+    license_info={"name": "CC BY-SA 4.0", "url": "https://creativecommons.org/licenses/by-sa/4.0/"},
     contact={"name": "TechAPI", "url": "https://techapi.dev"},
 )
 
