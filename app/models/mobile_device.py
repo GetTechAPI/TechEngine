@@ -53,6 +53,8 @@ class MobileDeviceFields(SQLModel):
 
     image_url: str | None = None
     images: list[str] = Field(default_factory=list, sa_type=JSON)
+    image_license: str | None = None
+    image_attribution: str | None = None
 
     verified: bool = False
     source_urls: list[str] = Field(default_factory=list, sa_type=JSON)

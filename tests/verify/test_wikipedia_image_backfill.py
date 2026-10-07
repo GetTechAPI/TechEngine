@@ -80,6 +80,17 @@ def test_accepts_only_free_photo_with_attribution() -> None:
     assert fetcher.calls == 2
 
 
+@pytest.mark.parametrize("artist,credit", [
+    ("A photographer", "Example Website"),
+    ("Example", "Own work"),
+])
+def test_rejects_maker_marketing_shot_tagged_free(artist: str, credit: str) -> None:
+    metadata = {**meta("CC0", artist=artist), "Credit": {"value": credit}}
+    fetcher = FakeFetcher("Example_phone.jpg", metadata)
+    result = inspect("https://en.wikipedia.org/wiki/Example_phone", fetcher, "Example Phone")
+    assert result["reason"] == "bad_license"
+
+
 def test_rejects_render_and_nonfree() -> None:
     render = FakeFetcher("Example_phone.png", meta("CC-BY-SA-4.0"))
     assert inspect("https://en.wikipedia.org/wiki/Example_phone", render)["reason"] == "logo_like"
