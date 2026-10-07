@@ -32,6 +32,8 @@ class MonitorRead(BaseModel):
     rating: float | None = None
     variant: dict[str, Any]
     image_url: str | None = None
+    image_license: str | None = None
+    image_attribution: str | None = None
     verified: bool
     source_urls: list[str]
     created_at: datetime

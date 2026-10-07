@@ -49,6 +49,8 @@ class Monitor(SQLModel, table=True):
     # Source tracking
     variant: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     image_url: str | None = None
+    image_license: str | None = None
+    image_attribution: str | None = None
 
     # Meta
     verified: bool = False

@@ -60,6 +60,8 @@ class Laptop(SQLModel, table=True):
 
     # Assets
     image_url: str | None = None
+    image_license: str | None = None
+    image_attribution: str | None = None
 
     # Meta
     verified: bool = False
