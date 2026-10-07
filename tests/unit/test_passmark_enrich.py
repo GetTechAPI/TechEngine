@@ -15,6 +15,12 @@ from app.ingest.sources.passmark import (
 )
 
 
+def test_client_identifies_as_the_ingest_bot() -> None:
+    with passmark.make_client() as client:
+        assert client.headers["User-Agent"] == passmark.USER_AGENT
+        assert "Sec-Fetch-Mode" not in client.headers
+
+
 def test_normalize_strips_clock_and_graphics_tails() -> None:
     assert normalize_name("AMD Ryzen 7 5800X @ 3.80GHz") == normalize_name(
         "AMD Ryzen 7 5800X"
