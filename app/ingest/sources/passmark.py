@@ -26,28 +26,8 @@ BASE = "https://www.cpubenchmark.net/cpu.php"
 LOOKUP = "https://www.cpubenchmark.net/cpu_lookup.php"
 USER_AGENT = "TechEngine-Ingest/0.1 (+https://github.com/GetTechAPI/TechEngine)"
 
-# cpubenchmark.net / notebookcheck / technical.city return 403 (or hang) for the
-# bare ingest UA — they bot-gate on a browser-shaped header set. We still rate-
-# limit via --sleep and fetch per-chip with attribution (no bulk harvest).
-BROWSER_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept": (
-        "text/html,application/xhtml+xml,application/xml;q=0.9,"
-        "image/avif,image/webp,*/*;q=0.8"
-    ),
-    "Accept-Language": "en-US,en;q=0.9",
-    "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124"',
-    "Sec-Ch-Ua-Mobile": "?0",
-    "Sec-Ch-Ua-Platform": '"Windows"',
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "none",
-    "Sec-Fetch-User": "?1",
-    "Upgrade-Insecure-Requests": "1",
-}
+# Every enrich source identifies itself as this bot. A site that refuses it is
+# telling us not to scrape it, so its fetch fails and the run skips that source.
 
 _ID_RE = re.compile(r"[?&]id=(\d+)")
 
@@ -204,5 +184,5 @@ def fetch_scores(
 
 def make_client(*, timeout: float = 30.0) -> httpx.Client:
     return httpx.Client(
-        headers=BROWSER_HEADERS, timeout=timeout, follow_redirects=True
+        headers={"User-Agent": USER_AGENT}, timeout=timeout, follow_redirects=True
     )
