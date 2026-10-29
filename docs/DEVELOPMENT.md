@@ -61,9 +61,10 @@ scripts/
   dump.py            DB → static JSON dump (replays API in-process) → ./dump
 tests/               unit/ + integration/ (conftest seeds a temp SQLite from data/)
 docs/                SPEC.md, DATA_PIPELINE.md, DEVELOPMENT.md
-.github/workflows/   test.yml, validate-data.yml, weekly-refresh.yml, weekly-ingest.yml,
-                     coverage-report.yml, refresh-data.yml, notify-techapi.yml,
-                     bump-techapi.yml, deploy-pages.yml
+.github/workflows/   test.yml, deploy-pages.yml, refresh-data.yml, coverage-report.yml, and
+                     the reusable workflows TechAPI calls: validate-data.yml,
+                     techapi-pr-validation-comment.yml, techapi-verify-comment.yml,
+                     weekly-refresh.yml, weekly-ingest.yml, verify-network.yml
 ```
 
 > Note: **data folders are singular** (`data/soc/…`) but **API routes are plural**

@@ -1,32 +1,47 @@
 name: techapi-verify-comment
 
-# On-demand Tier 0 data verification for a TechAPI PR. Triggered by an English
-# command comment (`/verify`) on the PR, relayed here as a repository_dispatch by
-# TechAPI's verify-command.yml. Checks out the PR head, runs TechAPI's app.verify,
-# and posts the green/yellow/red band report back on the PR as TechEngineBot.
+# Reusable: Tier 0 data verification for a TechAPI PR. TechAPI calls this from
+# verify-report.yml (mode=tier0, every data PR) and verify-command.yml (mode=all,
+# on a `/verify` comment). Checks out the PR head, runs app.verify, and posts the
+# green/yellow/red band report on the PR with TechAPI's own GITHUB_TOKEN.
 on:
-  repository_dispatch:
-    types: [techapi-verify]
-  workflow_dispatch:
+  workflow_call:
     inputs:
       pr_number:
         description: "TechAPI PR number to verify + comment on"
+        type: string
         required: true
       head_sha:
         description: "TechAPI commit SHA to verify"
+        type: string
         required: true
       base_ref:
         description: "TechAPI PR base branch (resolved from PR if omitted)"
+        type: string
         required: false
+        default: ""
       base_sha:
         description: "TechAPI PR base SHA (resolved from PR if omitted)"
+        type: string
         required: false
+        default: ""
+      mode:
+        description: "tier0 = automatic PR report; all = on-demand /verify (Tiers 0-3)"
+        type: string
+        required: false
+        default: "all"
+      requested_by:
+        description: "Login shown as the requester in the comment"
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
+  pull-requests: write
 
 concurrency:
-  group: techapi-verify-${{ github.event.client_payload.pr_number || inputs.pr_number }}-${{ github.event.client_payload.mode || 'all' }}
+  group: techapi-verify-${{ inputs.pr_number }}-${{ inputs.mode }}
   cancel-in-progress: true
 
 jobs:
@@ -34,42 +49,22 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PYTHONIOENCODING: utf-8
-      TECHAPI_COMMENT_TOKEN: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN }}
-      TECHAPI_PR_NUMBER: ${{ github.event.client_payload.pr_number || inputs.pr_number }}
-      TECHAPI_BASE_REF: ${{ github.event.client_payload.base_ref || inputs.base_ref }}
-      TECHAPI_BASE_SHA: ${{ github.event.client_payload.base_sha || inputs.base_sha }}
-      TECHAPI_HEAD_SHA: ${{ github.event.client_payload.head_sha || inputs.head_sha }}
-      REQUESTED_BY: ${{ github.event.client_payload.requested_by || github.actor }}
-      TECHAPI_COMMENT_ID: ${{ github.event.client_payload.comment_id }}
-      # "tier0" = auto PR report (relayed by TechAPI verify-report.yml); else the
-      # on-demand /verify all-tiers run.
-      MODE: ${{ github.event.client_payload.mode || 'all' }}
+      TECHAPI_PR_NUMBER: ${{ inputs.pr_number }}
+      TECHAPI_BASE_REF: ${{ inputs.base_ref }}
+      TECHAPI_BASE_SHA: ${{ inputs.base_sha }}
+      TECHAPI_HEAD_SHA: ${{ inputs.head_sha }}
+      REQUESTED_BY: ${{ inputs.requested_by || github.actor }}
+      MODE: ${{ inputs.mode }}
     steps:
-      # Acknowledge the /verify command as TechEngineBot (the bot holds the token;
-      # the relay side must not react, or it looks like the requester self-reacting).
-      - name: Acknowledge command (TechEngineBot 👀)
-        if: env.TECHAPI_COMMENT_TOKEN != '' && env.TECHAPI_COMMENT_ID != ''
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN }}
-          script: |
-            const comment_id = Number(process.env.TECHAPI_COMMENT_ID);
-            if (comment_id) {
-              try {
-                await github.rest.reactions.createForIssueComment({
-                  owner: 'GetTechAPI', repo: 'TechAPI', comment_id, content: 'eyes',
-                });
-              } catch (e) { core.info(`reaction skipped: ${e.message}`); }
-            }
-        env:
-          TECHAPI_COMMENT_ID: ${{ github.event.client_payload.comment_id }}
-
+      # In a called workflow a bare checkout would fetch the caller (TechAPI).
       - name: Checkout TechEngine
         uses: actions/checkout@v4
+        with:
+          repository: GetTechAPI/TechEngine
 
       - name: Resolve actual PR base
         env:
-          GH_TOKEN: ${{ env.TECHAPI_COMMENT_TOKEN || github.token }}
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -132,8 +127,15 @@ jobs:
             echo VERIFY_EOF
           } >> "$GITHUB_OUTPUT"
 
-      - name: Post verification comment (TechEngineBot)
-        if: env.TECHAPI_COMMENT_TOKEN != ''
+      - name: Write job summary
+        env:
+          REPORT: ${{ steps.verify.outputs.report }}
+        run: printf '%s\n' "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+
+      # Fork PRs get a read-only token, so commenting can fail there; the job
+      # summary above still carries the report.
+      - name: Post verification comment
+        continue-on-error: true
         uses: actions/github-script@v7
         env:
           REPORT: ${{ steps.verify.outputs.report }}
@@ -141,7 +143,6 @@ jobs:
           REQUESTED_BY: ${{ env.REQUESTED_BY }}
           MODE: ${{ env.MODE }}
         with:
-          github-token: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN }}
           script: |
             const report = (process.env.REPORT || '').trim() || '(no output)';
             const by = process.env.REQUESTED_BY || 'someone';
@@ -152,12 +153,12 @@ jobs:
               : '<!-- techengine-verify-command -->';
             const head = isTier0
               ? ['## 🔎 Data verification — Tier 0 (offline existence/trust)', '',
-                 'Scored by `app.verify`; posted by **TechEngineBot**. Informational only — the structural gate (`app.validate`) is separate and authoritative for merge.', '',
+                 'Scored by `app.verify`. Informational only — the structural gate (`app.validate`) is separate and authoritative for merge.', '',
                  report]
               : [report];  // `pr` emits its own H2 heading + tier sections
             const footer = isTier0
               ? '<sub>green = authoritative source + complete + consistent · yellow = plausible, needs confirmation · red = sparse/weak source or a hard contradiction. Promotion to `verified` runs in the scheduled `verify-network` workflow.</sub>'
-              : `<sub>Requested by @${by} via \`/verify\` · scored by \`app.verify\`, posted by **TechEngineBot**. Informational only — the structural gate (\`app.validate\`) is separate; Tier 3 here is dry-run.</sub>`;
+              : `<sub>Requested by @${by} via \`/verify\` · scored by \`app.verify\`. Informational only — the structural gate (\`app.validate\`) is separate; Tier 3 here is dry-run.</sub>`;
             const body = [marker, ...head, '', footer].join('\n');
             const owner = 'GetTechAPI';
             const repo = 'TechAPI';
@@ -171,7 +172,3 @@ jobs:
             } else {
               await github.rest.issues.createComment({ owner, repo, issue_number, body });
             }
-
-      - name: Dormant when no bot token
-        if: env.TECHAPI_COMMENT_TOKEN == ''
-        run: echo "::warning::No TECHENGINEBOT_TOKEN/TECHAPI_TOKEN; verification ran but no comment was posted."

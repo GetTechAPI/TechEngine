@@ -310,8 +310,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     out = args.output or (VERIFY_DIR / "status.json")
     # Idempotence: only `generated_at` changes between runs when the verification
     # numbers are unchanged. Preserve the previous timestamp so the file stays
-    # byte-identical — otherwise every run rewrites it, commits, and (via the
-    # techapi-updated dispatch) re-triggers verify-status in an endless loop.
+    # byte-identical — otherwise every run rewrites it and commits a no-op change.
     if not args.stdout and out.exists():
         try:
             prev = json.loads(out.read_text(encoding="utf-8"))

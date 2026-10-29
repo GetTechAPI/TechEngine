@@ -1,12 +1,11 @@
 name: techapi-pr-validation-comment
 
-# TechAPI data PRs can ask this repository to validate their head commit and
-# leave a curator-facing comment back on the PR. This keeps the PR owned by the
-# human contributor while TechEngineBot reports the engine verdict.
+# Reusable: TechAPI's pr-validation.yml calls this to validate a PR head commit
+# and leave a curator-facing comment on the PR. Called from TechAPI, the default
+# github.token is TechAPI's own GITHUB_TOKEN, so the comment is posted by
+# github-actions[bot] and no personal or bot-account token is involved.
 on:
-  repository_dispatch:
-    types: [techapi-pr-validate]
-  workflow_dispatch:
+  workflow_call:
     inputs:
       pr_number:
         description: "TechAPI PR number to comment on"
@@ -16,6 +15,11 @@ on:
         description: "TechAPI commit SHA to validate"
         type: string
         required: true
+      head_ref:
+        description: "TechAPI PR head branch"
+        type: string
+        required: false
+        default: ""
       pr_url:
         description: "TechAPI PR URL"
         type: string
@@ -23,39 +27,51 @@ on:
         default: ""
       base_ref:
         description: "TechAPI PR base branch (resolved from PR if omitted)"
+        type: string
         required: false
+        default: ""
       base_sha:
         description: "TechAPI PR base SHA (resolved from PR if omitted)"
+        type: string
         required: false
+        default: ""
+      requested_by:
+        description: "Login shown as the requester in the comment"
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
+  pull-requests: write
 
 concurrency:
-  group: techapi-pr-validation-${{ github.event.client_payload.pr_number || inputs.pr_number }}
+  group: techapi-pr-validation-${{ inputs.pr_number }}
   cancel-in-progress: true
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     env:
-      TECHAPI_COMMENT_TOKEN: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN }}
-      TECHAPI_PR_NUMBER: ${{ github.event.client_payload.pr_number || inputs.pr_number }}
-      TECHAPI_BASE_REF: ${{ github.event.client_payload.base_ref || inputs.base_ref }}
-      TECHAPI_BASE_SHA: ${{ github.event.client_payload.base_sha || inputs.base_sha }}
-      TECHAPI_HEAD_SHA: ${{ github.event.client_payload.head_sha || inputs.head_sha }}
-      TECHAPI_HEAD_REF: ${{ github.event.client_payload.head_ref || '' }}
-      TECHAPI_PR_URL: ${{ github.event.client_payload.pr_url || inputs.pr_url }}
-      REQUESTED_BY: ${{ github.event.client_payload.requested_by || github.actor }}
+      TECHAPI_PR_NUMBER: ${{ inputs.pr_number }}
+      TECHAPI_BASE_REF: ${{ inputs.base_ref }}
+      TECHAPI_BASE_SHA: ${{ inputs.base_sha }}
+      TECHAPI_HEAD_SHA: ${{ inputs.head_sha }}
+      TECHAPI_HEAD_REF: ${{ inputs.head_ref }}
+      TECHAPI_PR_URL: ${{ inputs.pr_url }}
+      REQUESTED_BY: ${{ inputs.requested_by || github.actor }}
       TECHAPI_DATA_DIR: ${{ github.workspace }}/TechAPI/data
       TECHAPI_SITE_DIR: ${{ github.workspace }}/TechAPI/site
     steps:
+      # In a called workflow a bare checkout would fetch the caller (TechAPI).
       - name: Checkout TechEngine
         uses: actions/checkout@v4
+        with:
+          repository: GetTechAPI/TechEngine
 
       - name: Resolve actual PR base
         env:
-          GH_TOKEN: ${{ env.TECHAPI_COMMENT_TOKEN || github.token }}
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -735,10 +751,16 @@ jobs:
             cat validation-notes.md
           } > stats-comment.md
 
+      - name: Write job summary
+        shell: bash
+        run: cat change-comment.md stats-comment.md >> "$GITHUB_STEP_SUMMARY"
+
+      # Fork PRs get a read-only token, so commenting can fail there; the job
+      # summary above still carries the full report.
       - name: Comment on TechAPI PR
-        if: env.TECHAPI_COMMENT_TOKEN != ''
+        continue-on-error: true
         env:
-          GH_TOKEN: ${{ env.TECHAPI_COMMENT_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -763,10 +785,6 @@ jobs:
 
           upsert_comment "<!-- techengine-pr-validation -->" change-comment.md change-comment.json
           upsert_comment "<!-- techengine-pr-validation-stats -->" stats-comment.md stats-comment.json
-
-      - name: Warn when comment token is unset
-        if: env.TECHAPI_COMMENT_TOKEN == ''
-        run: echo "::warning::TECHENGINEBOT_TOKEN/TECHAPI_TOKEN is not configured; validation ran but no PR comment was posted."
 
       - name: Fail on validation errors
         if: steps.validate.outputs.status != 'success' || (steps.site_changes.outputs.changed == 'true' && steps.site_build.outputs.status != '0')

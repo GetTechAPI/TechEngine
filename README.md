@@ -33,31 +33,34 @@ site/                  # Astro engine landing (deploys to Pages)
 docs/                  # SPEC / DATA_PIPELINE / DEVELOPMENT
 TechAPI/               # submodule -> GetTechAPI/TechAPI (clickable @ <sha> link)
 .github/workflows/
-  validate-data.yml    # workflow_call: PR-time data validation for TechAPI
-  weekly-refresh.yml   # cron: live-scrape -> integrity gate -> dump -> PR to TechAPI
-  weekly-ingest.yml    # cron: draft new SKUs, open PR against TechAPI
-  coverage-report.yml  # cron: gap report, sticky issue (TechEngine + TechAPI)
-  refresh-data.yml     # smoke-test: rebuild the dump on engine (app/**) changes
-  notify-techapi.yml   # push to main: ping TechAPI to bump its TechEngine submodule
-  bump-techapi.yml     # dispatch: advance this repo's TechAPI submodule pointer
-  deploy-pages.yml     # build & deploy engine site + dump
-  test.yml             # lint + type-check + tests
+  validate-data.yml                  # workflow_call: PR-time data validation for TechAPI
+  techapi-pr-validation-comment.yml  # workflow_call: TechAPI PR review comment
+  techapi-verify-comment.yml         # workflow_call: Tier 0 / `/verify` report on a TechAPI PR
+  weekly-refresh.yml                 # workflow_call: live-scrape -> integrity gate -> dump -> PR
+  weekly-ingest.yml                  # workflow_call: draft new SKUs, open PR against TechAPI
+  verify-network.yml                 # workflow_call: Tier 1-3 checks + verified promotion PR
+  coverage-report.yml                # cron (weekly): gap report, sticky issue in this repo
+  refresh-data.yml                   # smoke-test: rebuild the dump on engine (app/**) changes
+  deploy-pages.yml                   # build & deploy engine site + dump
+  test.yml                           # lint + type-check + tests
 ```
 
 ## How The Two Repos Connect
 
 Both repos live in the **GetTechAPI** org and each includes the other as a git
-**submodule** (a clickable `@ <sha>` pin). Three automations keep them in step:
+**submodule** (a clickable `@ <sha>` pin). Pointers are bumped by hand; nothing
+syncs them automatically.
 
-- **validate-data.yml** (`workflow_call`) - TechAPI's PR-time check calls into
-  TechEngine to validate its data.
-- **weekly-refresh.yml** - live-scrapes benchmarks, runs the full-dataset
-  integrity gate (`app.validate` + `integrity_check.py --strict`), regenerates
-  the static dump, and opens a dated refresh PR against TechAPI.
-- **Submodule autosync** - every push to TechEngine `main` fires
-  `notify-techapi.yml`, which pings TechAPI to bump its TechEngine pointer;
-  conversely `bump-techapi.yml` advances TechEngine's TechAPI pointer when
-  TechAPI changes. Bumps are loop-guarded, so each real change converges to one.
+Every automation that touches TechAPI runs **in TechAPI**, which calls the
+TechEngine workflows above as reusable workflows (`workflow_call`, `@main`).
+A called workflow gets the caller's `GITHUB_TOKEN`, so branches, PRs and
+comments are made by `github-actions[bot]`. No personal access token or bot
+account is used anywhere (ADR-017):
+
+- **validate-data.yml / techapi-pr-validation-comment.yml /
+  techapi-verify-comment.yml** - TechAPI PRs are validated and reviewed.
+- **weekly-refresh.yml / weekly-ingest.yml / verify-network.yml** - TechAPI's
+  `weekly-data.yml` runs them and they open PRs against TechAPI `develop`.
 
 Every Python entry point reads data from a **TechAPI checkout**. The location
 can be overridden via `TECHAPI_DATA_DIR`; by default TechEngine supports both
@@ -96,7 +99,7 @@ Spins up Postgres 16, seeds from the mounted TechAPI checkout, serves on `:8000`
   and surface missing SKUs as a sticky weekly issue
   ([#1](https://github.com/GetTechAPI/TechEngine/issues/1))
 - [x] **Weekly ingestion crawler** - scrape canonical sources and open PRs
-  against TechAPI with new SKUs (requires the `TECHAPI_TOKEN` secret to push)
+  against TechAPI with new SKUs
   ([#2](https://github.com/GetTechAPI/TechEngine/issues/2))
 - [x] **Weekly refresh pipeline** - live benchmark enrichment -> full-dataset
   integrity gate -> static dump -> dated refresh PR (`weekly-refresh.yml`)
