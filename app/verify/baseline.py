@@ -13,7 +13,7 @@ def main(path: str) -> int:
         print("_status.json not available on this ref._")
         return 0
     d = json.loads(p.read_text(encoding="utf-8"))
-    print(f"_As of {d['generated_at']} (daily `verify-status` aggregate)._\n")
+    print(f"_As of {d['generated_at']} (post-merge `dump-develop` aggregate)._\n")
     print("| category | total | green | yellow | red |")
     print("| --- | ---: | ---: | ---: | ---: |")
     for cat, c in d["by_category"].items():

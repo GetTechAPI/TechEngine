@@ -2,15 +2,15 @@ name: weekly-ingest
 
 # Weekly: scrape upstream catalogs, draft missing SKUs into a TechAPI worktree,
 # open a PR for curator review.
+#
+# Reusable: TechAPI's weekly-data.yml calls this, so github.token is TechAPI's
+# own GITHUB_TOKEN and the branch + PR are created by github-actions[bot].
 on:
-  schedule:
-    - cron: "29 6 * * 1"   # Mondays 06:29 UTC (weekly to keep curator review load sane)
-  workflow_dispatch:
+  workflow_call:
     inputs:
       category:
-        description: "Category to ingest"
-        type: choice
-        options: [cpu, gpu, smartphone]
+        description: "Category to ingest (cpu, gpu or smartphone)"
+        type: string
         default: cpu
       limit:
         description: "Max candidates per source"
@@ -22,7 +22,8 @@ on:
         default: false
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
 
 jobs:
   ingest:
@@ -31,13 +32,12 @@ jobs:
       CATEGORY: ${{ inputs.category || 'cpu' }}
       LIMIT: ${{ inputs.limit || '50' }}
       INCLUDE_DRAFTS: ${{ inputs.include_drafts || 'false' }}
-      TECHAPI_TOKEN: ${{ secrets.TECHAPI_TOKEN }}
-      TECHAPI_WRITE_TOKEN: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN }}
     steps:
+      # In a called workflow a bare checkout would fetch the caller (TechAPI).
       - uses: actions/checkout@v4
+        with:
+          repository: GetTechAPI/TechEngine
 
-      # Use the PAT when present so we can push to TechAPI later;
-      # fall back to the default token for read-only test runs.
       - uses: actions/checkout@v4
         with:
           repository: GetTechAPI/TechAPI
@@ -45,7 +45,6 @@ jobs:
           # TechAPI follows git-flow: ingest is integration work, so branch from
           # develop and open the PR there. main only moves through a release PR.
           ref: develop
-          token: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN || secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-python@v6
         with:
@@ -115,17 +114,13 @@ jobs:
       - name: Open PR against TechAPI
         if: steps.changes.outputs.has_changes == 'true'
         env:
-          GH_TOKEN: ${{ env.TECHAPI_WRITE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::warning::Ingest produced additions but TECHAPI_TOKEN is unset; skipping PR. Summary attached as artifact."
-            exit 0
-          fi
           cd TechAPI
           BRANCH="ingest/${CATEGORY}-$(date -u +%Y%m%d-%H%M%S)"
-          git config user.name "TechEngineBot"
-          git config user.email "289859915+TechEngineBot@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
           git add data/
           git commit -m "feat(data/${CATEGORY}): weekly ingest"

@@ -26,7 +26,10 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
+      # When called from TechAPI a bare checkout would fetch the caller instead.
       - uses: actions/checkout@v4
+        with:
+          repository: GetTechAPI/TechEngine
       - uses: actions/checkout@v4
         with:
           repository: GetTechAPI/TechAPI

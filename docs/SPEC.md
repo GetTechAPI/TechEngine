@@ -1442,37 +1442,35 @@ chore: bump fastapi to 0.115
 
 ### 16.1 GitHub Actions 워크플로 (실제)
 
+> ADR-017 (2026-10-29): 개인 토큰(PAT)과 봇 계정 토큰을 쓰는 워크플로를 모두 없앴다. TechAPI를 건드리는 자동화는 전부 **TechAPI 안에서** 돌고, TechEngine 워크플로를 재사용 워크플로(`workflow_call`)로 호출한다. 호출된 워크플로는 호출한 쪽의 `GITHUB_TOKEN`을 받으므로 브랜치·PR·댓글은 `github-actions[bot]`이 만든다. 서브모듈 포인터는 손으로 올린다.
+
 **TechAPI**
 
 | 워크플로 | 트리거 | 작업 |
 |---|---|---|
-| `validate-data.yml` | PR (data/ 변경) | JSON 스키마 검증 |
-| `pr-metadata.yml` | PR 열림 | 담당자·라벨·마일스톤·프로젝트 필드 자동 부여 |
-| `request-engine-pr-validation.yml` | PR | TechEngine에 검증 요청 (relay) |
-| `bump-engine.yml` | TechEngine 릴리스 | 서브모듈 포인터 자동 bump |
-| `notify-engine.yml` | `data/` push | TechEngine에 변경 알림 (무한루프 방지용 paths-ignore 적용) |
+| `validate-data.yml` | PR, `main`/`develop` push (data/ 변경) | 자체 검증 + TechEngine `validate-data.yml` 호출 |
+| `pr-validation.yml` | PR (data/·site/ 변경) | TechEngine `techapi-pr-validation-comment.yml` 호출 → 리뷰 댓글 |
+| `verify-report.yml` | PR (data/ 변경) | TechEngine `techapi-verify-comment.yml`(tier0) 호출 → Tier 0 댓글 |
+| `verify-command.yml` | PR 댓글 `/verify` (OWNER/MEMBER/COLLABORATOR) | TechEngine `techapi-verify-comment.yml`(all) 호출 |
+| `dump-develop.yml` | `develop` push (data/ 변경) + 수동 | 정적 덤프 + `data/_verify/status.json` 갱신 후 develop에 커밋 |
 | `deploy-pages.yml` | `main` push | GitHub Pages 배포 (공개 사이트) |
-| `verify-command.yml` | 수동/커맨트 트리거 | 검증 계층 커맨드 실행 |
-| `verify-report.yml` | PR | Tier 0 분석 봇 코멘트 |
+| `weekly-data.yml` | 수동 (검증 후 cron 활성화) | TechEngine `weekly-refresh`/`weekly-ingest`/`verify-network` 호출 → develop 대상 PR |
+| `final-review.yml` | PR 댓글 `/final-review` (OWNER/MEMBER/COLLABORATOR) | PR head의 체크 결과를 모아 TechEngineBot이 최종 확인 댓글 1개 작성 |
 
 **TechEngine**
 
 | 워크플로 | 트리거 | 작업 |
 |---|---|---|
 | `test.yml` | PR, push | 테스트 + 린트 |
-| `validate-data.yml` | PR | TechAPI 데이터 스키마 검증 |
-| `techapi-pr-validation-comment.yml` | TechAPI PR | `npm run build`로 사이트 빌드 검증 + TechEngineBot 리뷰 코멘트 |
-| `techapi-verify-comment.yml` | TechAPI PR | 검증 계층 분석 코멘트 |
-| `weekly-ingest.yml` | cron (주간) | 신규 SKU 수집 → TechAPI PR |
-| `weekly-refresh.yml` | cron (주간) | 실사이트 스크레이핑 + 덤프 갱신 |
-| `dump-refresh.yml` | cron + 수동 | 스크레이핑 없이 현재 데이터로 정적 덤프만 재생성 |
-| `refresh-data.yml` | 수동 | 데이터 리프레시 (tar 묶음 업로드) |
-| `verify-network.yml` | cron (월요일) + 수동(`apply` 입력) | Tier 1-3 네트워크 검증 + `verified` 승급, TechAPI에 human-gated PR |
-| `verify-status.yml` | `data/` push + 매일 | `data/_verify/status.json` 집계 갱신 |
-| `bump-techapi.yml` | TechAPI 릴리스 | 서브모듈 포인터 자동 bump |
-| `notify-techapi.yml` | TechEngine push | TechAPI에 변경 알림 |
-| `coverage-report.yml` | 매일 | 커버리지 갭 이슈 자동 갱신 |
-| `deploy-pages.yml` | `main` push | GitHub Pages 배포 |
+| `deploy-pages.yml` | `main` push | 엔진 사이트 GitHub Pages 배포 |
+| `refresh-data.yml` | `app/**` push + 수동 | 덤프 생성 스모크 테스트 (tar 묶음 업로드) |
+| `coverage-report.yml` | cron (월요일) + 수동 | 커버리지 갭 이슈 갱신 (TechEngine 레포만) |
+| `validate-data.yml` | `workflow_call` | TechAPI 데이터 스키마 검증 |
+| `techapi-pr-validation-comment.yml` | `workflow_call` | 사이트 빌드·데이터 검증 + PR 리뷰 댓글 |
+| `techapi-verify-comment.yml` | `workflow_call` | 검증 계층 분석 댓글 |
+| `weekly-refresh.yml` | `workflow_call` | 실사이트 스크레이핑 + 무결성 게이트 + 덤프 → PR |
+| `weekly-ingest.yml` | `workflow_call` | 신규 SKU 수집 → PR |
+| `verify-network.yml` | `workflow_call` (`apply` 입력) | Tier 1-3 네트워크 검증 + `verified` 승급 PR |
 
 **TechMachine** (레포 관리 전용, 서비스 코드 아님) — 매일 org 전체 워크플로 상태 점검, 문제 목록이 바뀔 때만 메인테이너 멘션 알림. 위성 레포 생성 틀도 여기서 제공.
 
@@ -1489,7 +1487,7 @@ chore: bump fastapi to 0.115
    ↓
 3. deploy-pages.yml이 site/를 빌드해 GitHub Pages에 배포
    ↓
-4. notify-engine.yml이 TechEngine에 알림 → bump-engine이 필요시 반영
+4. (TechEngine 서브모듈 포인터는 필요할 때 손으로 올린다)
 ```
 
 ### 16.4 롤백
@@ -2007,6 +2005,21 @@ TechAPI의 **핵심 목표 중 하나**. TechPicks 외에 다양한 앱·플랫�
   4. 매칭은 단계별 검증(모델 번호 → 코드명 → 정규화 이름 → 토큰 집합, 계열 묶기, 브랜드 확인된 콘솔 조인, SoC 동치류, 중복 스윕)과 표본 감사(3회)를 거쳐, 감사 정밀도가 높은 세트만 반영한다: 보강 확정 97%, 소형 브랜드 + 콘솔 행 있는 신규 98%. 대형 브랜드 신규·충돌·중복 의심은 검토 대기.
 - **근거(약관)**: Play 개발자 배포 계약에 콘솔 제공 정보의 기밀·재배포 제한 조항이 없고, 같은 내보내기를 Apache-2.0으로 공개한 저장소(hossain-khan/android-device-catalog-parser)가 있다. 명시적 허락도 없으므로 사실 정보(사양 수치)만 담고 원본 파일은 저장소에 넣지 않는다.
 - **영향**: TechEngine #121(스키마), TechAPI 데이터 PR(보강·카탈로그·브랜드).
+
+### ADR-017: GitHub Actions에서 개인 토큰·봇 계정 제거, TechAPI가 TechEngine 재사용 워크플로를 호출
+
+- **날짜**: 2026-10-29
+- **상태**: Accepted
+- **배경**: TechAPI 워크플로는 `ENGINE_TOKEN`·`PROJECT_TOKEN`(메인테이너 개인 PAT)으로 TechEngine에 이벤트를 중계하고 프로젝트 보드를 수정했고, TechEngine 워크플로는 `TECHAPI_TOKEN`(개인 PAT)·`TECHENGINEBOT_TOKEN`(별도 봇 계정)으로 TechAPI에 push·PR·댓글·이슈를 만들었다. 양방향 서브모듈 자동 bump까지 겹쳐 변경 하나가 계정 활동 여러 건으로 불어났다. 자동화가 사람 계정 이름으로 실행되는 구조라 계정 제재 위험이 컸다.
+- **결정**:
+  1. 워크플로에서 PAT·봇 계정 토큰을 쓰지 않는다. 각 레포 기본 `GITHUB_TOKEN`만 쓴다.
+  2. TechAPI를 건드리는 작업은 TechAPI에서 실행하고, TechEngine 워크플로를 `workflow_call`로 호출한다(TechEngine은 공개 레포라 토큰 없이 체크아웃된다). 호출된 워크플로는 호출한 쪽의 `GITHUB_TOKEN`을 받으므로 결과물은 `github-actions[bot]` 이름으로 남는다.
+  3. 레포 간 `repository_dispatch` 중계와 서브모듈 자동 bump(`notify-*`, `bump-*`)는 없앤다.
+  4. `verify-status`는 TechAPI `dump-develop`에 합치고, `dump-refresh`는 `dump-develop`의 수동 전체 재생성으로 대체한다. 커버리지 리포트는 주 1회, TechEngine 레포 이슈만 갱신한다.
+  5. 스크레이핑 워크플로(`weekly-data.yml`)는 수동 실행으로 검증한 뒤에 cron을 켠다.
+  6. **예외 — TechEngineBot 최종 확인**: TechEngineBot 계정은 중요한 PR의 최종 확인자 역할로만 쓴다. 쓰기 권한이 있는 메인테이너(OWNER/MEMBER/COLLABORATOR)가 `/final-review` 댓글을 달 때만 TechAPI `final-review.yml`이 돌고, PR 하나에 댓글 하나(재실행 시 같은 댓글 수정)만 남긴다. 조회는 `GITHUB_TOKEN`으로 하고, `TECHENGINEBOT_TOKEN`(TechAPI 레포 한정 fine-grained 토큰, Pull requests: write)은 그 댓글에만 쓴다. 스케줄·push·PR 이벤트로 TechEngineBot이 움직이는 워크플로는 만들지 않는다.
+- **트레이드오프**: `GITHUB_TOKEN`이 만든 PR은 다른 워크플로를 트리거하지 않으므로, 주간 PR은 생성 전에 같은 작업 안에서 검증을 끝낸다. 포크 PR에는 토큰이 읽기 전용이라 댓글 대신 Job Summary로 결과를 남긴다. Projects 보드 필드 자동 입력(`pr-metadata`)은 없애고 GitHub Projects 내장 Auto-add를 쓴다.
+- **필요 설정**: 두 레포 Settings → Actions → General에서 "Allow GitHub Actions to create and approve pull requests"를 켜야 PR 생성이 된다.
 
 ---
 

@@ -2,11 +2,14 @@ name: verify-network
 
 # Network verification tiers (source-URL liveness + external cross-reference) and
 # verified promotion, run in TechEngine against a TechAPI checkout. NEVER on
-# pull_request — external sites, rate-limited. Scheduled + manual. Promotions are
-# committed as TechEngineBot and opened as a human-gated PR on TechAPI; the job
-# hard-guards that nothing but `verified` flags + the ledger changed.
+# pull_request — external sites, rate-limited. Promotions are opened as a
+# human-gated PR on TechAPI; the job hard-guards that nothing but `verified`
+# flags + the ledger changed.
+#
+# Reusable: TechAPI's weekly-data.yml calls this, so github.token is TechAPI's
+# own GITHUB_TOKEN and the branch + PR are created by github-actions[bot].
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       apply:
         description: "Flip verified->true and open a PR on TechAPI (else dry-run)"
@@ -14,18 +17,20 @@ on:
         default: false
       max_urls:
         description: "Frontier records to URL-check"
+        type: string
         default: "2000"
       max_wikidata:
         description: "Maximum Wikidata QIDs to batch-check"
+        type: string
         default: "20000"
       max_crossref:
         description: "Records to cross-reference"
+        type: string
         default: "500"
-  schedule:
-    - cron: "0 4 * * 1"  # Mondays 04:00 UTC
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
 
 concurrency:
   group: verify-network
@@ -36,12 +41,14 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PYTHONIOENCODING: utf-8
-      APPLY: ${{ github.event_name == 'schedule' || github.event.inputs.apply == 'true' }}
+      APPLY: ${{ inputs.apply }}
       TECHAPI_DATA_DIR: ${{ github.workspace }}/TechAPI/data
-      WRITE_TOKEN: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN }}
     steps:
+      # In a called workflow a bare checkout would fetch the caller (TechAPI).
       - name: Checkout TechEngine
         uses: actions/checkout@v4
+        with:
+          repository: GetTechAPI/TechEngine
 
       - name: Checkout TechAPI
         uses: actions/checkout@v4
@@ -53,7 +60,6 @@ jobs:
           # bot branch behind whatever is already integrated.
           ref: develop
           fetch-depth: 0
-          token: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN || secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-python@v6
         with:
@@ -73,13 +79,13 @@ jobs:
         run: python -m app.verify score --no-cache
 
       - name: Tier 1 source-URL liveness
-        run: python -m app.verify check-urls --max ${{ github.event.inputs.max_urls || '2000' }}
+        run: python -m app.verify check-urls --max ${{ inputs.max_urls }}
 
       - name: Batched Wikidata source liveness
-        run: python -m app.verify check-wikidata --max ${{ github.event.inputs.max_wikidata || '20000' }}
+        run: python -m app.verify check-wikidata --max ${{ inputs.max_wikidata }}
 
       - name: Tier 2 external cross-reference
-        run: python -m app.verify crossref --max ${{ github.event.inputs.max_crossref || '500' }}
+        run: python -m app.verify crossref --max ${{ inputs.max_crossref }}
 
       - name: Tier 3 promote (dry-run)
         run: python -m app.verify promote
@@ -118,10 +124,10 @@ jobs:
           print("diff scope OK: only verified toggles")
           PY
 
-      - name: Open promotion PR on TechAPI (TechEngineBot)
+      - name: Open promotion PR on TechAPI
         if: ${{ env.APPLY == 'true' }}
         env:
-          GH_TOKEN: ${{ env.WRITE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -e
           cd TechAPI
@@ -129,8 +135,8 @@ jobs:
             echo "no promotions to commit"; exit 0
           fi
           branch="verify/promote-${{ github.run_id }}"
-          git config user.name "TechEngineBot"
-          git config user.email "289859915+TechEngineBot@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$branch"
           git add data/
           git commit -m "data(verify): promote records to verified (reality cross-reference)

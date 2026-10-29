@@ -8,15 +8,10 @@ name: weekly-refresh
 #
 # TechEngine owns collection/validation/dump; TechAPI owns data/site/deploy.
 #
-# Token model: TechAPI is public, so the checkout uses the default GITHUB_TOKEN
-# (read-only) as a fallback — that lets the collect→validate→dump path run on
-# every push even when no PAT is configured. Only the cross-repo PR needs write
-# access, so just that step is guarded by a PAT. Prefer TECHENGINEBOT_TOKEN
-# so PRs are authored by TechEngineBot; fall back to TECHAPI_TOKEN.
+# Reusable: TechAPI's weekly-data.yml calls this, so github.token is TechAPI's
+# own GITHUB_TOKEN and the branch + PR are created by github-actions[bot].
 on:
-  schedule:
-    - cron: "0 6 * * 1"   # Mondays 06:00 UTC (live scrape: weekly to respect upstream ToS/rate limits)
-  workflow_dispatch:
+  workflow_call:
     inputs:
       sleep:
         description: "Seconds between scrape requests (politeness)"
@@ -24,7 +19,8 @@ on:
         default: "1.0"
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
 
 concurrency:
   group: weekly-refresh
@@ -38,22 +34,20 @@ jobs:
     timeout-minutes: 330
     env:
       SLEEP: ${{ inputs.sleep || '1.0' }}
-      TECHAPI_TOKEN: ${{ secrets.TECHAPI_TOKEN }}
-      TECHAPI_WRITE_TOKEN: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN }}
       # Validate/seed/dump all read the data tree from this env var.
       TECHAPI_DATA_DIR: ${{ github.workspace }}/techapi/data
     steps:
+      # In a called workflow a bare checkout would fetch the caller (TechAPI).
       - name: Checkout TechEngine
         uses: actions/checkout@v4
+        with:
+          repository: GetTechAPI/TechEngine
 
-      # Read-only with the default token when no PAT is set; the PAT (when
-      # present) lets peter-evans push the refresh branch back later.
       - name: Checkout TechAPI
         uses: actions/checkout@v4
         with:
           repository: GetTechAPI/TechAPI
           path: techapi
-          token: ${{ secrets.TECHENGINEBOT_TOKEN || secrets.TECHAPI_TOKEN || secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
       - uses: actions/setup-python@v6
@@ -182,26 +176,13 @@ jobs:
             pr-body.md
           if-no-files-found: ignore
 
-      # Fallback when no PAT: keep the regenerated dump so the work isn't lost.
-      - name: Upload dump artifact (no-token fallback)
-        if: env.TECHAPI_WRITE_TOKEN == ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: dump-${{ steps.meta.outputs.date }}
-          path: |
-            techapi/site/public/v1
-            techapi/site/public/openapi.json
-          if-no-files-found: ignore
-
-      # --- 4. Dated branch + auto PR against TechAPI (only with a PAT) ---
+      # --- 4. Dated branch + auto PR against TechAPI ---
       - name: Create refresh PR
         id: create_pr
-        if: env.TECHAPI_WRITE_TOKEN != ''
         continue-on-error: true
         uses: peter-evans/create-pull-request@v6
         with:
           path: ./techapi
-          token: ${{ env.TECHAPI_WRITE_TOKEN }}
           branch: refresh/${{ steps.meta.outputs.date }}
           base: develop
           add-paths: |
@@ -211,14 +192,13 @@ jobs:
           commit-message: "chore(data): weekly refresh ${{ steps.meta.outputs.date }}"
           title: "chore(data): weekly refresh ${{ steps.meta.outputs.date }}"
           body-path: pr-body.md
-          committer: TechEngineBot <289859915+TechEngineBot@users.noreply.github.com>
-          author: TechEngineBot <289859915+TechEngineBot@users.noreply.github.com>
+          committer: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
           delete-branch: true
 
       - name: Confirm refresh PR exists
-        if: env.TECHAPI_WRITE_TOKEN != ''
         env:
-          GH_TOKEN: ${{ env.TECHAPI_WRITE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           branch="refresh/${{ steps.meta.outputs.date }}"
