@@ -1455,7 +1455,7 @@ chore: bump fastapi to 0.115
 | `dump-develop.yml` | `develop` push (data/ 변경) + 수동 | 정적 덤프 + `data/_verify/status.json` 갱신 후 develop에 커밋 |
 | `deploy-pages.yml` | `main` push | GitHub Pages 배포 (공개 사이트) |
 | `weekly-data.yml` | 수동 (검증 후 cron 활성화) | TechEngine `weekly-refresh`/`weekly-ingest`/`verify-network` 호출 → develop 대상 PR |
-| `final-review.yml` | PR 댓글 `/final-review` (OWNER/MEMBER) | PR head의 체크 결과를 모아 TechEngineBot이 최종 확인 댓글 1개 작성 |
+| `final-review.yml` | PR 댓글 `/final-review` (OWNER/MEMBER/COLLABORATOR) | PR head의 체크 결과를 모아 TechEngineBot이 최종 확인 댓글 1개 작성 |
 
 **TechEngine**
 
@@ -2010,14 +2010,14 @@ TechAPI의 **핵심 목표 중 하나**. TechPicks 외에 다양한 앱·플랫�
 
 - **날짜**: 2026-10-29
 - **상태**: Accepted
-- **배경**: TechAPI 워크플로는 `ENGINE_TOKEN`·`PROJECT_TOKEN`(메인테이너 개인 PAT)으로 TechEngine에 이벤트를 중계하고 프로젝트 보드를 수정했고, TechEngine 워크플로는 `TECHAPI_TOKEN`(개인 PAT)·`TECHENGINEBOT_TOKEN`(별도 봇 계정)으로 TechAPI에 push·PR·댓글·이슈를 만들었다. 양방향 서브모듈 자동 bump까지 겹쳐 변경 하나가 계정 활동 여러 건으로 불어났고, 자동화가 실제 계정 이름으로 실행되어 계정 정지로 이어졌다(봇 계정도 한 차례 정지).
+- **배경**: TechAPI 워크플로는 `ENGINE_TOKEN`·`PROJECT_TOKEN`(메인테이너 개인 PAT)으로 TechEngine에 이벤트를 중계하고 프로젝트 보드를 수정했고, TechEngine 워크플로는 `TECHAPI_TOKEN`(개인 PAT)·`TECHENGINEBOT_TOKEN`(별도 봇 계정)으로 TechAPI에 push·PR·댓글·이슈를 만들었다. 양방향 서브모듈 자동 bump까지 겹쳐 변경 하나가 계정 활동 여러 건으로 불어났다. 자동화가 사람 계정 이름으로 실행되는 구조라 계정 제재 위험이 컸다.
 - **결정**:
   1. 워크플로에서 PAT·봇 계정 토큰을 쓰지 않는다. 각 레포 기본 `GITHUB_TOKEN`만 쓴다.
   2. TechAPI를 건드리는 작업은 TechAPI에서 실행하고, TechEngine 워크플로를 `workflow_call`로 호출한다(TechEngine은 공개 레포라 토큰 없이 체크아웃된다). 호출된 워크플로는 호출한 쪽의 `GITHUB_TOKEN`을 받으므로 결과물은 `github-actions[bot]` 이름으로 남는다.
   3. 레포 간 `repository_dispatch` 중계와 서브모듈 자동 bump(`notify-*`, `bump-*`)는 없앤다.
   4. `verify-status`는 TechAPI `dump-develop`에 합치고, `dump-refresh`는 `dump-develop`의 수동 전체 재생성으로 대체한다. 커버리지 리포트는 주 1회, TechEngine 레포 이슈만 갱신한다.
   5. 스크레이핑 워크플로(`weekly-data.yml`)는 수동 실행으로 검증한 뒤에 cron을 켠다.
-  6. **예외 — TechEngineBot 최종 확인**: TechEngineBot 계정은 중요한 PR의 최종 확인자 역할로만 쓴다. 메인테이너(OWNER/MEMBER)가 `/final-review` 댓글을 달 때만 TechAPI `final-review.yml`이 돌고, PR 하나에 댓글 하나(재실행 시 같은 댓글 수정)만 남긴다. 조회는 `GITHUB_TOKEN`으로 하고, `TECHENGINEBOT_TOKEN`(TechAPI 레포 한정 fine-grained 토큰, Pull requests: write)은 그 댓글에만 쓴다. 스케줄·push·PR 이벤트로 TechEngineBot이 움직이는 워크플로는 만들지 않는다.
+  6. **예외 — TechEngineBot 최종 확인**: TechEngineBot 계정은 중요한 PR의 최종 확인자 역할로만 쓴다. 쓰기 권한이 있는 메인테이너(OWNER/MEMBER/COLLABORATOR)가 `/final-review` 댓글을 달 때만 TechAPI `final-review.yml`이 돌고, PR 하나에 댓글 하나(재실행 시 같은 댓글 수정)만 남긴다. 조회는 `GITHUB_TOKEN`으로 하고, `TECHENGINEBOT_TOKEN`(TechAPI 레포 한정 fine-grained 토큰, Pull requests: write)은 그 댓글에만 쓴다. 스케줄·push·PR 이벤트로 TechEngineBot이 움직이는 워크플로는 만들지 않는다.
 - **트레이드오프**: `GITHUB_TOKEN`이 만든 PR은 다른 워크플로를 트리거하지 않으므로, 주간 PR은 생성 전에 같은 작업 안에서 검증을 끝낸다. 포크 PR에는 토큰이 읽기 전용이라 댓글 대신 Job Summary로 결과를 남긴다. Projects 보드 필드 자동 입력(`pr-metadata`)은 없애고 GitHub Projects 내장 Auto-add를 쓴다.
 - **필요 설정**: 두 레포 Settings → Actions → General에서 "Allow GitHub Actions to create and approve pull requests"를 켜야 PR 생성이 된다.
 
