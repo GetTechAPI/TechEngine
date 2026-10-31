@@ -1,17 +1,14 @@
 name: coverage-report
 
-# Weekly: pull upstream catalogs, diff vs the curated TechAPI dataset, post
-# the gap list as a sticky issue in this repo (auto-updates the existing one).
+# On demand: pull upstream catalogs, diff vs the curated TechAPI dataset, and
+# publish the gap list as the job summary plus an artifact. Read-only: it
+# writes no issues, comments or commits, and never runs on a schedule.
 on:
-  schedule:
-    - cron: "23 6 * * 1"   # Mondays 06:23 UTC
   workflow_dispatch:
 
 permissions:
   contents: read
-  issues: write
 
-# Guard against a slow run overlapping the next scheduled run.
 concurrency:
   group: coverage-report
   cancel-in-progress: false
@@ -20,14 +17,14 @@ jobs:
   report:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: GetTechAPI/TechAPI
           path: TechAPI
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
 
@@ -39,24 +36,11 @@ jobs:
           TECHAPI_DATA_DIR: ${{ github.workspace }}/TechAPI/data
         run: python -m app.coverage --output coverage-report.md
 
+      - name: Publish report to the job summary
+        run: cat coverage-report.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload report artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-report
           path: coverage-report.md
-
-      # Sticky issue: keep one open issue with the well-known title, updating it
-      # in place. Only this repo, with its own GITHUB_TOKEN (github-actions[bot]).
-      - name: Sync sticky coverage issue
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          TITLE="Coverage gaps (auto-generated)"
-          NUMBER=$(gh issue list --repo "${{ github.repository }}" --state open \
-            --search "in:title \"$TITLE\"" --json number --jq '.[0].number // empty')
-          if [ -z "${NUMBER:-}" ]; then
-            gh issue create --repo "${{ github.repository }}" --title "$TITLE" --body-file coverage-report.md
-          else
-            gh issue edit "$NUMBER" --repo "${{ github.repository }}" --body-file coverage-report.md
-          fi

@@ -45,31 +45,33 @@ dump/v1/socs/... /v1/gpus/... /v1/cpus/... /v1/brands/...
 A static consumer just fetches, e.g.
 `https://<host>/v1/smartphones/galaxy-s25/index.json`.
 
-## 3. Automated Refresh (`.github/workflows/weekly-refresh.yml`)
+## 3. Refresh (maintainer run)
 
-The weekly pipeline (Monday cron + manual dispatch) runs the full cycle against
-a TechAPI checkout:
+Nothing refreshes on a schedule (ADR-017). A maintainer runs the cycle locally
+against a TechAPI checkout and opens the result as an ordinary TechAPI PR:
 
 ```text
-live-scrape benchmark sources -> full-dataset integrity gate
-  (app.validate + integrity_check.py --strict) -> regenerate static dump
-  -> open a dated refresh PR against TechAPI
+python -m app.ingest.enrich --component cpu --source passmark \
+    --data-root ../TechAPI/data --sleep 1.0          # one source at a time
+python -m app.validate                              # schema / range / slug / FK
+python integrity_check.py ../TechAPI/data --strict  # cross-source anomaly gate
+python -m app.dump --output ../TechAPI/site/public  # regenerate the static dump
 ```
 
 The integrity gate re-checks the **whole** dataset every run (not just new
-rows), so a bad scrape cannot slip a contaminated value past it. A lighter
-`refresh-data.yml` rebuilds the dump on engine (`app/**`) changes as a smoke
-test only. This is the git-scraping pattern: GitHub runs and stores everything
-for free, and the dated PR keeps every refresh reviewable before it lands. The
-hosting target depends on the public/private decision (Section 5).
+rows), so a bad scrape cannot slip a contaminated value past it. Every crawler
+sends a `TechEngine-*` User-Agent; a host that refuses it is skipped, never
+worked around. The hosting target depends on the public/private decision
+(Section 5).
 
 ## 4. Where The Data Comes From
 
 This repo serves **curated, validated** records, but collection now happens
 **in-repo**: `app/ingest` drafts new SKUs from upstream catalogs and
 `app/ingest/enrich` backfills benchmark columns from multiple sources
-(variant-safe, fill-only-nulls, never overwrites). Both run weekly and open PRs
-against TechAPI for human review before anything lands (SPEC Section 9.3). The curated
+(variant-safe, fill-only-nulls, never overwrites). Both run by hand and their
+output goes to TechAPI as a PR for human review before anything lands (SPEC
+Section 9.3). The curated
 dataset is a **subset, not exhaustive.**
 
 **Dataset layout (this repo).** Curated data uses singular folder names and is
