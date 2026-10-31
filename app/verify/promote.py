@@ -19,7 +19,7 @@ import re
 from pathlib import Path
 from typing import Any, NamedTuple
 
-from . import hosts, http_check
+from . import hosts
 from .common import STATE_DIR
 
 CROSSREF_CACHE_PATH = STATE_DIR / "crossref_cache.jsonl"
@@ -38,27 +38,19 @@ class PromotionDecision(NamedTuple):
 def has_live_authoritative_source(
     source_urls: list[str], url_cache: dict[str, dict[str, Any]]
 ) -> bool:
-    """True if an authoritative cited URL has a usable liveness signal.
+    """True if an authoritative cited URL was confirmed alive by Tier 1.
 
-    A normal alive response always qualifies. An explicit anti-bot challenge also
-    qualifies, but only for an already classified Tier-1/Tier-2 host: it proves
-    the request reached that host while the gateway withheld page inspection.
-    This preserves the live-source gate without treating every 403 as a live
-    record. Generic errors, ordinary 401/403, redirects to a homepage, and
-    unclassified hosts remain insufficient for promotion.
-
-    This distinction is deliberate. The September 2026 probe found Geekbench's
-    Cloudflare challenge under the verifier User-Agent, while several other
-    Tier-2 databases returned normal 200 responses. Treating challenge responses
-    as dead made a host-wide automation policy look like thousands of dead
-    citations; dropping the liveness gate altogether made unchecked citations
-    promotable. This narrow fallback avoids both failure modes.
+    Only a normal alive response from an already classified Tier-1/Tier-2 host
+    qualifies. An anti-bot challenge says the host declined to show the page to
+    us, not that the page exists, so it stays unknown and never qualifies.
+    Generic errors, 401/403, redirects to a homepage and unclassified hosts are
+    insufficient too.
     """
     for u in source_urls:
         entry = url_cache.get(u)
         if not entry or hosts.tier_of_host(hosts.host_of(u)) not in (1, 2):
             continue
-        if entry.get("alive") or http_check.is_automation_challenge(entry):
+        if entry.get("alive"):
             return True
     return False
 

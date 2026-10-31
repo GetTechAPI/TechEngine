@@ -27,28 +27,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # When called from TechAPI a bare checkout would fetch the caller instead.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: GetTechAPI/TechEngine
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: GetTechAPI/TechAPI
           ref: ${{ inputs.data-ref }}
           path: TechAPI
           # Scoped runs need the diff back to the merge base, not the full history.
           fetch-depth: ${{ inputs.base-sha != '' && 100 || 1 }}
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - name: Validate seed JSON (§9.3, §15.3)
         env:
           TECHAPI_DATA_DIR: ${{ github.workspace }}/TechAPI/data
+          BASE_SHA: ${{ inputs.base-sha }}
         run: |
-          if [ -n "${{ inputs.base-sha }}" ]; then
-            git -C TechAPI fetch --no-tags --depth=100 origin "${{ inputs.base-sha }}"
-            git -C TechAPI merge-base "${{ inputs.base-sha }}" HEAD >/dev/null 2>&1 \
+          if [ -n "$BASE_SHA" ]; then
+            git -C TechAPI fetch --no-tags --depth=100 origin "$BASE_SHA"
+            git -C TechAPI merge-base "$BASE_SHA" HEAD >/dev/null 2>&1 \
               || git -C TechAPI fetch --no-tags --unshallow origin
-            python -m app.validate --changed-since "${{ inputs.base-sha }}"
+            python -m app.validate --changed-since "$BASE_SHA"
           else
             python -m app.validate
           fi

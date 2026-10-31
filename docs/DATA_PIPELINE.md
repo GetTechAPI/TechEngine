@@ -45,31 +45,35 @@ dump/v1/socs/... /v1/gpus/... /v1/cpus/... /v1/brands/...
 A static consumer just fetches, e.g.
 `https://<host>/v1/smartphones/galaxy-s25/index.json`.
 
-## 3. Automated Refresh (`.github/workflows/weekly-refresh.yml`)
+## 3. Refresh (manual PR generator)
 
-The weekly pipeline (Monday cron + manual dispatch) runs the full cycle against
-a TechAPI checkout:
+Nothing refreshes on a schedule (ADR-017). A maintainer dispatches TechAPI's
+`collect.yml`, which calls `refresh.yml` here (or `ingest.yml`,
+`verify-promote.yml`) with TechAPI's own `GITHUB_TOKEN`:
 
 ```text
-live-scrape benchmark sources -> full-dataset integrity gate
-  (app.validate + integrity_check.py --strict) -> regenerate static dump
-  -> open a dated refresh PR against TechAPI
+live-scrape benchmark sources -> commit data/ on collect/refresh
+  -> full-dataset gate (app.validate + integrity_check.py --strict)
+  -> Tier 0 report for the changed records
+  -> force-push collect/refresh and open or update its one PR on develop
 ```
 
 The integrity gate re-checks the **whole** dataset every run (not just new
-rows), so a bad scrape cannot slip a contaminated value past it. A lighter
-`refresh-data.yml` rebuilds the dump on engine (`app/**`) changes as a smoke
-test only. This is the git-scraping pattern: GitHub runs and stores everything
-for free, and the dated PR keeps every refresh reviewable before it lands. The
-hosting target depends on the public/private decision (Section 5).
+rows), so a bad scrape cannot slip a contaminated value past it. No dump is
+committed; TechAPI builds the static API at deploy time. No comments are
+posted; the gate result and Tier 0 report live in the PR body. Every crawler
+sends a `TechEngine-*` User-Agent; a host that refuses it is skipped, never
+worked around. The hosting target depends on the public/private decision
+(Section 5).
 
 ## 4. Where The Data Comes From
 
 This repo serves **curated, validated** records, but collection now happens
 **in-repo**: `app/ingest` drafts new SKUs from upstream catalogs and
 `app/ingest/enrich` backfills benchmark columns from multiple sources
-(variant-safe, fill-only-nulls, never overwrites). Both run weekly and open PRs
-against TechAPI for human review before anything lands (SPEC Section 9.3). The curated
+(variant-safe, fill-only-nulls, never overwrites). Both run on manual dispatch
+and their output goes to TechAPI as a PR for human review before anything
+lands (SPEC Section 9.3). The curated
 dataset is a **subset, not exhaustive.**
 
 **Dataset layout (this repo).** Curated data uses singular folder names and is

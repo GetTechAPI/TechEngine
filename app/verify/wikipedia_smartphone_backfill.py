@@ -66,7 +66,7 @@ from app.verify.crossref import (
 from app.verify.http_check import classify
 
 WIKI_REST_HTML = "https://en.wikipedia.org/api/rest_v1/page/html/{title}"
-USER_AGENT = "TechEngine-verify/0.1 (https://github.com/GetTechAPI/TechEngine; rush94434@gmail.com)"
+USER_AGENT = "TechEngine-verify/0.1 (+https://github.com/GetTechAPI/TechEngine)"
 DECISIONS = (CONFIRM, AMBIGUOUS, NOTFOUND, CONTRADICT)
 MIN_SLEEP_S = 0.2
 GATE_VERSION = 1

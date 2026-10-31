@@ -149,7 +149,7 @@ def test_green_does_not_promote_with_dead_authoritative_source():
     assert not d.promote
 
 
-def test_green_promotes_with_authoritative_automation_challenge():
+def test_green_does_not_promote_with_authoritative_automation_challenge():
     url = "https://browser.geekbench.com/v6/cpu/1"
     d = promote.decide(
         band="green",
@@ -163,7 +163,7 @@ def test_green_promotes_with_authoritative_automation_challenge():
         },
         crossref_decision=None,
     )
-    assert d.promote and d.reason == "green-live-source"
+    assert not d.promote and d.reason == "needs-confirmation"
 
 
 def test_green_does_not_promote_with_unclassified_automation_challenge():

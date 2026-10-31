@@ -33,34 +33,28 @@ site/                  # Astro engine landing (deploys to Pages)
 docs/                  # SPEC / DATA_PIPELINE / DEVELOPMENT
 TechAPI/               # submodule -> GetTechAPI/TechAPI (clickable @ <sha> link)
 .github/workflows/
-  validate-data.yml                  # workflow_call: PR-time data validation for TechAPI
-  techapi-pr-validation-comment.yml  # workflow_call: TechAPI PR review comment
-  techapi-verify-comment.yml         # workflow_call: Tier 0 / `/verify` report on a TechAPI PR
-  weekly-refresh.yml                 # workflow_call: live-scrape -> integrity gate -> dump -> PR
-  weekly-ingest.yml                  # workflow_call: draft new SKUs, open PR against TechAPI
-  verify-network.yml                 # workflow_call: Tier 1-3 checks + verified promotion PR
-  coverage-report.yml                # cron (weekly): gap report, sticky issue in this repo
-  refresh-data.yml                   # smoke-test: rebuild the dump on engine (app/**) changes
-  deploy-pages.yml                   # build & deploy engine site + dump
-  test.yml                           # lint + type-check + tests
+  test.yml             # lint + type-check + tests
+  validate-data.yml    # read-only data validation (workflow_call or manual)
+  deploy-pages.yml     # build & deploy engine site + dump
+  coverage-report.yml  # manual: gap report to the job summary + artifact
+  ingest.yml           # workflow_call: draft new SKUs -> one PR on TechAPI
+  refresh.yml          # workflow_call: re-scrape benchmarks -> one PR on TechAPI
+  verify-promote.yml   # workflow_call: Tier 1-3 checks + verified promotion PR
 ```
 
 ## How The Two Repos Connect
 
 Both repos live in the **GetTechAPI** org and each includes the other as a git
-**submodule** (a clickable `@ <sha>` pin). Pointers are bumped by hand; nothing
-syncs them automatically.
+**submodule** (a clickable `@ <sha>` pin). Nothing syncs them automatically.
 
-Every automation that touches TechAPI runs **in TechAPI**, which calls the
-TechEngine workflows above as reusable workflows (`workflow_call`, `@main`).
-A called workflow gets the caller's `GITHUB_TOKEN`, so branches, PRs and
-comments are made by `github-actions[bot]`. No personal access token or bot
-account is used anywhere (ADR-017):
-
-- **validate-data.yml / techapi-pr-validation-comment.yml /
-  techapi-verify-comment.yml** - TechAPI PRs are validated and reviewed.
-- **weekly-refresh.yml / weekly-ingest.yml / verify-network.yml** - TechAPI's
-  `weekly-data.yml` runs them and they open PRs against TechAPI `develop`.
+No workflow here runs on a schedule, posts comments, or uses a personal or
+bot-account token (ADR-017). Collection runs only when a maintainer dispatches
+TechAPI's `collect.yml`, which calls `ingest.yml`, `refresh.yml` or
+`verify-promote.yml` with TechAPI's own `GITHUB_TOKEN`. Each task keeps at most
+one open PR on a fixed `collect/*` branch, updated in place, after
+`app.validate` and `integrity_check.py --strict` pass. The engine that runs is
+the TechEngine commit TechAPI pins as its submodule. Crawlers identify
+themselves with a `TechEngine-*` User-Agent.
 
 Every Python entry point reads data from a **TechAPI checkout**. The location
 can be overridden via `TECHAPI_DATA_DIR`; by default TechEngine supports both
@@ -96,14 +90,13 @@ Spins up Postgres 16, seeds from the mounted TechAPI checkout, serves on `:8000`
 
 - [x] Split out from TechAPI; sibling-checkout data pipeline
 - [x] **Coverage gap detector** - diff curated dataset vs upstream catalogs
-  and surface missing SKUs as a sticky weekly issue
+  and list missing SKUs in an on-demand report (`coverage-report.yml`)
   ([#1](https://github.com/GetTechAPI/TechEngine/issues/1))
-- [x] **Weekly ingestion crawler** - scrape canonical sources and open PRs
-  against TechAPI with new SKUs
-  ([#2](https://github.com/GetTechAPI/TechEngine/issues/2))
-- [x] **Weekly refresh pipeline** - live benchmark enrichment -> full-dataset
-  integrity gate -> static dump -> dated refresh PR (`weekly-refresh.yml`)
-- [x] **Bidirectional submodule autosync** between TechEngine and TechAPI
+- [x] **Ingestion crawler** - scrape canonical sources and draft new SKUs for
+  a TechAPI PR ([#2](https://github.com/GetTechAPI/TechEngine/issues/2));
+  manual dispatch since ADR-017 (`ingest.yml`)
+- [x] **Refresh pipeline** - live benchmark enrichment -> full-dataset
+  integrity gate -> TechAPI PR; manual dispatch since ADR-017 (`refresh.yml`)
 - [ ] More sources (Intel ARK, AMD product pages, TechPowerUp DB)
 
 ## License

@@ -1,0 +1,212 @@
+name: ingest
+
+# Reusable, manual PR generator (ADR-017). Only TechAPI's collect.yml calls it,
+# from workflow_dispatch, so github.token is TechAPI's GITHUB_TOKEN and the
+# branch and PR come from github-actions[bot]. Nothing here runs on a schedule,
+# posts a comment, or uses a personal or bot-account token. Crawlers send the
+# honest TechEngine-* User-Agent and keep their --sleep and limits.
+#
+# Task: scrape upstream catalogs and draft missing SKUs into TechAPI data/.
+on:
+  workflow_call:
+    inputs:
+      category:
+        description: "Category to ingest (cpu, gpu or smartphone)"
+        type: string
+        default: cpu
+      limit:
+        description: "Max candidates per source"
+        type: string
+        default: "50"
+      include_drafts:
+        description: "Write incomplete records too (PR opened as draft)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: collect-ingest-${{ inputs.category }}
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CATEGORY: ${{ inputs.category }}
+      LIMIT: ${{ inputs.limit }}
+      INCLUDE_DRAFTS: ${{ inputs.include_drafts }}
+      DRAFT_FLAG: ${{ inputs.include_drafts && '--draft' || '' }}
+      BRANCH: collect/ingest-${{ inputs.category }}
+      TITLE: "feat(data/${{ inputs.category }}): ingest new SKUs"
+      TECHAPI_DATA_DIR: ${{ github.workspace }}/TechAPI/data
+    steps:
+      # The TechEngine commit TechAPI pins as its submodule is the engine that
+      # runs here, so collection, PR checks and the deploy share one engine.
+      - name: Checkout TechAPI develop with its pinned TechEngine
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: GetTechAPI/TechAPI
+          ref: develop
+          path: TechAPI
+          submodules: true
+          # The Tier 0 diff compares the new commit with develop's tip only.
+          fetch-depth: 1
+          # The write token is handed to the push step alone.
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install the pinned TechEngine
+        run: pip install -e ./TechAPI/TechEngine
+
+      - name: Run ingest
+        working-directory: TechAPI/TechEngine
+        run: |
+          DRAFTS_FLAG=""
+          if [ "$INCLUDE_DRAFTS" = "true" ]; then
+            DRAFTS_FLAG="--include-drafts"
+          fi
+          python -m app.ingest \
+            --category "$CATEGORY" \
+            --limit "$LIMIT" \
+            --data-root "$TECHAPI_DATA_DIR" \
+            --summary "$GITHUB_WORKSPACE/ingest-summary.md" \
+            $DRAFTS_FLAG
+
+      # Variant-safe benchmark backfill on existing CPU records (PassMark).
+      # CPU-only; never overwrites, only fills nulls on exact heading matches.
+      - name: Enrich benchmarks (PassMark, cpu only)
+        if: env.CATEGORY == 'cpu'
+        continue-on-error: true
+        working-directory: TechAPI/TechEngine
+        run: |
+          python -m app.ingest.enrich \
+            --data-root "$TECHAPI_DATA_DIR" \
+            --limit "$LIMIT" \
+            --min-year 2008 \
+            --sleep 0.5 \
+            --summary "$GITHUB_WORKSPACE/enrich-summary.md"
+
+      - name: Upload summaries
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ingest-${{ inputs.category }}
+          path: |
+            ingest-summary.md
+            enrich-summary.md
+          if-no-files-found: ignore
+
+      # Commit locally first: the Tier 0 report scores the records this commit
+      # changes against develop.
+      - name: Commit data changes
+        id: commit
+        working-directory: TechAPI
+        run: |
+          set -euo pipefail
+          git add data/
+          if git diff --cached --quiet; then
+            echo "No data changes; no PR."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "base=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git commit -q -m "$TITLE"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      # Gate: a PR opened with GITHUB_TOKEN triggers no checks, so the gate runs
+      # here and its result goes in the PR body. Any failure stops the push.
+      - name: Gate (app.validate + integrity_check --strict)
+        if: steps.commit.outputs.changed == 'true'
+        working-directory: TechAPI/TechEngine
+        run: |
+          set -euo pipefail
+          python -m app.validate
+          python integrity_check.py "$TECHAPI_DATA_DIR" --strict
+
+      - name: Tier 0 report for the changed records
+        if: steps.commit.outputs.changed == 'true'
+        working-directory: TechAPI/TechEngine
+        env:
+          BASE: ${{ steps.commit.outputs.base }}
+        run: |
+          python -m app.verify score --base "$BASE" --changed --no-cache --format md \
+            > "$GITHUB_WORKSPACE/verify-report.md" 2>&1 \
+            || echo "_Tier 0 report unavailable._" > "$GITHUB_WORKSPACE/verify-report.md"
+
+      # github-actions[bot] writes the body, so scraped text must not mention
+      # anyone or cross-reference an issue: drop "@", break "#123"/"GH-123" and
+      # URLs with a zero-width space. Colours such as #3fb950 are untouched.
+      - name: Build PR body
+        if: steps.commit.outputs.changed == 'true'
+        run: |
+          zw=$(printf '\342\200\213')
+          ref="s/(#|[Gg][Hh]-)([0-9]+)(\$|[^0-9A-Za-z_])/\1$zw\2\3/g"
+          scrub() { tr -d '@' | sed -E -e "$ref" -e "$ref" -e "s#://#:$zw//#g" -e "s/www\./www$zw./g"; }
+          {
+            echo "Closes #295"
+            echo
+            echo "Generated by TechEngine \`$GITHUB_WORKFLOW\` (run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})."
+            echo "Add the \`final-check\` label for the final pass."
+            echo
+            echo "## Gate"
+            echo "- \`app.validate\`: **passed**"
+            echo "- \`integrity_check.py --strict\`: **passed**"
+            echo
+            echo "## Tier 0 verification (changed records)"
+            echo
+            scrub < verify-report.md
+            echo
+            echo "## Ingest summary"
+            echo
+            if [ -f ingest-summary.md ]; then scrub < ingest-summary.md; fi
+            if [ -f enrich-summary.md ]; then
+              echo
+              echo "## Enrich summary"
+              echo
+              scrub < enrich-summary.md
+            fi
+          } > pr-body.full.md
+          # GitHub rejects a PR body over 65,536 characters.
+          python - <<'PY'
+          from pathlib import Path
+          body = Path("pr-body.full.md").read_text(encoding="utf-8", errors="replace")
+          limit = 60000
+          if len(body) > limit:
+              note = "\n\n_Truncated; the full summaries are in the run's artifact._\n"
+              body = body[: limit - len(note)] + note
+          Path("pr-body.md").write_text(body, encoding="utf-8")
+          PY
+
+      # One open PR per task: the fixed branch is cut from develop and
+      # force-pushed each run; an open PR is edited in place. No comments.
+      - name: Push and open or update the PR
+        if: steps.commit.outputs.changed == 'true'
+        working-directory: TechAPI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            push --force origin "HEAD:refs/heads/$BRANCH"
+          number=$(gh pr list --repo GetTechAPI/TechAPI --head "$BRANCH" --base develop \
+            --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --repo GetTechAPI/TechAPI --title "$TITLE" --body-file ../pr-body.md
+          else
+            gh pr create --repo GetTechAPI/TechAPI --base develop --head "$BRANCH" \
+              --title "$TITLE" --body-file ../pr-body.md $DRAFT_FLAG \
+              --assignee Seungpyo1007 --assignee TechEngineBot \
+              --label data --label enhancement \
+              --milestone "Massive dataset rebuild (1989-2026)"
+          fi

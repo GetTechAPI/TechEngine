@@ -61,10 +61,9 @@ scripts/
   dump.py            DB → static JSON dump (replays API in-process) → ./dump
 tests/               unit/ + integration/ (conftest seeds a temp SQLite from data/)
 docs/                SPEC.md, DATA_PIPELINE.md, DEVELOPMENT.md
-.github/workflows/   test.yml, deploy-pages.yml, refresh-data.yml, coverage-report.yml, and
-                     the reusable workflows TechAPI calls: validate-data.yml,
-                     techapi-pr-validation-comment.yml, techapi-verify-comment.yml,
-                     weekly-refresh.yml, weekly-ingest.yml, verify-network.yml
+.github/workflows/   test.yml, validate-data.yml, deploy-pages.yml, coverage-report.yml, and
+                     the manual PR generators TechAPI's collect.yml calls: ingest.yml,
+                     refresh.yml, verify-promote.yml (nothing scheduled; ADR-017)
 ```
 
 > Note: **data folders are singular** (`data/soc/…`) but **API routes are plural**
@@ -89,7 +88,7 @@ python -m app.dump               # generate ./dump/ static tree (gitignored)
 - **GPU activated** — model existed (§6.5); endpoints + data added.
 - **Data restructured** to singular names + brand subfolders (maintainer request).
 - **Static-dump pivot** — `app/dump.py` exports the API to a static JSON tree,
-  refreshed weekly by GitHub Actions (`weekly-refresh.yml`).
+  built by TechAPI at deploy time (see DATA_PIPELINE.md §3).
 - **Scoring** is a Phase-0 reference-based approximation; Phase 1 → dataset-wide
   min-max (§8.4). Raw third-party benchmarks (Geekbench/AnTuTu/Cinebench/Time Spy)
   are stored as algorithm inputs but NOT exposed (ADR-006).
