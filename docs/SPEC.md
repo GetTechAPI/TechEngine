@@ -589,7 +589,7 @@ class Smartphone:
     # Assets
     image_url: str | None       # upload.wikimedia.org/wikipedia/commons file only, else null (ADR-018);
                                  # the record also stores image_license + image_attribution
-    images: list[str] = []
+    images: list[str] = []      # upload.wikimedia.org/wikipedia/commons files only (ADR-018)
 
     # 3D (optional, sparse — added 2026-09-24 for TechPicks' 3D viewer, ADR-015)
     model_3d: dict | None       # {url, version, bytes, sha256, license, attribution, parts[], colors[]}
@@ -1012,7 +1012,7 @@ algorithm_version: "1.2.0"
 |---|---|---|
 | 코드 (techapi, SDK) | **MIT** | 가장 관대, 상업 사용 허용 |
 | 데이터 (api-data) | **CC-BY-SA 4.0** | OpenStreetMap·MusicBrainz 모델, 데이터 생태계 보호 |
-| 이미지 (images) | 원본 유지 | 제조사 자산, fair use 범위 |
+| 이미지 (`image_url`, `images`, `logo_url`) | 파일별 Commons 라이선스 | Wikimedia Commons 파일만, 저작자·라이선스 표기 (ADR-018) |
 | 문서 (docs) | **CC-BY 4.0** | 출처만 표기하면 자유 |
 | 점수 알고리즘 | MIT (코드의 일부) | 검증 가능성을 위한 공개 |
 
@@ -2023,7 +2023,7 @@ TechAPI의 **핵심 목표 중 하나**. TechPicks 외에 다양한 앱·플랫�
   - 브랜드 `logo_url` 3개도 회사·쇼핑몰 CDN을 가리켰다.
   - 별도로 백필 도구의 Wikipedia 문서 HTML 캐시(`data/_verify/cache/wikipedia_html/`, 325개, 61 MB)가 실수로 커밋돼 있었다.
 - **결정**:
-  1. `image_url`에는 `https://upload.wikimedia.org/wikipedia/commons/…` 파일만 넣는다. 값을 넣으면 `image_license`와 `image_attribution`도 함께 둔다.
+  1. `image_url`과 `images` 목록에는 `https://upload.wikimedia.org/wikipedia/commons/…` 파일만 넣는다. `image_url`에 값을 넣으면 `image_license`와 `image_attribution`도 함께 둔다.
   2. `logo_url`에는 Commons 파일만 넣는다. `upload.wikimedia.org/wikipedia/commons/…`와 `commons.wikimedia.org/wiki/Special:FilePath/…` 형식을 모두 허용한다.
   3. 1·2에 맞지 않는 값은 `null`로 둔다. `app/validate.py`가 이 규칙을 강제하며, 중첩된 `raw_merged_records`도 검사한다.
   4. 사진은 `app/verify/wikipedia_image_backfill.py`로만 채운다. 이 도구는 무료 라이선스이고 저작자 표기가 있는 Commons 파일만 받는다.

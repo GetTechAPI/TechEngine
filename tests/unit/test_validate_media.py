@@ -1,4 +1,4 @@
-"""image_url / logo_url may only link Wikimedia Commons files (ADR-018)."""
+"""image_url / logo_url / images may only link Wikimedia Commons files (ADR-018)."""
 
 from __future__ import annotations
 
@@ -30,6 +30,10 @@ CREDIT = {"image_license": "CC-BY-SA-4.0", "image_attribution": "Example Author"
     ({"logo_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/30/A.svg/330px-A.svg.png"},
      None),
     ({"logo_url": "https://cdn.shopify.com/s/files/logo.png"}, "logo_url must be"),
+    ({"images": []}, None),
+    ({"images": [PHOTO]}, None),
+    ({"images": [PHOTO, "https://cdn2.gsmarena.com/vv/pics/x.jpg"]}, "images must list"),
+    ({"images": PHOTO}, "images must list"),
 ])
 def test_media_links(record: dict[str, Any], needle: str | None) -> None:
     errors: list[str] = []

@@ -325,6 +325,14 @@ def _check_media(name: str, record: dict[str, Any], errors: list[str]) -> None:
         and (COMMONS_UPLOAD_RE.fullmatch(logo) or COMMONS_FILEPATH_RE.fullmatch(logo))
     ):
         errors.append(f"{name}: logo_url must be a Wikimedia Commons file or null")
+    images = record.get("images")
+    if images is not None and not (
+        isinstance(images, list)
+        and all(isinstance(url, str) and COMMONS_UPLOAD_RE.fullmatch(url) for url in images)
+    ):
+        errors.append(
+            f"{name}: images must list upload.wikimedia.org/wikipedia/commons files only"
+        )
 
 
 def _check_variant_path(
