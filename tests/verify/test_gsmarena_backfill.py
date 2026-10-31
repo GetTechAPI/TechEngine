@@ -26,7 +26,6 @@ from app.verify.gsmarena_backfill import (
     parse_page,
     parse_phone_url,
     parse_retry_after,
-    parse_search_results,
     parse_sitemap_xml,
     sample_diverse,
 )
@@ -231,18 +230,6 @@ def test_maker_prefix_suffix_still_matches():
     )
     assert result.decision == CONFIRM
     assert result.suffix_only is True
-
-
-def test_search_result_parser_reads_redirect_targets():
-    html = """
-    <a class="result__a" href="https://duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.gsmarena.com%2Facer_dx650-2888.php&amp;rut=1">
-    Acer DX650 - Full phone specifications</a>
-    <a href="https://www.gsmarena.com/acer_dx650-pictures-2888.php">pictures</a>
-    """
-    found = parse_search_results(html)
-    assert len(found) == 1
-    assert found[0].url == "https://www.gsmarena.com/acer_dx650-2888.php"
-    assert found[0].title == "Acer DX650"
 
 
 def test_sample_diverse_round_robins_brands():

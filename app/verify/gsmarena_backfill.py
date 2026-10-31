@@ -7,8 +7,8 @@ gate confirms it.
 
 The gate reuses existing verification pieces and does not invent a matcher:
 
-* phone identity comes from the GSMArena sitemap index, with a ``site:gsmarena.com``
-  search only when that index is ambiguous
+* phone identity comes from the GSMArena sitemap index; an ambiguous index entry
+  stays ambiguous (no search-engine fallback)
 * heading equality is :func:`app.verify.crossref._heading_matches`
 * liveness is :func:`app.verify.http_check.classify`
 * a confirm additionally requires the live page title to heading-match the record
@@ -44,7 +44,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, unquote
+from urllib.parse import unquote
 from urllib.request import Request, urlopen
 
 from app.verify import ledger
@@ -263,8 +263,8 @@ def disambiguate(name: str, candidates: list[Candidate]) -> list[Candidate]:
 class GsmarenaFetcher:
     """:class:`app.verify.crossref.Fetcher` backed by the sitemap index.
 
-    ``search`` returns one candidate when the index (or the site-search
-    fallback) resolves cleanly, every remaining candidate when still ambiguous,
+    ``search`` returns one candidate when the index (or an injected
+    ``search_fn``) resolves cleanly, every remaining candidate when still ambiguous,
     and an empty list when nothing heading-matches. It never manufactures a URL.
     """
 
@@ -532,65 +532,6 @@ def gate_page(
         "no-comparable-spec",
         suffix_only,
     )
-
-
-# --- search fallback -------------------------------------------------------------
-
-
-def search_query_urls(name: str) -> list[str]:
-    """External ``site:gsmarena.com`` queries. GSMArena's own ``/res.php3`` is disallowed."""
-    query = quote(f'site:gsmarena.com "{name}"')
-    return [
-        f"https://html.duckduckgo.com/html/?q={query}",
-        f"https://www.bing.com/search?q={query}",
-    ]
-
-
-def parse_search_results(html_text: str) -> list[Candidate]:
-    """Pull spec-page URLs and their anchor titles out of a search-result page."""
-    text = html.unescape(html_text)
-    found: list[Candidate] = []
-    seen: set[str] = set()
-    for match in re.finditer(
-        r'<a\b[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
-        text,
-        re.IGNORECASE | re.DOTALL,
-    ):
-        href, inner = match.group(1), match.group(2)
-        target = href
-        encoded = re.search(r"(?:uddg|u)=([^&\"']+)", href)
-        if encoded:
-            target = unquote(encoded.group(1))
-        parsed = parse_phone_url(target)
-        if parsed is None:
-            continue
-        url = target if target.startswith("http") else f"https://www.gsmarena.com/{target.lstrip('/')}"
-        # Re-canonicalize through the parser so pictures pages stay out.
-        slug, phone_id = parsed
-        url = f"https://www.gsmarena.com/{slug}-{phone_id}.php"
-        if url in seen:
-            continue
-        seen.add(url)
-        title = re.sub(r"<[^>]+>", " ", inner)
-        title = strip_spec_suffix(re.sub(r"\s+", " ", title).strip())
-        if not title:
-            title = slug.replace("_", " ")
-        found.append(Candidate(title=title, url=url))
-    return found
-
-
-def make_site_search(fetch: FetchFn) -> SearchFn:
-    def search(name: str) -> list[Candidate]:
-        for url in search_query_urls(name):
-            status, _final, body = fetch(url)
-            if status is None or status >= 400 or not body:
-                continue
-            found = parse_search_results(body)
-            if found:
-                return found
-        return []
-
-    return search
 
 
 # --- cache (ledger JSONL pattern, without ledger.append's data-dir mkdir) --------
@@ -1155,7 +1096,7 @@ def backfill(
         return client.fetch(url)
 
     index = load_or_build_index(client, index_path, refresh=refresh_index)
-    fetcher = GsmarenaFetcher(index, search_fn=make_site_search(fetch))
+    fetcher = GsmarenaFetcher(index)
     cache = load_cache(cache_path)
     rel_paths = paths if paths is not None else list_kaggle_paths(repo)
     loaded = records if records is not None else load_records(repo, rel_paths)

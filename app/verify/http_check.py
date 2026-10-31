@@ -26,10 +26,9 @@ from .hosts import host_of
 
 URL_CACHE_PATH = STATE_DIR / "url_cache.jsonl"
 DEFAULT_TTL_DAYS = 30
-USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/124.0 Safari/537.36 TechAPI-verify/0.1"
-)
+# Identify as the bot we are. A host that refuses it is telling us not to
+# crawl it; that answer is recorded, never worked around.
+USER_AGENT = "TechEngine-verify/0.1 (+https://github.com/GetTechAPI/TechEngine)"
 
 
 # "Come back later" is not "this link is dead". A host that rate-limits us says
