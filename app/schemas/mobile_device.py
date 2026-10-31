@@ -41,6 +41,8 @@ class MobileDeviceRead(BaseModel):
     connectivity: dict[str, Any]
     image_url: str | None = None
     images: list[str] = Field(default_factory=list)
+    image_license: str | None = None
+    image_attribution: str | None = None
     verified: bool
     source_urls: list[str]
     created_at: datetime
