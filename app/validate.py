@@ -43,7 +43,7 @@ BRAND_CATEGORIES = {
     "defunct",
 }
 COUNTRY_RE = re.compile(r"^[A-Z]{2}$")
-# Media links may only point at free Wikimedia Commons files (ADR-017), never third-party hotlinks.
+# Media links may only point at free Wikimedia Commons files (ADR-018), never third-party hotlinks.
 COMMONS_UPLOAD_RE = re.compile(r"https://upload\.wikimedia\.org/wikipedia/commons/\S+")
 COMMONS_FILEPATH_RE = re.compile(r"https://commons\.wikimedia\.org/wiki/Special:FilePath/\S+")
 SOC_REQUIRED = {"slug", "name", "manufacturer", "release_date", "process_nm", "gpu_name"}

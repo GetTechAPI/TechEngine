@@ -501,7 +501,7 @@ class Brand:
     name: str                   # "Samsung"
     country: str                # ISO 3166: "KR"
     founded_year: int | None
-    logo_url: str | None       # Wikimedia Commons file only, else null (ADR-017)
+    logo_url: str | None       # Wikimedia Commons file only, else null (ADR-018)
     website: str | None
     source_urls: list[str]
     description_en: str | None
@@ -587,7 +587,7 @@ class Smartphone:
     connectivity: dict          # {wifi, bluetooth, nfc, usb}
 
     # Assets
-    image_url: str | None       # upload.wikimedia.org/wikipedia/commons file only, else null (ADR-017);
+    image_url: str | None       # upload.wikimedia.org/wikipedia/commons file only, else null (ADR-018);
                                  # the record also stores image_license + image_attribution
     images: list[str] = []
 
@@ -975,7 +975,7 @@ algorithm_version: "1.2.0"
 | **Blender Open Data** | CC-BY-SA | ⭐⭐⭐⭐ | ✅ |
 | **Google Play `supported_devices.csv`** | 공개 파일, 라이선스 표기 없음 | ⭐⭐⭐⭐ (식별 정보) | ✅ 식별 정보 전용(ADR-016) — 브랜드·판매명·코드명·모델 번호만, 스펙 필드 없음 |
 | **Google Play Console 기기 카탈로그 내보내기** | 개발자 계정 내보내기, 배포 계약상 기밀·재배포 제한 조항 없음 | ⭐⭐⭐⭐ | ✅ `device_catalog` 한정(ADR-016) — RAM·SoC·GPU·해상도·밀도·SDK 범위만, 출시일로 쓰지 않음 |
-| **Wikimedia Commons (사진·로고)** | 파일별 자유 라이선스(CC BY/BY-SA, CC0, PD) | — | ✅ `image_url`·`logo_url` 한정(ADR-017) — 파일별 라이선스·저작자 저장, 다른 이미지 호스트 금지 |
+| **Wikimedia Commons (사진·로고)** | 파일별 자유 라이선스(CC BY/BY-SA, CC0, PD) | — | ✅ `image_url`·`logo_url` 한정(ADR-018) — 파일별 라이선스·저작자 저장, 다른 이미지 호스트 금지 |
 | **사용자 제출 PR** | 기여자 라이선스 | 가변 | ✅ (검증 필수) |
 
 ### 9.3 검증 절차
@@ -1971,7 +1971,7 @@ TechAPI의 **핵심 목표 중 하나**. TechPicks 외에 다양한 앱·플랫�
 ### ADR-015: `image_url` 예시 오류 정정 + `model_3d`/`body` 스키마 필드 추가 (필드만, 콘텐츠 없음)
 
 - **날짜**: 2026-09-24
-- **상태**: Accepted — `image_url` 서술은 ADR-017로 대체
+- **상태**: Accepted — `image_url` 서술은 ADR-018로 대체
 - **배경 1 (버그 근본 원인)**: §6.4·부록 C의 스마트폰 응답 예시가 `image_url`을 `https://cdn.jsdelivr.net/gh/GetTechAPI/images/smartphones/galaxy-s25.webp` 형태로 서술했으나, `GetTechAPI/images` 리포는 존재한 적이 없다. 실제 데이터의 `image_url`은 원본 호스트(gsmarena.com, aitoolbuzz.com 등)를 그대로 가리키는 hotlink다. 이 문서 예시를 그대로 믿고 만든 외부 소비자(TechPicks)가 존재하지 않는 CDN 경로로 이미지를 요청해 전부 404를 겪었다 — **TechAPI 데이터 결함이 아니라 문서 결함이 실제 버그를 유발한 사례**.
 - **결정**: 부록 C·§6.4 예시를 실제 hotlink 형태로 정정. 앞으로 응답 예시는 실제 `app/dump.py` 산출물에서 표본을 뜨거나, 최소한 존재하는 도메인만 쓴다.
 - **배경 2 (TechPicks 3D 뷰어 요청)**: TechPicks가 기기별 `.glb` 3D 모델 + 부품 노드 + 카메라 배치 메타데이터를 요청(2026-09-24). 실제 3D 모델 파일(수백 종 스캔/모델링)은 TechAPI의 소싱 정책(§9, Wikipedia/제조사/CC 데이터셋만) 범위 밖이라 이번 결정에서 **제외** — 별도 트랙(무료/합법 3D 소스 존재 여부 조사)으로 추후 검토.

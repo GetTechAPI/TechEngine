@@ -1,4 +1,4 @@
-"""image_url / logo_url may only link Wikimedia Commons files (ADR-017)."""
+"""image_url / logo_url may only link Wikimedia Commons files (ADR-018)."""
 
 from __future__ import annotations
 
