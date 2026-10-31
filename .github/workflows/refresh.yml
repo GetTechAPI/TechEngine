@@ -1,0 +1,209 @@
+name: refresh
+
+# Reusable, manual PR generator (ADR-017). Only TechAPI's collect.yml calls it,
+# from workflow_dispatch, so github.token is TechAPI's GITHUB_TOKEN and the
+# branch and PR come from github-actions[bot]. Nothing here runs on a schedule,
+# posts a comment, or uses a personal or bot-account token. Crawlers send the
+# honest TechEngine-* User-Agent and keep their --sleep and limits.
+#
+# Task: re-scrape benchmark sources into TechAPI data/. No dump: TechAPI builds
+# the static API at deploy time, so the commit holds data/ only.
+on:
+  workflow_call:
+    inputs:
+      sleep:
+        description: "Seconds between scrape requests (politeness)"
+        type: string
+        default: "1.0"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: collect-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    # A job that runs into GitHub's 6h ceiling is reported as *cancelled*,
+    # not failed, so it never surfaces as a broken run. Stop short of it.
+    timeout-minutes: 330
+    env:
+      SLEEP: ${{ inputs.sleep }}
+      DRAFT_FLAG: ""
+      BRANCH: collect/refresh
+      TITLE: "chore(data): refresh benchmark data"
+      TECHAPI_DATA_DIR: ${{ github.workspace }}/TechAPI/data
+    steps:
+      # The TechEngine commit TechAPI pins as its submodule is the engine that
+      # runs here, so collection, PR checks and the deploy share one engine.
+      - name: Checkout TechAPI develop with its pinned TechEngine
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: GetTechAPI/TechAPI
+          ref: develop
+          path: TechAPI
+          submodules: true
+          fetch-depth: 0
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install the pinned TechEngine
+        run: pip install -e ./TechAPI/TechEngine
+
+      # --- 1. Live collection (per-source; a flaky scrape must not sink the run) ---
+      - name: Enrich benchmarks (all sources)
+        working-directory: TechAPI/TechEngine
+        run: |
+          set -uo pipefail
+          run_enrich() {
+            comp="$1"; src="$2"
+            echo "::group::enrich ${comp}/${src}"
+            # Cap each source: the budget below is only consulted between
+            # sources, so without this one slow source overruns it — the last
+            # run spent 260 minutes against a 200-minute budget that way.
+            if timeout "${PER_SOURCE_S}s" python -m app.ingest.enrich \
+                 --source "$src" --component "$comp" \
+                 --data-root "$TECHAPI_DATA_DIR" --sleep "$SLEEP" \
+                 --summary "$GITHUB_WORKSPACE/enrich-${comp}-${src}.md"; then
+              :
+            else
+              echo "::warning::enrich source '${src}' (${comp}) failed; skipping"
+            fi
+            echo "::endgroup::"
+          }
+          # The scrape grew past GitHub's 6h job ceiling, and an over-running
+          # job is reported as "cancelled" rather than failed — so nothing looked
+          # broken while validate, the static dump and the refresh PR were being
+          # skipped every week. Give collection a budget it cannot exceed and
+          # leave the remainder to the rest of the pipeline.
+          BUDGET_S=$(( 150 * 60 ))
+          PER_SOURCE_S=$(( 40 * 60 ))
+          DEADLINE=$(( $(date +%s) + BUDGET_S ))
+          budget_left() {
+            if [ "$(date +%s)" -ge "$DEADLINE" ]; then
+              echo "::warning::collection budget spent; remaining sources deferred to the next run"
+              return 1
+            fi
+          }
+          # Rotate where the list starts each week: with a fixed order the tail
+          # is starved forever once the budget begins to bite.
+          rotate() {
+            local -n _a="$1"
+            local n=${#_a[@]} off=$(( 10#$(date -u +%V) % ${#_a[@]} ))
+            printf '%s\n' "${_a[@]:off}" "${_a[@]:0:off}"
+          }
+          CPU_SOURCES=(passmark cinebench-legacy cinebench-r23 cinebench-2024
+                       cinebench-nbc geekbench-nbc spec-cpu2006 topcpu-cpu)
+          GPU_SOURCES=(blender timespy passmark-gpu topcpu-gpu)
+          for s in $(rotate CPU_SOURCES); do
+            budget_left || break
+            run_enrich cpu "$s"
+          done
+          for s in $(rotate GPU_SOURCES); do
+            budget_left || break
+            run_enrich gpu "$s"
+          done
+
+      - name: Upload enrich summaries
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: refresh-summaries
+          path: enrich-*.md
+          if-no-files-found: ignore
+
+      # Commit locally first: the Tier 0 report scores the records this commit
+      # changes against develop.
+      - name: Commit data changes
+        id: commit
+        working-directory: TechAPI
+        run: |
+          set -euo pipefail
+          git add data/
+          if git diff --cached --quiet; then
+            echo "No data changes; no PR."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "base=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git commit -q -m "$TITLE"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      # Gate: a PR opened with GITHUB_TOKEN triggers no checks, so the gate runs
+      # here and its result goes in the PR body. Any failure stops the push.
+      - name: Gate (app.validate + integrity_check --strict)
+        if: steps.commit.outputs.changed == 'true'
+        working-directory: TechAPI/TechEngine
+        run: |
+          set -euo pipefail
+          python -m app.validate
+          python integrity_check.py "$TECHAPI_DATA_DIR" --strict
+
+      - name: Tier 0 report for the changed records
+        if: steps.commit.outputs.changed == 'true'
+        working-directory: TechAPI/TechEngine
+        env:
+          BASE: ${{ steps.commit.outputs.base }}
+        run: |
+          python -m app.verify score --base "$BASE" --changed --no-cache --format md \
+            > "$GITHUB_WORKSPACE/verify-report.md" 2>&1 \
+            || echo "_Tier 0 report unavailable._" > "$GITHUB_WORKSPACE/verify-report.md"
+
+      - name: Build PR body
+        if: steps.commit.outputs.changed == 'true'
+        run: |
+          {
+            echo "Closes #296"
+            echo
+            echo "Generated by TechEngine \`$GITHUB_WORKFLOW\` (run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})."
+            echo "Add the \`final-check\` label for the final pass."
+            echo
+            echo "## Gate"
+            echo "- \`app.validate\`: **passed**"
+            echo "- \`integrity_check.py --strict\`: **passed**"
+            echo
+            echo "## Tier 0 verification (changed records)"
+            echo
+            cat verify-report.md
+            echo
+            echo "## Enrichment summaries"
+            for f in enrich-*.md; do
+              [ -f "$f" ] || continue
+              echo
+              echo "<details><summary>$f</summary>"
+              echo
+              cat "$f"
+              echo
+              echo "</details>"
+            done
+          } > pr-body.md
+
+      # One open PR per task: the fixed branch is cut from develop and
+      # force-pushed each run; an open PR is edited in place. No comments.
+      - name: Push and open or update the PR
+        if: steps.commit.outputs.changed == 'true'
+        working-directory: TechAPI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git push --force origin "HEAD:refs/heads/$BRANCH"
+          number=$(gh pr list --repo GetTechAPI/TechAPI --head "$BRANCH" --base develop \
+            --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --repo GetTechAPI/TechAPI --title "$TITLE" --body-file ../pr-body.md
+          else
+            gh pr create --repo GetTechAPI/TechAPI --base develop --head "$BRANCH" \
+              --title "$TITLE" --body-file ../pr-body.md $DRAFT_FLAG \
+              --assignee Seungpyo1007 --assignee TechEngineBot \
+              --label data --label enhancement \
+              --milestone "Massive dataset rebuild (1989-2026)"
+          fi

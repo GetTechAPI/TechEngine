@@ -37,6 +37,9 @@ TechAPI/               # submodule -> GetTechAPI/TechAPI (clickable @ <sha> link
   validate-data.yml    # read-only data validation (workflow_call or manual)
   deploy-pages.yml     # build & deploy engine site + dump
   coverage-report.yml  # manual: gap report to the job summary + artifact
+  ingest.yml           # workflow_call: draft new SKUs -> one PR on TechAPI
+  refresh.yml          # workflow_call: re-scrape benchmarks -> one PR on TechAPI
+  verify-promote.yml   # workflow_call: Tier 1-3 checks + verified promotion PR
 ```
 
 ## How The Two Repos Connect
@@ -44,11 +47,14 @@ TechAPI/               # submodule -> GetTechAPI/TechAPI (clickable @ <sha> link
 Both repos live in the **GetTechAPI** org and each includes the other as a git
 **submodule** (a clickable `@ <sha>` pin). Nothing syncs them automatically.
 
-No workflow here runs on a schedule, writes to TechAPI, or uses a personal or
-bot-account token (ADR-017). Crawlers (`app.ingest`, `app.ingest.enrich`,
-`app.verify`) run only when a maintainer starts them locally; they identify
-themselves with a `TechEngine-*` User-Agent and their output reaches TechAPI as
-an ordinary reviewed PR.
+No workflow here runs on a schedule, posts comments, or uses a personal or
+bot-account token (ADR-017). Collection runs only when a maintainer dispatches
+TechAPI's `collect.yml`, which calls `ingest.yml`, `refresh.yml` or
+`verify-promote.yml` with TechAPI's own `GITHUB_TOKEN`. Each task keeps at most
+one open PR on a fixed `collect/*` branch, updated in place, after
+`app.validate` and `integrity_check.py --strict` pass. The engine that runs is
+the TechEngine commit TechAPI pins as its submodule. Crawlers identify
+themselves with a `TechEngine-*` User-Agent.
 
 Every Python entry point reads data from a **TechAPI checkout**. The location
 can be overridden via `TECHAPI_DATA_DIR`; by default TechEngine supports both
@@ -87,10 +93,10 @@ Spins up Postgres 16, seeds from the mounted TechAPI checkout, serves on `:8000`
   and surface missing SKUs as a sticky weekly issue
   ([#1](https://github.com/GetTechAPI/TechEngine/issues/1))
 - [x] **Ingestion crawler** - scrape canonical sources and draft new SKUs for
-  a TechAPI PR ([#2](https://github.com/GetTechAPI/TechEngine/issues/2)); run
-  by hand since ADR-017
+  a TechAPI PR ([#2](https://github.com/GetTechAPI/TechEngine/issues/2));
+  manual dispatch since ADR-017 (`ingest.yml`)
 - [x] **Refresh pipeline** - live benchmark enrichment -> full-dataset
-  integrity gate -> static dump; run by hand since ADR-017
+  integrity gate -> TechAPI PR; manual dispatch since ADR-017 (`refresh.yml`)
 - [ ] More sources (Intel ARK, AMD product pages, TechPowerUp DB)
 
 ## License

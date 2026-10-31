@@ -45,21 +45,23 @@ dump/v1/socs/... /v1/gpus/... /v1/cpus/... /v1/brands/...
 A static consumer just fetches, e.g.
 `https://<host>/v1/smartphones/galaxy-s25/index.json`.
 
-## 3. Refresh (maintainer run)
+## 3. Refresh (manual PR generator)
 
-Nothing refreshes on a schedule (ADR-017). A maintainer runs the cycle locally
-against a TechAPI checkout and opens the result as an ordinary TechAPI PR:
+Nothing refreshes on a schedule (ADR-017). A maintainer dispatches TechAPI's
+`collect.yml`, which calls `refresh.yml` here (or `ingest.yml`,
+`verify-promote.yml`) with TechAPI's own `GITHUB_TOKEN`:
 
 ```text
-python -m app.ingest.enrich --component cpu --source passmark \
-    --data-root ../TechAPI/data --sleep 1.0          # one source at a time
-python -m app.validate                              # schema / range / slug / FK
-python integrity_check.py ../TechAPI/data --strict  # cross-source anomaly gate
-python -m app.dump --output ../TechAPI/site/public  # regenerate the static dump
+live-scrape benchmark sources -> commit data/ on collect/refresh
+  -> full-dataset gate (app.validate + integrity_check.py --strict)
+  -> Tier 0 report for the changed records
+  -> force-push collect/refresh and open or update its one PR on develop
 ```
 
 The integrity gate re-checks the **whole** dataset every run (not just new
-rows), so a bad scrape cannot slip a contaminated value past it. Every crawler
+rows), so a bad scrape cannot slip a contaminated value past it. No dump is
+committed; TechAPI builds the static API at deploy time. No comments are
+posted; the gate result and Tier 0 report live in the PR body. Every crawler
 sends a `TechEngine-*` User-Agent; a host that refuses it is skipped, never
 worked around. The hosting target depends on the public/private decision
 (Section 5).
@@ -69,9 +71,9 @@ worked around. The hosting target depends on the public/private decision
 This repo serves **curated, validated** records, but collection now happens
 **in-repo**: `app/ingest` drafts new SKUs from upstream catalogs and
 `app/ingest/enrich` backfills benchmark columns from multiple sources
-(variant-safe, fill-only-nulls, never overwrites). Both run by hand and their
-output goes to TechAPI as a PR for human review before anything lands (SPEC
-Section 9.3). The curated
+(variant-safe, fill-only-nulls, never overwrites). Both run on manual dispatch
+and their output goes to TechAPI as a PR for human review before anything
+lands (SPEC Section 9.3). The curated
 dataset is a **subset, not exhaustive.**
 
 **Dataset layout (this repo).** Curated data uses singular folder names and is
