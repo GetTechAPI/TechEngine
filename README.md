@@ -90,7 +90,7 @@ Spins up Postgres 16, seeds from the mounted TechAPI checkout, serves on `:8000`
 
 - [x] Split out from TechAPI; sibling-checkout data pipeline
 - [x] **Coverage gap detector** - diff curated dataset vs upstream catalogs
-  and surface missing SKUs as a sticky weekly issue
+  and list missing SKUs in an on-demand report (`coverage-report.yml`)
   ([#1](https://github.com/GetTechAPI/TechEngine/issues/1))
 - [x] **Ingestion crawler** - scrape canonical sources and draft new SKUs for
   a TechAPI PR ([#2](https://github.com/GetTechAPI/TechEngine/issues/2));

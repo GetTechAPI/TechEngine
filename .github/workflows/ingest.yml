@@ -33,7 +33,8 @@ concurrency:
 
 jobs:
   ingest:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
     env:
       CATEGORY: ${{ inputs.category }}
       LIMIT: ${{ inputs.limit }}
@@ -52,7 +53,10 @@ jobs:
           ref: develop
           path: TechAPI
           submodules: true
-          fetch-depth: 0
+          # The Tier 0 diff compares the new commit with develop's tip only.
+          fetch-depth: 1
+          # The write token is handed to the push step alone.
+          persist-credentials: false
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
@@ -139,9 +143,15 @@ jobs:
             > "$GITHUB_WORKSPACE/verify-report.md" 2>&1 \
             || echo "_Tier 0 report unavailable._" > "$GITHUB_WORKSPACE/verify-report.md"
 
+      # github-actions[bot] writes the body, so scraped text must not mention
+      # anyone or cross-reference an issue: drop "@", break "#123"/"GH-123" and
+      # URLs with a zero-width space. Colours such as #3fb950 are untouched.
       - name: Build PR body
         if: steps.commit.outputs.changed == 'true'
         run: |
+          zw=$(printf '\342\200\213')
+          ref="s/(#|[Gg][Hh]-)([0-9]+)(\$|[^0-9A-Za-z_])/\1$zw\2\3/g"
+          scrub() { tr -d '@' | sed -E -e "$ref" -e "$ref" -e "s#://#:$zw//#g" -e "s/www\./www$zw./g"; }
           {
             echo "Closes #295"
             echo
@@ -154,18 +164,28 @@ jobs:
             echo
             echo "## Tier 0 verification (changed records)"
             echo
-            cat verify-report.md
+            scrub < verify-report.md
             echo
             echo "## Ingest summary"
             echo
-            cat ingest-summary.md 2>/dev/null || true
+            if [ -f ingest-summary.md ]; then scrub < ingest-summary.md; fi
             if [ -f enrich-summary.md ]; then
               echo
               echo "## Enrich summary"
               echo
-              cat enrich-summary.md
+              scrub < enrich-summary.md
             fi
-          } > pr-body.md
+          } > pr-body.full.md
+          # GitHub rejects a PR body over 65,536 characters.
+          python - <<'PY'
+          from pathlib import Path
+          body = Path("pr-body.full.md").read_text(encoding="utf-8", errors="replace")
+          limit = 60000
+          if len(body) > limit:
+              note = "\n\n_Truncated; the full summaries are in the run's artifact._\n"
+              body = body[: limit - len(note)] + note
+          Path("pr-body.md").write_text(body, encoding="utf-8")
+          PY
 
       # One open PR per task: the fixed branch is cut from develop and
       # force-pushed each run; an open PR is edited in place. No comments.
@@ -176,7 +196,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git push --force origin "HEAD:refs/heads/$BRANCH"
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            push --force origin "HEAD:refs/heads/$BRANCH"
           number=$(gh pr list --repo GetTechAPI/TechAPI --head "$BRANCH" --base develop \
             --state open --json number --jq '.[0].number // empty')
           if [ -n "$number" ]; then

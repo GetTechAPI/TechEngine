@@ -2003,14 +2003,14 @@ TechAPI의 **핵심 목표 중 하나**. TechPicks 외에 다양한 앱·플랫�
   3. 레포 간 `repository_dispatch` 중계와 서브모듈 자동 bump(`notify-*`, `bump-*`)는 없앤다.
   4. `verify-status`는 TechAPI `dump-develop`에 합치고, `dump-refresh`는 `dump-develop`의 수동 전체 재생성으로 대체한다. 커버리지 리포트는 주 1회, TechEngine 레포 이슈만 갱신한다.
   5. 스크레이핑 워크플로(`weekly-data.yml`)는 수동 실행으로 검증한 뒤에 cron을 켠다.
-  6. **예외 — TechEngineBot 최종 확인**: TechEngineBot 계정은 중요한 PR의 최종 확인자 역할로만 쓴다. 쓰기 권한이 있는 메인테이너(OWNER/MEMBER/COLLABORATOR)가 `/final-review` 댓글을 달 때만 TechAPI `final-review.yml`이 돌고, PR 하나에 댓글 하나(재실행 시 같은 댓글 수정)만 남긴다. 조회는 `GITHUB_TOKEN`으로 하고, `TECHENGINEBOT_TOKEN`(TechAPI 레포 한정 fine-grained 토큰, Pull requests: write)은 그 댓글에만 쓴다. 스케줄·push·PR 이벤트로 TechEngineBot이 움직이는 워크플로는 만들지 않는다.
+  6. **예외 — TechEngineBot 최종 확인**: TechEngineBot 계정은 중요한 PR의 최종 확인자 역할로만 쓴다. 메인테이너가 PR에 `final-check` 라벨을 붙일 때만 TechAPI `final-check.yml`이 돌고, PR 하나에 댓글 하나(재실행 시 같은 댓글 수정)만 남긴다. 조회는 `GITHUB_TOKEN`으로 하고, `TECHENGINEBOT_TOKEN`(TechAPI 레포 한정 fine-grained 토큰, Pull requests: write)은 그 댓글에만 쓴다. 스케줄·push·PR 이벤트로 TechEngineBot이 움직이는 워크플로는 만들지 않는다.
 - **개정 (2026-11-01)**: TechAPI는 PR 검증을 자체 검증기로 직접 돌리므로, 2·4·5번을 다음으로 대체한다.
   - PR 댓글 워크플로(`techapi-pr-validation-comment`, `techapi-verify-comment`)와 `refresh-data`를 삭제한다. `coverage-report`는 수동 실행·읽기 전용으로 바꾼다.
   - 수집·검증(`weekly-ingest`, `weekly-refresh`, `verify-network`)은 `ingest.yml`, `refresh.yml`, `verify-promote.yml`로 바꾼다. TechAPI `collect.yml`이 `workflow_dispatch`로만 호출하는 PR 생성기다. 작업마다 고정 브랜치(`collect/*`)에 열린 PR을 최대 1개만 두고 제자리에서 갱신한다. 댓글은 달지 않으며, 게이트(`app.validate`, `integrity_check.py --strict`) 결과와 Tier 0 보고서는 PR 본문에 남긴다. 덤프는 커밋하지 않는다. 실행되는 엔진은 TechAPI가 서브모듈로 고정한 TechEngine 커밋이다.
   - 크롤러는 브라우저를 흉내 내지 않는 `TechEngine-*` User-Agent로 자신을 밝힌다. 안티봇 챌린지는 "알 수 없음"으로 두고 `verified` 승급 근거로 쓰지 않는다. 검색엔진 결과 스크레이핑(GSMArena 후보 탐색용 DuckDuckGo/Bing)은 없앤다.
   - 모든 action은 GitHub 소유 action을 SHA로 고정해 쓴다. TechEngineBot 최종 확인(6번)은 TechAPI 쪽에서 관리한다.
 - **트레이드오프**: `GITHUB_TOKEN`이 만든 PR은 다른 워크플로를 트리거하지 않으므로, 주간 PR은 생성 전에 같은 작업 안에서 검증을 끝낸다. 포크 PR에는 토큰이 읽기 전용이라 댓글 대신 Job Summary로 결과를 남긴다. Projects 보드 필드 자동 입력(`pr-metadata`)은 없애고 GitHub Projects 내장 Auto-add를 쓴다.
-- **필요 설정**: 두 레포 Settings → Actions → General에서 "Allow GitHub Actions to create and approve pull requests"를 켜야 PR 생성이 된다.
+- **필요 설정**: PR은 TechAPI에서 TechAPI 토큰으로 만들어지므로 TechAPI만 Settings → Actions → General의 "Allow GitHub Actions to create and approve pull requests"를 켠다. TechEngine은 끈 채로 둔다.
 
 ---
 
