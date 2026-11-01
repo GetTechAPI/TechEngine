@@ -40,6 +40,7 @@ TechAPI/               # submodule -> GetTechAPI/TechAPI (clickable @ <sha> link
   ingest.yml           # workflow_call: draft new SKUs -> one PR on TechAPI
   refresh.yml          # workflow_call: re-scrape benchmarks -> one PR on TechAPI
   verify-promote.yml   # workflow_call: Tier 1-3 checks + verified promotion PR
+  final-check.yml      # `final-check` label: test.yml's checks, one TechEngineBot comment
 ```
 
 ## How The Two Repos Connect
@@ -47,8 +48,9 @@ TechAPI/               # submodule -> GetTechAPI/TechAPI (clickable @ <sha> link
 Both repos live in the **GetTechAPI** org and each includes the other as a git
 **submodule** (a clickable `@ <sha>` pin). Nothing syncs them automatically.
 
-No workflow here runs on a schedule, posts comments, or uses a personal or
-bot-account token (ADR-017). Collection runs only when a maintainer dispatches
+No workflow here runs on a schedule or uses a personal access token (ADR-017).
+The one comment any workflow posts is TechEngineBot's final check, and only
+when a maintainer adds the `final-check` label to a PR (`final-check.yml`). Collection runs only when a maintainer dispatches
 TechAPI's `collect.yml`, which calls `ingest.yml`, `refresh.yml` or
 `verify-promote.yml` with TechAPI's own `GITHUB_TOKEN`. Each task keeps at most
 one open PR on a fixed `collect/*` branch, updated in place, after
