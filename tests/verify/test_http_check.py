@@ -61,6 +61,57 @@ def test_head_rejected_falls_back_to_get():
     assert res.alive and res.status == 200
 
 
+class ByMethod:
+    """Answers HEAD and GET differently; an Exception value is raised."""
+
+    def __init__(self, head, get):
+        self.answers = {"HEAD": head, "GET": get}
+        self.calls = []
+
+    def open(self, url, method):
+        self.calls.append(method)
+        val = self.answers[method]
+        if isinstance(val, Exception):
+            raise val
+        return val
+
+
+def _http_error(code):
+    return type("E", (Exception,), {"code": code, "url": None, "headers": {}})()
+
+
+def test_head_404_then_get_200_is_alive():
+    # Kaggle dataset pages answer HEAD with 404 and GET with 200.
+    url = "https://www.kaggle.com/datasets/msainani/gsmarena-mobile-devices"
+    op = ByMethod(head=_http_error(404), get=(200, url))
+    res = http_check.check_one(url, op)
+    assert res.alive and res.status == 200
+    assert op.calls == ["HEAD", "GET"]
+
+
+def test_head_404_returned_then_get_200_is_alive():
+    url = "https://www.kaggle.com/datasets/jakubkhalponiak/phones-2024"
+    res = http_check.check_one(url, ByMethod(head=(404, url), get=(200, url)))
+    assert res.alive and res.status == 200
+
+
+def test_head_404_then_get_404_is_dead():
+    url = "https://example.com/gone"
+    op = ByMethod(head=_http_error(404), get=_http_error(404))
+    res = http_check.check_one(url, op)
+    assert not res.alive and res.reason == "http-404"
+    assert op.calls == ["HEAD", "GET"]
+
+
+def test_head_429_does_not_get_in_the_same_attempt(monkeypatch):
+    monkeypatch.setattr(http_check.time, "sleep", lambda _s: None)
+    url = "https://www.gsmarena.com/x-1.php"
+    op = ByMethod(head=_Http429(url, retry_after="0"), get=(200, url))
+    res = http_check.check_one(url, op)
+    assert res.status == 429 and res.transient
+    assert op.calls == ["HEAD"] * http_check.RETRY_ATTEMPTS
+
+
 def test_connection_error_is_dead():
     table = {"https://nope.invalid/x": ConnectionError("no route")}
     [res] = http_check.check_urls(list(table), opener_factory=_factory(table), min_interval=0)
