@@ -63,8 +63,9 @@ tests/               unit/ + integration/ (conftest seeds a temp SQLite from dat
 docs/                SPEC.md, DATA_PIPELINE.md, DEVELOPMENT.md
 .github/workflows/   test.yml, validate-data.yml, deploy-pages.yml, coverage-report.yml,
                      final-check.yml (`final-check` label -> one TechEngineBot comment), and
-                     the manual PR generators TechAPI's collect.yml calls: ingest.yml,
-                     refresh.yml, verify-promote.yml (nothing scheduled; ADR-017)
+                     the manual change generators TechAPI's collect.yml calls: ingest.yml,
+                     refresh.yml, verify-promote.yml (read-only, each uploads
+                     collect.patch; nothing scheduled; ADR-017)
 ```
 
 > Note: **data folders are singular** (`data/soc/…`) but **API routes are plural**

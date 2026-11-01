@@ -1,10 +1,12 @@
 name: ingest
 
-# Reusable, manual PR generator (ADR-017). Only TechAPI's collect.yml calls it,
-# from workflow_dispatch, so github.token is TechAPI's GITHUB_TOKEN and the
-# branch and PR come from github-actions[bot]. Nothing here runs on a schedule,
-# posts a comment, or uses a personal or bot-account token. Crawlers send the
-# honest TechEngine-* User-Agent and keep their --sleep and limits.
+# Reusable, manual change generator (ADR-017). Only TechAPI's collect.yml calls
+# it, from workflow_dispatch, with a read-only token. The run commits locally,
+# gates the result and uploads the commit as collect.patch; a maintainer opens
+# the PR from their own account with TechAPI's .github/scripts/open-collect-pr.sh.
+# Nothing here pushes, opens a PR, posts a comment, runs on a schedule, or uses
+# a personal or bot-account token. Crawlers send the honest TechEngine-*
+# User-Agent and keep their --sleep and limits.
 #
 # Task: scrape upstream catalogs and draft missing SKUs into TechAPI data/.
 on:
@@ -24,8 +26,7 @@ on:
         default: false
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: collect-ingest-${{ inputs.category }}
@@ -39,7 +40,6 @@ jobs:
       CATEGORY: ${{ inputs.category }}
       LIMIT: ${{ inputs.limit }}
       INCLUDE_DRAFTS: ${{ inputs.include_drafts }}
-      DRAFT_FLAG: ${{ inputs.include_drafts && '--draft' || '' }}
       BRANCH: collect/ingest-${{ inputs.category }}
       TITLE: "feat(data/${{ inputs.category }}): ingest new SKUs"
       TECHAPI_DATA_DIR: ${{ github.workspace }}/TechAPI/data
@@ -55,7 +55,7 @@ jobs:
           submodules: true
           # The Tier 0 diff compares the new commit with develop's tip only.
           fetch-depth: 1
-          # The write token is handed to the push step alone.
+          # Nothing in this job pushes.
           persist-credentials: false
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -112,7 +112,7 @@ jobs:
           set -euo pipefail
           git add data/
           if git diff --cached --quiet; then
-            echo "No data changes; no PR."
+            echo "No data changes; no patch."
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -123,8 +123,8 @@ jobs:
           git commit -q -m "$TITLE"
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
-      # Gate: a PR opened with GITHUB_TOKEN triggers no checks, so the gate runs
-      # here and its result goes in the PR body. Any failure stops the push.
+      # Gate: the result goes in the PR body. Any failure stops the run before
+      # the patch is uploaded.
       - name: Gate (app.validate + integrity_check --strict)
         if: steps.commit.outputs.changed == 'true'
         working-directory: TechAPI/TechEngine
@@ -143,8 +143,8 @@ jobs:
             > "$GITHUB_WORKSPACE/verify-report.md" 2>&1 \
             || echo "_Tier 0 report unavailable._" > "$GITHUB_WORKSPACE/verify-report.md"
 
-      # github-actions[bot] writes the body, so scraped text must not mention
-      # anyone or cross-reference an issue: drop "@", break "#123"/"GH-123" and
+      # The body carries scraped text, which must not mention anyone or
+      # cross-reference an issue: drop "@", break "#123"/"GH-123" and
       # URLs with a zero-width space. Colours such as #3fb950 are untouched.
       - name: Build PR body
         if: steps.commit.outputs.changed == 'true'
@@ -187,26 +187,46 @@ jobs:
           Path("pr-body.md").write_text(body, encoding="utf-8")
           PY
 
-      # One open PR per task: the fixed branch is cut from develop and
-      # force-pushed each run; an open PR is edited in place. No comments.
-      - name: Push and open or update the PR
+      # The token is read-only, so the commit leaves the run as a patch. A
+      # maintainer opens the PR from their own account with TechAPI's
+      # .github/scripts/open-collect-pr.sh <run-id>, so the PR's checks run.
+      - name: Export the commit as collect.patch
         if: steps.commit.outputs.changed == 'true'
-        working-directory: TechAPI
         env:
-          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ steps.commit.outputs.base }}
+          DRAFT: ${{ inputs.include_drafts }}
         run: |
           set -euo pipefail
-          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
-            push --force origin "HEAD:refs/heads/$BRANCH"
-          number=$(gh pr list --repo GetTechAPI/TechAPI --head "$BRANCH" --base develop \
-            --state open --json number --jq '.[0].number // empty')
-          if [ -n "$number" ]; then
-            gh pr edit "$number" --repo GetTechAPI/TechAPI --title "$TITLE" --body-file ../pr-body.md
-          else
-            gh pr create --repo GetTechAPI/TechAPI --base develop --head "$BRANCH" \
-              --title "$TITLE" --body-file ../pr-body.md $DRAFT_FLAG \
-              --assignee Seungpyo1007 --assignee TechEngineBot \
-              --label data --label enhancement \
-              --milestone "Massive dataset rebuild (1989-2026)"
+          outside=$(git -C TechAPI diff --name-only "$BASE" HEAD | grep -v '^data/' || true)
+          if [ -n "$outside" ]; then
+            echo "::error::The commit touches files outside data/:"
+            echo "$outside"
+            exit 1
           fi
+          git -C TechAPI format-patch -1 --base="$BASE" --stdout HEAD > collect.patch
+          python - <<'PY'
+          import json
+          import os
+          meta = {
+              "branch": os.environ["BRANCH"],
+              "title": os.environ["TITLE"],
+              "draft": os.environ.get("DRAFT") == "true",
+              "base": os.environ["BASE"],
+          }
+          with open("pr.json", "w", encoding="utf-8") as f:
+              json.dump(meta, f, indent=2)
+              f.write("\n")
+          PY
+          cat pr-body.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload collect.patch
+        if: steps.commit.outputs.changed == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: collect-ingest-${{ inputs.category }}
+          path: |
+            collect.patch
+            pr-body.md
+            pr.json
+          if-no-files-found: error
+          retention-days: 14
