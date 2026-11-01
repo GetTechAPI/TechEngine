@@ -45,17 +45,19 @@ dump/v1/socs/... /v1/gpus/... /v1/cpus/... /v1/brands/...
 A static consumer just fetches, e.g.
 `https://<host>/v1/smartphones/galaxy-s25/index.json`.
 
-## 3. Refresh (manual PR generator)
+## 3. Refresh (manual change generator)
 
 Nothing refreshes on a schedule (ADR-017). A maintainer dispatches TechAPI's
 `collect.yml`, which calls `refresh.yml` here (or `ingest.yml`,
-`verify-promote.yml`) with TechAPI's own `GITHUB_TOKEN`:
+`verify-promote.yml`) with a read-only token:
 
 ```text
 live-scrape benchmark sources -> commit data/ on collect/refresh
   -> full-dataset gate (app.validate + integrity_check.py --strict)
   -> Tier 0 report for the changed records
-  -> force-push collect/refresh and open or update its one PR on develop
+  -> upload the commit as collect.patch (artifact collect-refresh)
+  -> a maintainer opens the PR on develop from their own account with
+     TechAPI's .github/scripts/open-collect-pr.sh <run-id>
 ```
 
 The integrity gate re-checks the **whole** dataset every run (not just new
