@@ -1,0 +1,225 @@
+name: final-check
+
+# A maintainer adds the `final-check` label to an important PR. The check job
+# runs what test.yml runs (ruff, mypy, the seed-data validator, pytest with
+# coverage) on the PR, and TechEngineBot leaves ONE comment with the verdict;
+# adding the label again edits that comment. This is the only place the
+# TechEngineBot account is used in this repo, and it replaces Copilot reviews.
+#
+# The check job runs PR code, so it gets no secrets and a read-only token.
+# Only the comment job sees TECHENGINEBOT_TOKEN, which must be a fine-grained
+# token of TechEngineBot with Pull requests: read and write; the job refuses any
+# other kind of token or account. Fork PRs never get a comment.
+on:
+  pull_request:
+    types: [labeled]
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  check:
+    if: github.event.label.name == 'final-check'
+    runs-on: ubuntu-24.04
+    # test.yml takes about 10-15 minutes.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    concurrency:
+      group: final-check-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    outputs:
+      body: ${{ steps.report.outputs.body }}
+    env:
+      PYTHONIOENCODING: utf-8
+      TECHAPI_DATA_DIR: ${{ github.workspace }}/TechAPI/data
+    steps:
+      # The merge commit, as main would look after merging.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: GetTechAPI/TechAPI
+          path: TechAPI
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        id: install
+        continue-on-error: true
+        run: |
+          status=0
+          python -m pip install --disable-pip-version-check -e ".[dev]" > "$RUNNER_TEMP/install.log" 2>&1 || status=$?
+          tail -n 40 "$RUNNER_TEMP/install.log"
+          exit "$status"
+
+      - name: Lint (ruff)
+        id: ruff
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        run: |
+          status=0
+          ruff check app tests > "$RUNNER_TEMP/ruff.log" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/ruff.log"
+          exit "$status"
+
+      - name: Type check (mypy)
+        id: mypy
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        run: |
+          status=0
+          mypy app > "$RUNNER_TEMP/mypy.log" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/mypy.log"
+          exit "$status"
+
+      - name: Validate seed data
+        id: validate
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        run: |
+          status=0
+          python -m app.validate > "$RUNNER_TEMP/validate.log" 2>&1 || status=$?
+          tail -n 40 "$RUNNER_TEMP/validate.log"
+          exit "$status"
+
+      - name: Tests + coverage (fail under 60%)
+        id: pytest
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        run: |
+          status=0
+          pytest --cov=app --cov-report=term --cov-fail-under=60 > "$RUNNER_TEMP/pytest.log" 2>&1 || status=$?
+          tail -n 60 "$RUNNER_TEMP/pytest.log"
+          exit "$status"
+
+      # The comment quotes tool output, which can carry text from the PR: logs
+      # stay inside code fences with backticks and @ removed, so they can
+      # neither break out into markdown nor mention anyone.
+      - name: Report
+        id: report
+        if: always()
+        env:
+          INSTALL: ${{ steps.install.outcome }}
+          RUFF: ${{ steps.ruff.outcome }}
+          MYPY: ${{ steps.mypy.outcome }}
+          VALIDATE: ${{ steps.validate.outcome }}
+          PYTEST: ${{ steps.pytest.outcome }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          clean() { tr -d '`@' | cut -c1-300; }
+          fence() {  # fence <log> <lines>
+            echo '```text'
+            tail -n "$2" "$1" 2>/dev/null | clean
+            echo '```'
+          }
+          verdict='✅ Final check passed'
+          [ "$INSTALL/$RUFF/$MYPY/$VALIDATE/$PYTEST" = success/success/success/success/success ] \
+            || verdict='❌ Final check failed'
+          {
+            echo '<!-- techengine-final-check -->'
+            echo "### $verdict"
+            echo
+            echo "Head \`${HEAD_SHA::7}\`, checked as merged into the base · [run]($RUN_URL)"
+            echo
+            echo '| Step | Result |'
+            echo '| --- | --- |'
+            echo "| Install | ${INSTALL:-skipped} |"
+            echo "| Lint (ruff) | ${RUFF:-skipped} |"
+            echo "| Type check (mypy) | ${MYPY:-skipped} |"
+            echo "| Validate seed data | ${VALIDATE:-skipped} |"
+            echo "| Tests + coverage (60%) | ${PYTEST:-skipped} |"
+            if [ -s "$RUNNER_TEMP/pytest.log" ]; then
+              echo
+              echo '<details><summary>pytest summary</summary>'
+              echo
+              fence "$RUNNER_TEMP/pytest.log" 5
+              echo '</details>'
+            fi
+            [ "$INSTALL" = failure ] && { echo; echo '<details><summary>Install log</summary>'; echo; fence "$RUNNER_TEMP/install.log" 20; echo '</details>'; }
+            [ "$RUFF" = failure ] && { echo; echo '<details><summary>ruff log</summary>'; echo; fence "$RUNNER_TEMP/ruff.log" 30; echo '</details>'; }
+            [ "$MYPY" = failure ] && { echo; echo '<details><summary>mypy log</summary>'; echo; fence "$RUNNER_TEMP/mypy.log" 30; echo '</details>'; }
+            [ "$VALIDATE" = failure ] && { echo; echo '<details><summary>Validation log</summary>'; echo; fence "$RUNNER_TEMP/validate.log" 30; echo '</details>'; }
+            [ "$PYTEST" = failure ] && { echo; echo '<details><summary>pytest log</summary>'; echo; fence "$RUNNER_TEMP/pytest.log" 40; echo '</details>'; }
+            true
+          } > "$RUNNER_TEMP/body.md"
+          cat "$RUNNER_TEMP/body.md" >> "$GITHUB_STEP_SUMMARY"
+          delim="BODY_$(openssl rand -hex 16)"
+          { echo "body<<$delim"; cat "$RUNNER_TEMP/body.md"; echo "$delim"; } >> "$GITHUB_OUTPUT"
+          [ "$verdict" = '✅ Final check passed' ]
+
+  comment:
+    needs: check
+    if: >-
+      always() && github.event.label.name == 'final-check' &&
+      (needs.check.result == 'success' || needs.check.result == 'failure') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check the token
+        id: token
+        env:
+          TOKEN: ${{ secrets.TECHENGINEBOT_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::warning::TECHENGINEBOT_TOKEN is not set; the verdict is in the check job's summary only."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          case "$TOKEN" in
+            github_pat_*) echo "ok=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::TECHENGINEBOT_TOKEN must be a fine-grained token (github_pat_...) of TechEngineBot with Pull requests: read and write."
+               exit 1 ;;
+          esac
+
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        if: steps.token.outputs.ok == 'true'
+        env:
+          BODY: ${{ needs.check.outputs.body }}
+          PR: ${{ github.event.pull_request.number }}
+        with:
+          github-token: ${{ secrets.TECHENGINEBOT_TOKEN }}
+          script: |
+            const marker = '<!-- techengine-final-check -->';
+            // The check job ran the PR's code, so its report is untrusted here:
+            // drop every @ and break issue references and issue/PR links, so the
+            // comment can neither mention anyone nor cross-reference anything.
+            const zw = '\u200b';
+            const body = (process.env.BODY || '')
+              .replace(/@/g, '')
+              .replace(/(?<!&)#(?=\d+\b)/g, `#${zw}`)
+              .replace(/\bgh-(?=\d+\b)/gi, `$&${zw}`)
+              .replace(/\/(issues|pull|discussions)\/(?=\d)/g, `/$1/${zw}`)
+              .slice(0, 65000);
+            if (!body.startsWith(marker)) {
+              core.setFailed('The check job produced no report; nothing posted.');
+              return;
+            }
+            const { data: me } = await github.rest.users.getAuthenticated();
+            if (me.login !== 'TechEngineBot') {
+              core.setFailed(`TECHENGINEBOT_TOKEN belongs to ${me.login}, not TechEngineBot; nothing posted.`);
+              return;
+            }
+            const { owner, repo } = context.repo;
+            const issue_number = Number(process.env.PR);
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            });
+            const mine = comments.find((c) => c.user?.login === me.login && c.body?.startsWith(marker));
+            if (!mine) {
+              const { data } = await github.rest.issues.createComment({ owner, repo, issue_number, body });
+              core.info(`Posted ${data.html_url}`);
+            } else if (mine.body !== body) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
+              core.info(`Updated ${mine.html_url}`);
+            } else {
+              core.info(`Unchanged: ${mine.html_url}`);
+            }

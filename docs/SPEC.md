@@ -1455,6 +1455,7 @@ chore: bump fastapi to 0.115
 | `coverage-report.yml` | 수동 | 커버리지 갭 리포트를 Job Summary와 아티팩트로 (이슈 작성 없음) |
 | `ingest.yml` | `workflow_call` (TechAPI `collect.yml`, 수동) | 신규 SKU 수집 → `collect/ingest-<category>` PR 1개 |
 | `refresh.yml` | `workflow_call` (TechAPI `collect.yml`, 수동) | 벤치마크 재수집 → `collect/refresh` PR 1개 (덤프 없음) |
+| `final-check.yml` | PR에 `final-check` 라벨 (`main` 대상) | `test.yml`과 같은 검사(ruff, mypy, 시드 검증, pytest) 후 TechEngineBot 댓글 1개 |
 | `verify-promote.yml` | `workflow_call` (TechAPI `collect.yml`, 수동, `apply` 입력) | Tier 1-3 검증 + `verified` 승급 → `collect/promote` PR 1개 |
 
 모든 action은 GitHub 소유 action만, 전체 커밋 SHA로 고정한다.
@@ -2004,7 +2005,7 @@ TechAPI의 **핵심 목표 중 하나**. TechPicks 외에 다양한 앱·플랫�
   3. 레포 간 `repository_dispatch` 중계와 서브모듈 자동 bump(`notify-*`, `bump-*`)는 없앤다.
   4. `verify-status`는 TechAPI `dump-develop`에 합치고, `dump-refresh`는 `dump-develop`의 수동 전체 재생성으로 대체한다. 커버리지 리포트는 주 1회, TechEngine 레포 이슈만 갱신한다.
   5. 스크레이핑 워크플로(`weekly-data.yml`)는 수동 실행으로 검증한 뒤에 cron을 켠다.
-  6. **예외 — TechEngineBot 최종 확인**: TechEngineBot 계정은 중요한 PR의 최종 확인자 역할로만 쓴다. 메인테이너가 PR에 `final-check` 라벨을 붙일 때만 TechAPI `final-check.yml`이 돌고, PR 하나에 댓글 하나(재실행 시 같은 댓글 수정)만 남긴다. 조회는 `GITHUB_TOKEN`으로 하고, `TECHENGINEBOT_TOKEN`(TechAPI 레포 한정 fine-grained 토큰, Pull requests: write)은 그 댓글에만 쓴다. 스케줄·push·PR 이벤트로 TechEngineBot이 움직이는 워크플로는 만들지 않는다.
+  6. **예외 — TechEngineBot 최종 확인**: TechEngineBot 계정은 중요한 PR의 최종 확인자 역할로만 쓴다. 메인테이너가 PR에 `final-check` 라벨을 붙일 때만 각 GetTechAPI 레포(TechAPI, TechEngine, TechMachine, game-catalog, cpu-engineering-samples)의 `final-check.yml`이 돌고, PR 하나에 댓글 하나(재실행 시 같은 댓글 수정)만 남긴다. 검사 작업은 시크릿 없이 읽기 전용 토큰으로 돌고, `TECHENGINEBOT_TOKEN`(TechEngineBot의 fine-grained 토큰, Pull requests: read and write)은 그 댓글 작업에만 쓴다. Copilot 리뷰는 쓰지 않는다. 스케줄·push·PR 이벤트로 TechEngineBot이 움직이는 워크플로는 만들지 않는다.
 - **개정 (2026-11-01)**: TechAPI는 PR 검증을 자체 검증기로 직접 돌리므로, 2·4·5번을 다음으로 대체한다.
   - PR 댓글 워크플로(`techapi-pr-validation-comment`, `techapi-verify-comment`)와 `refresh-data`를 삭제한다. `coverage-report`는 수동 실행·읽기 전용으로 바꾼다.
   - 수집·검증(`weekly-ingest`, `weekly-refresh`, `verify-network`)은 `ingest.yml`, `refresh.yml`, `verify-promote.yml`로 바꾼다. TechAPI `collect.yml`이 `workflow_dispatch`로만 호출하는 PR 생성기다. 작업마다 고정 브랜치(`collect/*`)에 열린 PR을 최대 1개만 두고 제자리에서 갱신한다. 댓글은 달지 않으며, 게이트(`app.validate`, `integrity_check.py --strict`) 결과와 Tier 0 보고서는 PR 본문에 남긴다. 덤프는 커밋하지 않는다. 실행되는 엔진은 TechAPI가 서브모듈로 고정한 TechEngine 커밋이다.

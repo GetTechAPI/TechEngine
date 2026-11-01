@@ -61,7 +61,8 @@ scripts/
   dump.py            DB → static JSON dump (replays API in-process) → ./dump
 tests/               unit/ + integration/ (conftest seeds a temp SQLite from data/)
 docs/                SPEC.md, DATA_PIPELINE.md, DEVELOPMENT.md
-.github/workflows/   test.yml, validate-data.yml, deploy-pages.yml, coverage-report.yml, and
+.github/workflows/   test.yml, validate-data.yml, deploy-pages.yml, coverage-report.yml,
+                     final-check.yml (`final-check` label -> one TechEngineBot comment), and
                      the manual PR generators TechAPI's collect.yml calls: ingest.yml,
                      refresh.yml, verify-promote.yml (nothing scheduled; ADR-017)
 ```
