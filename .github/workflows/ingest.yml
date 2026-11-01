@@ -197,7 +197,7 @@ jobs:
           DRAFT: ${{ inputs.include_drafts }}
         run: |
           set -euo pipefail
-          outside=$(git -C TechAPI diff --name-only "$BASE" HEAD | grep -v '^data/' || true)
+          outside=$(git -C TechAPI diff --no-renames --name-only "$BASE" HEAD | grep -v '^data/' || true)
           if [ -n "$outside" ]; then
             echo "::error::The commit touches files outside data/:"
             echo "$outside"
