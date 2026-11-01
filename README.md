@@ -40,7 +40,7 @@ TechAPI/               # submodule -> GetTechAPI/TechAPI (clickable @ <sha> link
   ingest.yml           # workflow_call: draft new SKUs -> one PR on TechAPI
   refresh.yml          # workflow_call: re-scrape benchmarks -> one PR on TechAPI
   verify-promote.yml   # workflow_call: Tier 1-3 checks + verified promotion PR
-  final-check.yml      # `final-check` label: test.yml's checks, one TechEngineBot comment
+  final-check.yml      # label-triggered checks + one TechEngineBot comment
 ```
 
 ## How The Two Repos Connect
@@ -49,14 +49,14 @@ Both repos live in the **GetTechAPI** org and each includes the other as a git
 **submodule** (a clickable `@ <sha>` pin). Nothing syncs them automatically.
 
 No workflow here runs on a schedule or uses a personal access token (ADR-017).
-The one comment any workflow posts is TechEngineBot's final check, and only
-when a maintainer adds the `final-check` label to a PR (`final-check.yml`). Collection runs only when a maintainer dispatches
-TechAPI's `collect.yml`, which calls `ingest.yml`, `refresh.yml` or
-`verify-promote.yml` with TechAPI's own `GITHUB_TOKEN`. Each task keeps at most
-one open PR on a fixed `collect/*` branch, updated in place, after
-`app.validate` and `integrity_check.py --strict` pass. The engine that runs is
-the TechEngine commit TechAPI pins as its submodule. Crawlers identify
-themselves with a `TechEngine-*` User-Agent.
+The one comment any workflow posts is TechEngineBot's final check, and only when
+a maintainer adds the `final-check` label to a PR (`final-check.yml`).
+Collection runs only when a maintainer dispatches TechAPI's `collect.yml`, which
+calls `ingest.yml`, `refresh.yml` or `verify-promote.yml` with TechAPI's own
+`GITHUB_TOKEN`. Each task keeps at most one open PR on a fixed `collect/*`
+branch, updated in place, after `app.validate` and `integrity_check.py --strict`
+pass. The engine that runs is the TechEngine commit TechAPI pins as its
+submodule. Crawlers identify themselves with a `TechEngine-*` User-Agent.
 
 Every Python entry point reads data from a **TechAPI checkout**. The location
 can be overridden via `TECHAPI_DATA_DIR`; by default TechEngine supports both
