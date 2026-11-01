@@ -155,6 +155,12 @@ def _is_automation_challenge(exc: Exception, code: int) -> bool:
 def _attempt(url: str, opener: Any) -> tuple[int | None, str | None, float | None, bool]:
     """One HEAD-then-GET pass.
 
+    HEAD is only a shortcut: a success answers the question, and a rate-limit
+    answer (429/503) goes straight back to :func:`check_one`'s backoff. Any other
+    status of 400 or more, or a network error, falls through to GET and GET's
+    answer is the result. Some hosts answer HEAD with a status GET does not
+    give: Kaggle dataset pages answer HEAD with 404 and GET with 200.
+
     Returns ``(status, final_url, retry_after, automation_challenge)``.  The last
     value is intentionally based on an explicit gateway signal, never on a bare
     403, so unavailable pages cannot become promotable merely by returning 403.
@@ -164,28 +170,26 @@ def _attempt(url: str, opener: Any) -> tuple[int | None, str | None, float | Non
     retry_after: float | None = None
     automation_challenge = False
     for method in ("HEAD", "GET"):
+        retry_after, automation_challenge = None, False
         try:
             status, final = opener.open(url, method)
-            if method == "HEAD" and status in (400, 403, 405, 501):
-                continue  # server dislikes HEAD -> retry GET
-            break
         except Exception as exc:  # HTTPError carries a code; everything else is dead
             code = getattr(exc, "code", None)
-            if isinstance(code, int):
-                status, final = code, getattr(exc, "url", None) or url
-                retry_after = _retry_after_seconds(exc)
-                automation_challenge = _is_automation_challenge(exc, code)
-                if method == "HEAD" and code in (400, 403, 405, 501):
-                    continue
-                break
-            status, final, automation_challenge = None, None, False
+            if not isinstance(code, int):
+                status, final = None, None
+                continue
+            status, final = code, getattr(exc, "url", None) or url
+            retry_after = _retry_after_seconds(exc)
+            automation_challenge = _is_automation_challenge(exc, code)
+        if status < 400 or status in TRANSIENT_STATUSES:
+            break
     return status, final, retry_after, automation_challenge
 
 
 def check_one(
     url: str, opener: Any, *, on_rate_limit: Callable[[str], None] | None = None
 ) -> CheckResult:
-    """HEAD first; fall back to GET when HEAD is rejected (405/403) or errors.
+    """HEAD first; when HEAD fails with anything but a rate limit, GET decides.
 
     A rate-limit answer (429/503) is retried with backoff — the host is telling us
     to wait, not that the page is gone.
