@@ -11,13 +11,15 @@ from collections.abc import Iterator
 
 from bs4 import Tag
 
+from ..normalize import parse_frequency_ghz
 from .wikitable import _span
 
 
 def _field(label: str) -> str | None:
     text = label.lower()
-    # Integrated GPU/NPU columns ("Arc Graphics / X Cores") describe another chip.
-    if re.search(r"\b(gpu|npu|graphics)\b", text):
+    # Integrated GPU/NPU columns ("Arc Graphics / X Cores") describe another chip,
+    # and "Memory / Clock (MT/s)" the memory bus.
+    if re.search(r"\b(i?gpu|igp|npu|graphics|memory)\b", text):
         return None
     if "branding" in text or "family" in text:
         return "family" if "model" not in text else "model"
@@ -31,14 +33,28 @@ def _field(label: str) -> str | None:
     if "threads" in text:
         return "threads"
     if "l3" in text or "smart cache" in text:
-        return "l3_cache"
+        # "L3 per CCX" is one chiplet's share, not the chip's L3.
+        return None if re.search(r"\bper\b", text) else "l3_cache"
     # Before the clock checks: "TDP / Base" and "Power / Turbo" are watts.
     if "tdp" in text or "wattage" in text or text.startswith("power"):
-        return None if "configurable" in text else "tdp"
+        # Only the base (default) figure is tdp_w. cTDP up/down, turbo (PL2) and
+        # any other sub-label ("TDP (W) / E" from a misaligned header) are not.
+        parts = [part.strip() for part in text.split(" / ") if part.strip()]
+        if (
+            "configurable" in text
+            or parts[0].startswith("ctdp")
+            or any(not part.startswith(("base", "default", "nominal")) for part in parts[1:])
+        ):
+            return None
+        return "tdp"
+    # Clocks of the efficiency cores, a cTDP-down base and a minimum base are not
+    # the chip's base or boost clock.
+    if leaf in {"e", "lp-e"}:
+        return None
     if any(token in text for token in ("boost", "turbo", "pbo", "pb2")):
         return "boost_clock"
     if any(token in text for token in ("base", "clock", "freq")):
-        return "base_clock"
+        return None if re.search(r"\b(min|down)\b", leaf) else "base_clock"
     if "release" in text or "launch" in text:
         return None if any(token in text for token in ("price", "msrp")) else "release_date"
     if "socket" in text:
@@ -63,6 +79,8 @@ def _with_units(value: str, label: str, field: str) -> str:
         "l3_cache": r"\b(KiB|MiB|GiB|KB|MB|GB)\b",
         "tdp": r"\b(W)\b",
     }
+    if field in ("base_clock", "boost_clock"):
+        value = _clock_value(value, field)
     pattern = units.get(field)
     if pattern and not re.search(pattern, value, re.I):
         match = re.search(pattern, label, re.I)
@@ -75,6 +93,32 @@ def _with_units(value: str, label: str, field: str) -> str:
         if product:
             value = f"{int(product[1]) * float(product[2])} {product[3]}"
     return value
+
+
+# "5.0 / 3.7": Zen 4 and Zen 4c clocks in one cell. "4.0 (3.7)": PBO with 1–2
+# cores and with more. Both decimals are required: a misaligned table puts core
+# counts such as "4 (4)" under clock headers.
+_TWO_CLOCKS_RE = re.compile(r"\s*(\d+\.\d+)\s*/\s*\d+(?:\.\d+)?\s*")
+_PBO_CLOCKS_RE = re.compile(r"\s*(\d+\.\d+)\s*\(\s*\d+\.\d+\s*\)\s*")
+
+
+def _clock_value(value: str, field: str) -> str:
+    """The clock a cell states for ``field``, or ``""`` when it states none.
+
+    The first value of ``"5.0 / 3.7"`` is the max boost, but the cell names no
+    single base clock. PBO ``"4.0 (3.7)"`` boosts to the first value.
+    """
+    if (two := _TWO_CLOCKS_RE.fullmatch(value)) is not None:
+        return two[1] if field == "boost_clock" else ""
+    if (pbo := _PBO_CLOCKS_RE.fullmatch(value)) is not None:
+        return pbo[1]
+    return value
+
+
+def _clock_ghz(value: str) -> float:
+    """Sort key for boost columns; a misread cell ("Q4 2017 GHz") sorts last."""
+    ghz = parse_frequency_ghz(value)
+    return ghz if ghz is not None and 0.1 <= ghz <= 7 else -1.0
 
 
 _HYBRID_PARTS = {"p", "e", "lp-e", "total"}
@@ -126,18 +170,25 @@ def parse_cpu_table(table: Tag) -> Iterator[dict[str, str]]:
     """Yield canonical fields, including ``family``, without vendor assumptions.
 
     Direct cell children avoid consuming nested rows from imperfect Wikipedia
-    HTML. Row indices include empty rows so rowspan carry stays aligned.
-    Full-width captions and repeated headers never become processors.
+    HTML. Row indices include empty rows so rowspan carry stays aligned, but
+    not the hidden ``mw-empty-elt`` rows browsers never lay out. Full-width
+    captions and repeated headers never become processors. Boost is the highest
+    boost column (all-core and Turbo 2.0 columns come before the max turbo);
+    every other field takes its first non-empty column.
     """
-    rows = [row for row in table.find_all("tr") if row.find_parent("table") is table]
+    rows = [
+        row
+        for row in table.find_all("tr")
+        if row.find_parent("table") is table and "mw-empty-elt" not in (row.get("class") or [])
+    ]
     pending: dict[tuple[int, int], str] = {}
     grid: list[list[str]] = []
     header_flags: list[bool] = []
-    captions: list[bool] = []
+    lone_spans: list[int] = []
     for index, row in enumerate(rows):
         cells = row.find_all(["th", "td"], recursive=False)
         header_flags.append(bool(cells) and all(cell.name == "th" for cell in cells))
-        captions.append(len(cells) == 1 and _span(cells[0], "colspan") > 1)
+        lone_spans.append(_span(cells[0], "colspan") if len(cells) == 1 else 0)
         values: list[str] = []
         column = 0
         for cell in cells:
@@ -160,6 +211,10 @@ def parse_cpu_table(table: Tag) -> Iterator[dict[str, str]]:
             column += 1
         grid.append(values)
 
+    # A lone cell is a caption only when it spans the table: "2.0" under a
+    # "Turbo Boost" heading is a header cell.
+    width = max(map(len, grid), default=0)
+    captions = [span > 1 and span >= width for span in lone_spans]
     start = 0
     while start < len(rows) and (not grid[start] or captions[start]):
         start += 1
@@ -191,10 +246,16 @@ def parse_cpu_table(table: Tag) -> Iterator[dict[str, str]]:
         if captions[index]:
             continue
         result: dict[str, str] = {}
+        boosts: list[str] = []
         for column, value in enumerate(grid[index][: len(fields)]):
             field = fields[column]
             if field and value:
-                result.setdefault(field, _with_units(value, labels[column], field))
+                value = _with_units(value, labels[column], field)
+                result.setdefault(field, value)
+                if field == "boost_clock":
+                    boosts.append(value)
+        if len(boosts) > 1:
+            result["boost_clock"] = max(boosts, key=_clock_ghz)
         if hybrid:
             split = {
                 leaf: grid[index][column]
