@@ -10,10 +10,12 @@ from __future__ import annotations
 import json
 from collections import Counter
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from pathlib import Path
 from typing import Any
+
+from app.coverage.normalize import slugify
 
 from .cpu_identity import cpu_key, same_cpu
 from .gpu_identity import (
@@ -139,6 +141,11 @@ class _Index:
         if not isinstance(slug, str) or not slug:
             return
         names: list[object] = [slug]
+        # The curated name can be spelled unlike the slug: "3D Rage II" is
+        # rage-ii.json, "iPhone SE (2nd generation)" iphone-se-2020.json.
+        display = record.get("name")
+        if isinstance(display, str) and display:
+            names.append(slugify(display, manufacturer=manufacturer))
         if self.category == "smartphone":
             # A variant record (".../2022/galaxy-m33-5g/sm-m336b.json") names
             # its phone in base_model_slug and in its folder.
@@ -150,14 +157,30 @@ class _Index:
             if isinstance(name, str) and name:
                 self.slugs.setdefault(name, path)
                 self.keys.setdefault(self._key(name), path)
-        if self.category == "gpu":
-            self.families.setdefault(gpu_family_key(slug), path)
+                if self.category == "gpu":
+                    self.families.setdefault(gpu_family_key(name), path)
 
     def _key(self, slug: str) -> str:
-        return gpu_key(slug) if self.category == "gpu" else slug.replace("-", "")
+        if self.category == "gpu":
+            return gpu_key(slug)
+        tokens = slug.split("-")
+        if self.category == "smartphone":
+            # "iPhone SE (2nd)" and "iPhone SE (2nd generation)".
+            tokens = [token for token in tokens if token not in {"gen", "generation"}]
+        return "".join(tokens)
 
     def match(self, candidate: IngestCandidate) -> tuple[str, str] | None:
-        """``(path, why)`` of the record the candidate duplicates, or ``None``."""
+        """``(path, why)`` of the record the candidate or one of its
+        ``aliases`` duplicates, or ``None``."""
+        if (found := self._match(candidate)) is not None:
+            return found
+        for alias in candidate.aliases:
+            if (found := self._match(replace(candidate, slug=alias))) is not None:
+                path, why = found
+                return path, f"as {alias}: {why}"
+        return None
+
+    def _match(self, candidate: IngestCandidate) -> tuple[str, str] | None:
         target = candidate.output_path.as_posix()
         if target in self.paths:
             return target, f"path {target} already exists"

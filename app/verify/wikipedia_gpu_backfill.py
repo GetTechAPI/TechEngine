@@ -51,7 +51,6 @@ import httpx
 from bs4 import BeautifulSoup, Tag
 
 from app.ingest.normalize import (
-    mib_to_gb,
     parse_date,
     parse_frequency_mhz,
     parse_memory_bus_bit,
@@ -230,13 +229,15 @@ def crossref_pages() -> list[tuple[str, str, str]]:
 # --- name split -----------------------------------------------------------------
 
 
-def _to_gb(value: float, unit: str) -> float | None:
+def _to_gb(value: float, unit: str) -> float:
+    """Binary GB, unrounded. Unlike ``mib_to_gb`` there is no 1 MiB floor: that
+    is a rule for writing a record, and the backfill only compares values."""
     unit_l = unit.lower()
     if unit_l == "gb":
         return value
     if unit_l == "mb":
-        return mib_to_gb(value)
-    return mib_to_gb(value / 1024)
+        return value / 1024
+    return value / (1024 * 1024)
 
 
 def memory_close(left: float, right: float) -> bool:
@@ -315,13 +316,13 @@ def parse_memory_options(text: str) -> tuple[float, ...]:
             if not piece:
                 continue
             value = _to_gb(float(piece), unit)
-            if value is not None and value not in found:
+            if value not in found:
                 found.append(value)
     for match in _MEMORY_TOKEN_RE.finditer(text):
         if any(start <= match.start() < end for start, end in consumed):
             continue
         value = _to_gb(float(match.group(1)), match.group(2))
-        if value is not None and value not in found:
+        if value not in found:
             found.append(value)
     return tuple(found)
 
@@ -419,7 +420,7 @@ def _bare_memory(text: str, unit: str) -> tuple[float, ...]:
     found: list[float] = []
     for number in numbers:
         value = _to_gb(float(number), unit)
-        if value is not None and value not in found:
+        if value not in found:
             found.append(value)
     return tuple(found)
 

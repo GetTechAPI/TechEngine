@@ -148,3 +148,44 @@ def test_smartphone_variant_folder_and_base_model_count_as_on_file(tmp_path: Pat
     result = run([folder, base], data_root=tmp_path)
     assert not result.written
     assert result.skipped_existing == [folder, base]
+
+
+def test_curated_name_spelled_unlike_its_slug_counts_as_on_file(tmp_path: Path) -> None:
+    rage = tmp_path / "gpu/ati/1996/consumer/rage-ii.json"
+    rage.parent.mkdir(parents=True)
+    rage.write_text(json.dumps({"slug": "rage-ii", "name": "3D Rage II"}), encoding="utf-8")
+    candidate = IngestCandidate(
+        category="gpu",
+        manufacturer="ati",
+        slug="3d-rage-ii",
+        record={"slug": "3d-rage-ii", "name": "3D Rage II"},
+        source_url="https://example.test/ati",
+        output_path=Path("gpu/ati/1996/consumer/3d-rage-ii.json"),
+    )
+    result = run([candidate], data_root=tmp_path, include_drafts=True)
+    assert result.skipped_existing == [candidate]
+
+
+@pytest.mark.parametrize(
+    "slug,curated,name",
+    [
+        ("iphone-se-2nd", "iphone-se-2020", "iPhone SE (2nd generation)"),
+        ("iphone-se-1st", "iphone-se-1st-gen", "iPhone SE 1st gen"),
+    ],
+)
+def test_smartphone_generation_spellings_match(
+    slug: str, curated: str, name: str, tmp_path: Path
+) -> None:
+    target = tmp_path / "smartphone/apple/2020" / f"{curated}.json"
+    target.parent.mkdir(parents=True)
+    target.write_text(json.dumps({"slug": curated, "name": name}), encoding="utf-8")
+    candidate = IngestCandidate(
+        category="smartphone",
+        manufacturer="apple",
+        slug=slug,
+        record={"slug": slug, "name": slug},
+        source_url="https://example.test/iphone",
+        output_path=Path("smartphone/apple/2020") / f"{slug}.json",
+    )
+    result = run([candidate], data_root=tmp_path, include_drafts=True)
+    assert result.skipped_existing == [candidate]

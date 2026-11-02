@@ -86,6 +86,8 @@ def test_base_boost_cell_gives_both_clocks() -> None:
         ("tdp", "100-260", "tdp_w"),
         ("tdp", "~75", "tdp_w"),
         ("tdp", "45?", "tdp_w"),
+        ("memory_type", "SGRAM, SDR", "memory_type"),
+        ("memory_type", "EDO, SGRAM, SDR", "memory_type"),
     ],
 )
 def test_multi_value_range_and_estimate_cells_give_none(key: str, value: str, field: str) -> None:
@@ -126,6 +128,9 @@ def test_bounds_and_spellings_that_state_one_value(
         ("AGP 8×", "AGP 8x"),
         ("AGP 4× PCI", None),
         ("AGP 8× PCIe ×16", None),
+        ("ISA, EISA, VLB, PCI, MCA", None),
+        ("ISA, VLB, PCI", None),
+        ("AGP 4x,8x", None),
         ("IGP", None),
     ],
 )
@@ -177,6 +182,8 @@ def test_rv200_has_no_architecture() -> None:
         ("quadro-nvs-50-pci", "nvs-50"),
         ("radeon-e9172-mxm", "radeon-e9172"),
         ("geforce-gtx-1070-notebook", "geforce-gtx-1070-mobile"),
+        ("quadro4-200-nvs", "nvs-200"),
+        ("radeon-x800-xt-platinum-agp", "radeon-x800-xt-pe"),
         ("rtx-500-mobile-ada-generation", "rtx-500-ada-mobile"),
     ],
 )
@@ -221,3 +228,50 @@ def test_laptop_part_of_a_curated_desktop_card_is_added(tmp_path: Path) -> None:
     laptop = _gpu("geforce-gtx-1660-ti-mobile")
     result = run([laptop], data_root=tmp_path, run_date=date(2026, 11, 2))
     assert result.written == [laptop]
+
+
+def test_name_leaves_the_brand_to_manufacturer() -> None:
+    card = _card()
+    assert card is not None
+    assert card.record["name"] == "GeForce GTX 1070"
+    prefixed = _card(model="NVIDIA GeForce GTX 1070")
+    assert prefixed is not None and prefixed.record["name"] == "GeForce GTX 1070"
+
+
+@pytest.mark.parametrize(
+    "launch",
+    ["May 1, 2007 (PCIe) October 1, 2007 (AGP)", "2004?", "2007 (2008)"],
+)
+def test_amd_page_board_dated_before_the_rebrand_by_every_date_is_ati(launch: str) -> None:
+    card = _card(manufacturer="amd", model="Radeon X1650 GT", release_date=launch)
+    assert card is not None
+    assert card.manufacturer == "ati"
+    assert card.record["release_date"] is None
+    assert "no release date to file it under" in card.problems
+
+
+def test_laptop_table_row_without_mobile_in_its_name_is_checked_as_the_mobile_part(
+    tmp_path: Path,
+) -> None:
+    card = _card(("Quadro M", "Mobile applications"), model="Quadro M5500")
+    assert card is not None and card.aliases == ("quadro-m5500-mobile",)
+    target = tmp_path / "gpu/nvidia/2016/enterprise/quadro-m5500-mobile.json"
+    target.parent.mkdir(parents=True)
+    target.write_text(json.dumps({"slug": "quadro-m5500-mobile"}), encoding="utf-8")
+    result = run([card], data_root=tmp_path, include_drafts=True, run_date=date(2026, 11, 2))
+    assert result.skipped_existing == [card]
+
+
+@pytest.mark.parametrize(
+    "codename,expected",
+    [
+        ("GT216", "Tesla 2.0"),
+        ("G92", "Tesla"),
+        ("GF116", "Fermi 2.0"),
+        ("GF100", "Fermi"),
+        ("GK208", "Kepler 2.0"),
+        ("GK104", "Kepler"),
+    ],
+)
+def test_second_generation_architectures(codename: str, expected: str) -> None:
+    assert architecture_from_codename(codename, "nvidia") == expected

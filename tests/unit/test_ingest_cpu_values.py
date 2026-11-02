@@ -230,3 +230,36 @@ def test_cpu_key_spellings(left: str, right: str) -> None:
 
 def test_missing_list_pages_are_not_fetched() -> None:
     assert "List_of_AMD_Threadripper_processors" not in {page for _, page, _ in PAGES}
+
+
+def test_base_min_and_max_columns_give_no_base_clock() -> None:
+    rows = _rows(
+        """<table>
+        <tr><th rowspan="2">Model</th><th colspan="2">Clock rate (GHz) / Base</th>
+        <th rowspan="2">Turbo</th><th colspan="2">TDP</th></tr>
+        <tr><th>Min</th><th>Max</th><th>Min</th><th>Max</th></tr>
+        <tr><td>11980HK</td><td>2.6</td><td>3.3</td><td>5.0</td><td>45 W</td><td>65 W</td></tr>
+        </table>"""
+    )
+    assert "base_clock" not in rows[0]
+    assert "tdp" not in rows[0]
+    assert rows[0]["boost_clock"] == "5.0"
+
+
+def test_hidden_zero_padding_is_not_part_of_the_value() -> None:
+    rows = _rows(
+        """<table>
+        <tr><th>Model</th><th>Cores</th><th>TDP</th></tr>
+        <tr><td>3700X</td><td>8</td><td><span aria-hidden="true"
+        style="visibility:hidden;color:transparent;">0</span>65 W</td></tr>
+        </table>"""
+    )
+    assert rows[0]["tdp"] == "65 W"
+
+
+def test_cpu_without_a_release_date_is_never_written() -> None:
+    chips = _ryzen(
+        "<tr><td>Ryzen 7 5800X</td><td>8</td><td>3.8</td><td>4.7</td><td>32</td>"
+        "<td>105 W</td><td></td><td>AM4</td></tr>"
+    )
+    assert chips["ryzen-7-5800x"].problems == ("no release date to file it under",)

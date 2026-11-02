@@ -54,8 +54,6 @@ PAGES: list[tuple[str, str, str]] = [
     ("intel", "List_of_Intel_graphics_processing_units", "Intel Graphics"),
 ]
 
-_BRAND_DISPLAY: dict[str, str] = {"nvidia": "NVIDIA", "amd": "AMD", "ati": "ATI", "intel": "Intel"}
-
 # The dataset keeps ATI-branded boards under ``ati``; AMD retired the ATI brand
 # in August 2010 and the curated records switch to ``amd`` from October 2010.
 _ATI_BRAND_END = date(2010, 10, 1)
@@ -69,6 +67,9 @@ MEMORY_TYPES = (
     "DDR5", "DDR4", "DDR3", "DDR2", "DDR", "SDRAM", "SDR",
 )
 _MEMORY_TYPE_DISPLAY = {"HBM2E": "HBM2e", "HBM3E": "HBM3e"}
+# Types the curated records spell their own way ("SGRAM", "EDO DRAM"): a cell
+# naming one of them states no type from MEMORY_TYPES.
+_OTHER_MEMORY_RE = re.compile(r"(?<![A-Z0-9])(?:SGRAM|EDO|VRAM|WRAM|FPM|DRAM)(?![A-Z0-9])")
 
 _NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
 _RANGE_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(?:–|—|-|to)\s*(\d[\d,]*(?:\.\d+)?)")
@@ -76,7 +77,7 @@ _FOOTNOTE_RE = re.compile(r"\s*\[[^\]]{1,12}\]")
 _TRAILING_PAREN_RE = re.compile(r"\s*\([^)]*\)\s*$")
 _MULTI_GPU_RE = re.compile(r"\d\s*[×x]\s*\d")
 _BUS_RE = re.compile(r"\b(PCIe|PCI-E|PCI Express|AGP|PCI|MXM(?:-[A-Z]+)?)\b[^/,;]*", re.IGNORECASE)
-_BUS_NAME_RE = re.compile(r"\b(PCIe|AGP|PCI|MXM)\b", re.IGNORECASE)
+_BUS_NAME_RE = re.compile(r"\b(PCIe|AGP|PCI|MXM|ISA|EISA|VLB|VL-Bus|MCA)\b", re.IGNORECASE)
 # Integrated/chipset graphics are out of scope for the discrete-GPU table.
 _OUT_OF_SCOPE_RE = re.compile(r"\bIGP\b|integrated|on-?die|\bAPU\b|nForce", re.IGNORECASE)
 # Chipset IGPs: a memory cell naming only system memory ("Up to 256 from system
@@ -93,6 +94,7 @@ _LAPTOP_MARKER_RE = re.compile(
     r"\b(?:mobile|mobility|laptop|notebook|max-q|go)\b|\b[a-z]?\d{2,5}m[a-z]*\b|\bm\d{3,4}|\bmx\s?\d",
     re.IGNORECASE,
 )
+_LAPTOP_TIER_RE = re.compile(r"\b(?:mobile|laptop|notebook)\b")
 _BRAND_WORD_RE = re.compile(r"\b(?:geforce|radeon|quadro|firepro|firegl|tesla)\b", re.IGNORECASE)
 # "Clock Rate / Base (Boost) ( MHz )": "1291 (1392)" is base 1291, boost 1392.
 _BASE_BOOST_RE = re.compile(r"\b(?:base|core)\b[^/]*\(\s*boost|\bbase boost\b")
@@ -128,8 +130,13 @@ _NVIDIA_CODENAME_ARCH: tuple[tuple[str, str], ...] = (
     (r"NV2\d", "Kelvin"),
     (r"NV3\d", "Rankine"),
     (r"NV4\d|G7\d", "Curie"),
-    (r"G8\d|G9\d|GT2\d\d", "Tesla"),
+    # Curated records name the second generations (GT200, GF11x, GK2xx) per
+    # chip; the versioned entries come before the generic ones.
+    (r"GT2\d\d", "Tesla 2.0"),
+    (r"G8\d|G9\d", "Tesla"),
+    (r"GF11\d", "Fermi 2.0"),
     (r"GF1\d\d", "Fermi"),
+    (r"GK2\d\d", "Kepler 2.0"),
     (r"GK\d", "Kepler"),
     (r"GM\d", "Maxwell"),
     (r"GP\d", "Pascal"),
@@ -269,6 +276,8 @@ def _memory_gb(text: str, unit: str) -> float | None:
 def _memory_type(text: str) -> str | None:
     """The memory type a cell names; ``None`` when it names several."""
     upper = text.upper()
+    if _OTHER_MEMORY_RE.search(upper):
+        return None
     kinds = [
         kind
         for kind in MEMORY_TYPES
@@ -279,9 +288,16 @@ def _memory_type(text: str) -> str | None:
 
 def _release_period(text: str) -> tuple[date, date] | None:
     """The release period a cell names; ``None`` for several dates or a ``?``."""
-    cleaned = _FOOTNOTE_RE.sub("", text)
-    if "?" in cleaned:
+    if "?" in text:
         return None
+    periods = _cell_periods(text)
+    return periods.pop() if len(periods) == 1 else None
+
+
+def _cell_periods(text: str) -> set[tuple[date, date]]:
+    """Every date period a cell names: ``"May 1, 2007 (PCIe) October 1, 2007 (AGP)"``
+    names two, ``"2004?"`` one."""
+    cleaned = _FOOTNOTE_RE.sub("", text)
     taken: list[tuple[int, int]] = []
     periods: set[tuple[date, date]] = set()
     for pattern in _DATE_IN_CELL_RES:
@@ -291,7 +307,7 @@ def _release_period(text: str) -> tuple[date, date] | None:
             taken.append(match.span())
             if (period := parse_date_period(match.group(0))) is not None:
                 periods.add(period)
-    return periods.pop() if len(periods) == 1 else None
+    return periods
 
 
 def normalize_bus_interface(text: str) -> str | None:
@@ -311,6 +327,9 @@ def normalize_bus_interface(text: str) -> str | None:
     if not match:
         return None
     if match.group(1).lower() != "pcie":
+        # "AGP 4x,8x": board variants again.
+        if len(set(re.findall(r"(\d+)\s*x\b", cleaned[match.start() :]))) > 1:
+            return None
         value = match.group(0)
         value = re.sub(r"\s+x\s*(\d+)", r" x\1", value)
         value = re.sub(r"(\d)\s*x\b", r"\1x", value)
@@ -418,18 +437,29 @@ def _build_candidate(
         # "2× 128": per-GPU values on dual-GPU boards don't fit one record.
         return None
     problems: tuple[str, ...] = ()
-    if headings and headings[-1].lower().startswith("mobile") and not _LAPTOP_MARKER_RE.search(
-        raw_model
-    ):
+    laptop_table = bool(headings) and headings[-1].lower().startswith("mobile")
+    if laptop_table and not _LAPTOP_MARKER_RE.search(raw_model):
         problems = ("laptop table row without a laptop marker in its name",)
 
     release_period = _release_period(text("release_date"))
     release_date = release_date_of(release_period)
-    if manufacturer == "amd" and release_period is not None and release_period[1] < _ATI_BRAND_END:
+    # Before the rebrand by every date the cell names ("2004?", "May 1, 2007
+    # (PCIe) October 1, 2007 (AGP)"), even when no one date is the release.
+    periods = _cell_periods(text("release_date"))
+    if manufacturer == "amd" and periods and all(last < _ATI_BRAND_END for _, last in periods):
         manufacturer = "ati"
     slug = slugify(model, manufacturer=manufacturer)
     if len(slug) < 4 or not any(ch.isdigit() for ch in slug):
         return None
+    if release_date is None:
+        # The layout files a board under its release year; without one there
+        # is no folder to put it in, even as a draft.
+        problems += ("no release date to file it under",)
+    # "Quadro M5500" in a laptop table is the laptop part, curated as "Quadro
+    # M5500 Mobile"; dedup checks that name too.
+    aliases: tuple[str, ...] = ()
+    if laptop_table and not _LAPTOP_TIER_RE.search(slug):
+        aliases = (f"{slug}-mobile",)
 
     base_clock = _clock_mhz(text("base_clock"), unit("base_clock"))
     boost_clock = _clock_mhz(
@@ -467,8 +497,8 @@ def _build_candidate(
         architecture_from_codename(text("codename"), manufacturer)
     )
 
-    brand = _BRAND_DISPLAY.get(manufacturer, manufacturer.title())
-    name = model if model.lower().startswith(manufacturer) else f"{brand} {model}"
+    # Dataset GPU names leave the brand to ``manufacturer``: "GeForce GTX 1660 Ti".
+    name = re.sub(r"^(?:NVIDIA|AMD|ATI|Intel)\s+", "", model, flags=re.IGNORECASE)
     record: dict[str, object | None] = {
         "slug": slug,
         "name": name,
@@ -503,4 +533,5 @@ def _build_candidate(
         missing_fields=missing,
         problems=problems,
         released_by=release_period[1] if release_period else None,
+        aliases=aliases,
     )

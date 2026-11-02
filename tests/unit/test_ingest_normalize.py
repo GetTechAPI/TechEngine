@@ -53,6 +53,9 @@ def test_parse_frequency_ghz(text: str, expected: float | None) -> None:
         ("65–95 W", None),
         ("45 W (35−54 W)", 45),
         ("55W cTDP: 45–120 W", 55),
+        # One value per OPN of a two-model Opteron row: neither is the part's.
+        ("92.6 68 W", None),
+        ("85.3 67 W", None),
     ],
 )
 def test_parse_tdp_w(text: str, expected: int | None) -> None:
