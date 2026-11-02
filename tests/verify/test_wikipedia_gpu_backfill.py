@@ -499,5 +499,33 @@ def test_apply_writes_only_confirmed_records(tmp_path: Path) -> None:
 def test_memory_options_are_binary_and_unrounded() -> None:
     assert parse_memory_options("32 MB") == (0.03125,)
     assert parse_memory_options("1536 MB") == (1.5,)
-    # 1 MiB is under the dataset's floor, so it is no option at all.
-    assert parse_memory_options("1 MB") == ()
+    # The backfill compares values, so 1 MiB and KB sizes stay (no write floor).
+    assert parse_memory_options("1 MB") == (1 / 1024,)
+    assert parse_memory_options("512 KB") == (512 / 1024 / 1024,)
+
+
+def test_one_megabyte_row_still_conflicts_with_a_four_megabyte_record() -> None:
+    row = WikiRow(
+        model="STG-2000",
+        url="https://en.wikipedia.org/wiki/List_of_Nvidia_graphics_processing_units#Pre-GeForce",
+        page="List_of_Nvidia_graphics_processing_units",
+        section="Pre-GeForce",
+        memory_gb=parse_memory_options("1 MB"),
+        tdp_w=None,
+        year=1995,
+        interfaces=interface_families("PCI"),
+    )
+    record = {
+        "name": "STG-2000",
+        "memory_gb": 0.004,
+        "pcie_version": "PCI",
+        "release_date": "1995-09-30",
+        "source_urls": [KAGGLE_GPU_URL],
+    }
+    gate = decide(record, [row])
+    assert "memory_gb" in gate.conflicts
+    assert gate.proposed_url is None
+
+
+def test_megabyte_name_suffix_keeps_its_memory() -> None:
+    assert split_card_name("Mach64 GX 1 MB").memory_gb == 1 / 1024

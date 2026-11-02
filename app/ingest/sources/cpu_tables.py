@@ -197,6 +197,10 @@ def parse_cpu_table(table: Tag) -> Iterator[dict[str, str]]:
                 column += 1
             for sup in cell.find_all("sup"):
                 sup.decompose()
+            # {{0}} pads numbers with a hidden "0" ("065 W" shows as " 65 W").
+            for pad in cell.select('[aria-hidden="true"]'):
+                if "visibility:hidden" in str(pad.get("style", "")).replace(" ", ""):
+                    pad.decompose()
             text = re.sub(r"\[[^\]]*\]", "", cell.get_text(" ", strip=True)).strip()
             width = min(_span(cell, "colspan"), 64 - column)
             for offset in range(width):
@@ -228,6 +232,11 @@ def parse_cpu_table(table: Tag) -> Iterator[dict[str, str]]:
         parts = list(dict.fromkeys(row[column] for row in grid[start:end] if column < len(row)))
         labels.append(" / ".join(parts))
     fields = [_field(label) for label in labels]
+    # "Base / Min" and "Base / Max" pair with "TDP / Min" and "TDP / Max", and
+    # either one can be the nominal TDP's base (11980HK: Min, 11800H: Max).
+    leaves = {label.lower().split(" / ")[-1].strip() for label in labels if "base" in label.lower()}
+    if {"min", "max"} <= leaves:
+        fields = [None if field == "base_clock" else field for field in fields]
     # A colspan Model heading describes two distinct body columns.
     for column in range(len(fields) - 1):
         if fields[column : column + 2] == ["model", "model"]:

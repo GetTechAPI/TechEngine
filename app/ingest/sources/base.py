@@ -21,7 +21,8 @@ class IngestCandidate:
     fill but that cannot be trusted; such a candidate is never written, not
     even as a draft. ``released_by`` is the last day of the release period the
     source states (``"Q4 2026"`` → Dec 31): before it, the part may not have
-    shipped.
+    shipped. ``aliases`` are other slugs the part may be curated under (a
+    laptop-table row named without "Mobile"); dedup checks them too.
     """
 
     category: str
@@ -33,6 +34,7 @@ class IngestCandidate:
     missing_fields: tuple[str, ...] = field(default_factory=tuple)
     problems: tuple[str, ...] = field(default_factory=tuple)
     released_by: date | None = None
+    aliases: tuple[str, ...] = field(default_factory=tuple)
 
     @property
     def is_complete(self) -> bool:

@@ -68,6 +68,14 @@ def gpu_family_key(slug: str) -> str:
     tokens = _tokens(slug)
     if len(tokens) > 1 and tokens[0] == "quadro" and _QUADRO_RENAMED_RE.fullmatch(tokens[1]):
         tokens = tokens[1:]
+    # "Quadro4 200 NVS" is "NVS 200".
+    if tokens[:1] == ["quadro4"] and tokens[-1:] == ["nvs"]:
+        tokens = ["nvs", *tokens[1:-1]]
+    # "X800 XT PE" is the X800 XT Platinum Edition.
+    tokens = [
+        "platinum" if token == "pe" and tokens[i - 1 : i] == ["xt"] else token
+        for i, token in enumerate(tokens)
+    ]
     # "Radeon Instinct MI100" became "Instinct MI100".
     if tokens[:2] == ["radeon", "instinct"]:
         tokens = tokens[1:]

@@ -323,7 +323,11 @@ def _build_candidate(
 
     required = ("release_date", "architecture", "cores", "threads")
     missing = tuple(field for field in required if record.get(field) in (None, ""))
-    problems = (row["cores_note"],) if row.get("cores_note") else ()
+    problems: tuple[str, ...] = (row["cores_note"],) if row.get("cores_note") else ()
+    if release_date is None:
+        # The layout files a part under its release year; without one there is
+        # no folder to put it in, even as a draft.
+        problems += ("no release date to file it under",)
 
     year = release_date.year if release_date else "unknown"
     bucket = "enterprise" if segment in ("server", "hedt") else "consumer"

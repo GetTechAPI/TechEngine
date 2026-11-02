@@ -85,12 +85,16 @@ def parse_tdp_w(text: str) -> int | None:
 
     ``"45 W (35–54 W)"`` → ``45``: the default precedes its cTDP range. A cell
     that is only a range (``"12–25 W"``) states no default, so it gives ``None``;
-    neither end of the range is the part's TDP.
+    neither end of the range is the part's TDP. Two bare numbers before the
+    unit (``"92.6 68 W"``) are two parts' values and give ``None`` too.
     """
     if not text:
         return None
-    match = _TDP_RE.search(_TDP_RANGE_RE.sub(" ", text))
-    return math.floor(float(match.group(1)) + 0.5) if match else None
+    cleaned = _TDP_RANGE_RE.sub(" ", text)
+    match = _TDP_RE.search(cleaned)
+    if match is None or re.search(r"\d\s+$", cleaned[: match.start()]):
+        return None  # "92.6 68 W": one value per OPN, so neither is the part's
+    return math.floor(float(match.group(1)) + 0.5)
 
 
 def parse_frequency_range_ghz(text: str) -> tuple[float, float] | None:
