@@ -8,13 +8,17 @@ import pytest
 
 from app.ingest.normalize import (
     guess_cpu_segment,
+    mib_to_gb,
+    normalize_socket,
     parse_cache_mb,
     parse_cores_threads,
     parse_date,
+    parse_date_period,
     parse_frequency_ghz,
     parse_frequency_range_ghz,
     parse_int,
     parse_tdp_w,
+    release_date_of,
 )
 
 
@@ -43,6 +47,12 @@ def test_parse_frequency_ghz(text: str, expected: float | None) -> None:
         ("9.5 W", 10),
         ("3.6 W", 4),
         ("2.2/3 W", 2),
+        # A range names no default TDP; the default before a cTDP range stays.
+        ("12–25 W", None),
+        ("15 - 28 W", None),
+        ("65–95 W", None),
+        ("45 W (35−54 W)", 45),
+        ("55W cTDP: 45–120 W", 55),
     ],
 )
 def test_parse_tdp_w(text: str, expected: int | None) -> None:
@@ -138,4 +148,75 @@ def test_guess_cpu_segment_classifies_common_naming() -> None:
     ],
 )
 def test_guess_cpu_segment_atom_lines(name: str, expected: str) -> None:
+    assert guess_cpu_segment(name) == expected
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("1H 2025", (date(2025, 1, 1), date(2025, 6, 30))),
+        ("H2 2024", (date(2024, 7, 1), date(2024, 12, 31))),
+        ("Feb, 2024", (date(2024, 2, 1), date(2024, 2, 29))),
+    ],
+)
+def test_parse_date_period_half_years_and_comma_months(
+    text: str, expected: tuple[date, date]
+) -> None:
+    assert parse_date_period(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("Jan 6, 2025", date(2025, 1, 6)),
+        ("Dec 2024", date(2024, 12, 1)),
+        ("Q3 2023", date(2023, 7, 1)),
+        # A half-year or a bare year has no first day to stand for the date.
+        ("1H 2025", None),
+        ("2027", None),
+        ("", None),
+    ],
+)
+def test_release_date_of_keeps_only_day_month_and_quarter(
+    text: str, expected: date | None
+) -> None:
+    assert release_date_of(parse_date_period(text)) == expected
+
+
+@pytest.mark.parametrize(
+    "mib,expected",
+    [(32, 0.03125), (1536, 1.5), (8192, 8.0), (1, None), (0.5, None)],
+)
+def test_mib_to_gb_is_unrounded_and_skips_one_mib_and_less(
+    mib: float, expected: float | None
+) -> None:
+    assert mib_to_gb(mib) == expected
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("LGA 1151", "LGA1151"),
+        ("FCLGA 1700", "FCLGA1700"),
+        ("Socket AM4", "AM4"),
+        ("F", "F (1207)"),
+        ("AM5", "AM5"),
+        ("", None),
+    ],
+)
+def test_normalize_socket(text: str, expected: str | None) -> None:
+    assert normalize_socket(text) == expected
+
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        ("Ryzen 7 5800X", "desktop"),
+        ("Ryzen 9 7950X", "desktop"),
+        ("Ryzen 5 1600XE", "desktop"),
+        ("Core i9-10980XE", "hedt"),
+        ("Core i7-7820X", "hedt"),
+    ],
+)
+def test_guess_cpu_segment_x_parts(name: str, expected: str) -> None:
     assert guess_cpu_segment(name) == expected

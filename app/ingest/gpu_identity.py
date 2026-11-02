@@ -2,7 +2,9 @@
 
 One board is often listed under several names: ``GeForce3 Ti500`` and
 ``GeForce3 Ti 500``, ``RTX 6000 Ada Generation`` and ``RTX 6000 Ada``, a laptop
-part with and without ``Mobile``, one card per memory size. A candidate that
+part as ``Mobile`` or ``(Notebook)``, one card per memory size, an OEM card,
+``Tesla C2070`` and ``C2070 GPU Computing Module``. A laptop part is never the
+same board as the desktop card of the same name. A candidate that
 matches a curated board under any of those spellings is skipped, never added
 as a second record: a missed addition is cheap, a duplicate is not.
 """
@@ -15,12 +17,22 @@ import re
 _QUALIFIERS = frozenset({
     "agp", "pci", "pcie",  # bus
     "generation", "edition",  # "Ada Generation", "Workstation Edition"
-    "mobile", "laptop", "notebook",  # laptop parts; Max-Q is its own power tier
     "engineering", "sample",
+    "oem",
+    "mxm", "mcm",  # embedded module packages: "E9172 MXM"
+    "cooling",  # "Vega 64 Liquid Cooling"
 })
+# Laptop markers: kept in the family key as one tier word (Max-Q stays as is).
+_LAPTOP_TIER = frozenset({"mobile", "laptop", "notebook"})
+# "H100 GPU accelerator", "C2070 GPU Computing Module": data-center board names
+# that the curated records file as "Tesla C2070" and "H100".
+_DATACENTER_SUFFIX = frozenset({"gpu", "accelerator", "computing", "module"})
+# Form-factor suffixes of data-center boards: Tesla K20c/K20m/K20X, H200 NVL/SXM.
+_FORM_FACTORS = frozenset({"c", "d", "m", "s", "t", "x", "xm", "st", "nvl", "sxm", "pcie"})
 _MEMORY_RE = re.compile(r"\d+(?:gb|mb)")
-# Turing and later workstation boards dropped the Quadro brand ("Quadro T500" is "T500").
-_QUADRO_RENAMED_RE = re.compile(r"(?:t|a|rtx)\d*")
+# Boards that dropped the Quadro brand: Turing and later ("Quadro T500" is "T500"),
+# and the NVS line ("Quadro NVS 50" is "NVS 50").
+_QUADRO_RENAMED_RE = re.compile(r"(?:t|a|rtx)\d*|nvs")
 
 
 def _tokens(slug: str) -> list[str]:
@@ -49,21 +61,49 @@ def gpu_key(slug: str) -> str:
 
 
 def gpu_family_key(slug: str) -> str:
-    """Identity with variant words dropped: bus, memory size, revision, laptop
-    markers, "Generation"/"(Workstation) Edition" and the retired Quadro brand."""
+    """Identity with variant words dropped: bus, memory size, revision, OEM,
+    "Generation"/"(Workstation) Edition", the retired Quadro, Tesla and Radeon
+    Instinct brands and data-center suffixes. The laptop tier stays (``-notebook``
+    is ``-mobile``) except on a Tesla, where it names the MXM module."""
     tokens = _tokens(slug)
     if len(tokens) > 1 and tokens[0] == "quadro" and _QUADRO_RENAMED_RE.fullmatch(tokens[1]):
         tokens = tokens[1:]
+    # "Radeon Instinct MI100" became "Instinct MI100".
+    if tokens[:2] == ["radeon", "instinct"]:
+        tokens = tokens[1:]
+    tesla = len(tokens) > 1 and tokens[0] == "tesla"
+    if tesla:
+        tokens = tokens[1:]
+    while len(tokens) > 1 and tokens[-1] in _DATACENTER_SUFFIX:
+        tokens.pop()
     kept = [
         token
         for i, token in enumerate(tokens)
         if token not in _QUALIFIERS
+        and token not in _LAPTOP_TIER
         and not _MEMORY_RE.fullmatch(token)
         and not re.fullmatch(r"rev\d*", token)
         # "RTX PRO 6000 Blackwell Workstation (Edition)" is the plain board.
         and not (token == "workstation" and tokens[i + 1 : i + 2] in ([], ["edition"]))
     ]
+    # The tier goes last: "RTX 500 Mobile Ada Generation" is "RTX 500 Ada Mobile".
+    # A "Tesla M6 Mobile" is the MXM module of the M6, not a laptop chip.
+    if not tesla and any(token in _LAPTOP_TIER for token in tokens):
+        kept.append("mobile")
     return "".join(kept)
+
+
+def datacenter_family(slug: str) -> str | None:
+    """Family key of a data-center board name ("K20 GPU accelerator"), else ``None``."""
+    tokens = _tokens(slug)
+    if tokens[:1] == ["tesla"] or (tokens and tokens[-1] in _DATACENTER_SUFFIX):
+        return gpu_family_key(slug)
+    return None
+
+
+def form_factor_of(key: str, family: str) -> bool:
+    """Whether family key ``key`` is a form factor of ``family``: ``k20c`` of ``k20``."""
+    return key.startswith(family) and key[len(family) :] in _FORM_FACTORS
 
 
 def spec_twins(candidate: dict[str, object], existing: dict[str, object]) -> bool:

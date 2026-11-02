@@ -22,6 +22,7 @@ from app.coverage.sources.wikipedia import fetch_wikipedia_html
 
 from ..normalize import (
     guess_cpu_segment,
+    normalize_socket,
     parse_cache_mb,
     parse_cores_threads,
     parse_date_period,
@@ -29,9 +30,11 @@ from ..normalize import (
     parse_frequency_range_ghz,
     parse_int,
     parse_tdp_w,
+    release_date_of,
 )
 from .base import IngestCandidate
 from .cpu_tables import parse_cpu_table
+from .wikitable import enclosing_headings
 
 # (manufacturer, page, product family for bare model numbers). Architecture
 # comes from an explicit column or a preceding section, never this family.
@@ -42,11 +45,30 @@ PAGES: list[tuple[str, str, str]] = [
     ("amd", "List_of_AMD_Ryzen_processors", "AMD Ryzen"),
     ("amd", "List_of_AMD_Opteron_processors", "AMD Opteron"),
     ("amd", "List_of_AMD_Epyc_processors", "AMD EPYC"),
-    ("amd", "List_of_AMD_Threadripper_processors", "AMD Threadripper"),
 ]
 
 # Citation markers left in model cells ("7501 [ 32 ] [ 33 ]").
 _FOOTNOTE_RE = re.compile(r"\s*\[\s*[\w\s]{1,6}\]")
+# A quoted nickname after the model number: '6275 "Fangio"'.
+_NICKNAME_RE = re.compile(r'\s*"[^"]+"\s*$')
+_PRO_MARK_RE = re.compile(r"\(\s*PRO\s*\)")
+# "7643 (P)": the row lists both EPYC 7643 and the single-socket 7643P.
+_P_MARK_RE = re.compile(r"(.*\d\w*)\s*\(\s*P\s*\)")
+# A section for laptop or handheld chips states the market the model suffix may not.
+_MOBILE_RE = re.compile(r"\b(?:mobile|handheld|laptop|notebook)\b", re.IGNORECASE)
+# These tables put the minimum assured power under "TDP / Base", not the base
+# power (Lunar Lake: 30 W against Intel's 17 W), and no header tells them apart.
+_ASSURED_POWER_RE = re.compile(r"\b(?:Lunar Lake|Alder Lake-HX?)\b(?!-)")
+# Die codenames in the Ryzen Z2 table's Codename column; every other AMD row
+# names the Zen generation.
+_AMD_CODENAME_ZEN = {
+    "Strix Point": "Zen 5",
+    "Hawk Point": "Zen 4",
+    "Rembrandt": "Zen 3+",
+    "Rembrandt+": "Zen 3+",
+    "Rembrandt-R": "Zen 3+",
+    "Van Gogh": "Zen 2",
+}
 # Rows naming only a family tier ("Ryzen 5", "Core i7", "Xeon 6") are group
 # headers, not SKUs; they pass the has-a-digit check but must never become records.
 _FAMILY_ONLY_RE = re.compile(
@@ -92,45 +114,77 @@ class WikipediaCpuIngest:
         source_url = f"https://en.wikipedia.org/wiki/{page}"
         for table in soup.select("table.wikitable"):
             section_label = _nearest_section_label(table) or ""
+            mobile = any(_MOBILE_RE.search(heading) for heading in enclosing_headings(table))
+            caption = table.find("caption")
+            assured_power = caption is not None and bool(
+                _ASSURED_POWER_RE.search(caption.get_text(" ", strip=True))
+            )
             for row in parse_cpu_table(table):
-                model = _FOOTNOTE_RE.sub("", row.get("model", "")).strip()
-                family = row.get("family", "")
-                if family and not model.lower().startswith(family.lower()):
-                    model = f"{family} {model}"
-                elif not family and re.fullmatch(
-                    r"[A-Za-z0-9]*\d[A-Za-z0-9]*(?:\s+(?:HE|EE|SE))?", model
-                ):
-                    # Bare SKUs use the product family explicitly named by the page.
-                    page_family = fallback_arch
-                    section = table.find_previous("h2")
-                    if section and "embedded" in section.get_text().lower():
-                        page_family += " Embedded"
-                    model = f"{page_family} {model}"
-                slug = slugify(model, manufacturer=manufacturer)
-                if len(slug) < 4 or not any(ch.isdigit() for ch in slug):
-                    continue
-                if _FAMILY_ONLY_RE.fullmatch(slug):
-                    continue
-                architecture = row.get("architecture") or architecture_from_heading(
-                    section_label
-                )
-                # Parenthesized PRO denotes both ordinary and PRO models in one row.
-                models = [model]
-                if re.search(r"\(\s*PRO\s*\)", model):
-                    models = [
-                        re.sub(r"\(\s*PRO\s*\)", replacement, model) for replacement in ("", "PRO")
+                if assured_power:
+                    row.pop("tdp", None)
+                raw_model = _FOOTNOTE_RE.sub("", row.get("model", "")).strip()
+                raw_model = _NICKNAME_RE.sub("", raw_model)
+                # One row can name two models: "( PRO ) 250" is 250 and PRO 250,
+                # "7643 (P)" is 7643 and 7643P. ``pro`` picks each one's cell values.
+                variants: list[tuple[str, bool]] = [(raw_model, False)]
+                if _PRO_MARK_RE.search(raw_model):
+                    variants = [
+                        (_PRO_MARK_RE.sub(replacement, raw_model), pro)
+                        for replacement, pro in (("", False), ("PRO", True))
                     ]
-                for variant in models:
-                    variant = " ".join(variant.split())
+                elif (p_mark := _P_MARK_RE.fullmatch(raw_model)) is not None:
+                    variants = [(p_mark[1], False), (p_mark[1] + "P", False)]
+                architecture = row.get("architecture", "")
+                if manufacturer == "amd":
+                    architecture = _AMD_CODENAME_ZEN.get(architecture, architecture)
+                architecture = architecture or architecture_from_heading(section_label)
+                for variant, pro in variants:
+                    model = " ".join(variant.split())
+                    family = row.get("family", "")
+                    if family and not model.lower().startswith(family.lower()):
+                        model = f"{family} {model}"
+                    elif not family and re.fullmatch(
+                        r"[A-Za-z0-9]*\d[A-Za-z0-9]*(?:\s+(?:HE|EE|SE))?", model
+                    ):
+                        # Bare SKUs use the product family explicitly named by the page.
+                        page_family = fallback_arch
+                        section = table.find_previous("h2")
+                        if section and "embedded" in section.get_text().lower():
+                            page_family += " Embedded"
+                        model = f"{page_family} {model}"
+                    slug = slugify(model, manufacturer=manufacturer)
+                    if len(slug) < 4 or not any(ch.isdigit() for ch in slug):
+                        continue
+                    if _FAMILY_ONLY_RE.fullmatch(slug):
+                        continue
                     yield _build_candidate(
                         manufacturer=manufacturer,
                         architecture=architecture,
-                        model=variant,
-                        slug=slugify(variant, manufacturer=manufacturer),
-                        row=row,
+                        model=model,
+                        slug=slug,
+                        row={field: _pro_value(value, pro) for field, value in row.items()},
                         source_url=source_url,
                         heading=section_label,
+                        mobile=mobile,
                     )
+
+
+# "(March 27, 2025) February 18, 2025": the PRO model's value, then the plain one's.
+_PRO_CELL_RE = re.compile(r"\s*\(\s*([^()]+?)\s*\)\s*(\S.*?)\s*")
+
+
+def _pro_value(value: str, pro: bool) -> str:
+    """The part of a ``"(PRO value) plain value"`` cell that belongs to one model."""
+    match = _PRO_CELL_RE.fullmatch(value)
+    if match is None:
+        return value
+    plain = match[2]
+    if not pro:
+        return plain
+    # The header's unit was appended to the whole cell, after the plain value.
+    unit = re.search(r"\s(?:GHz|MHz|MB|KB|GB|W)$", plain)
+    pro_part = match[1]
+    return pro_part + unit[0] if unit and not re.search(r"[A-Za-z]$", pro_part) else pro_part
 
 
 _HEADING_NODE_RE = re.compile(r"\((\d+(?:\.\d+)?)\s*nm\)")
@@ -152,12 +206,12 @@ def _clean_architecture(label: str) -> tuple[str, str | None]:
 # Headings that name a market or a generation, not a microarchitecture.
 _GENERIC_HEADING_RE = re.compile(
     r"\b(?:mobile|desktop|server|embedded|iot|processors?|generation|series|workstation|"
-    r"mainstream|laptop|notebook|based)\b",
+    r"mainstream|laptop|notebook|based|handheld|gaming)\b",
     re.IGNORECASE,
 )
 _CODENAMED_RE = re.compile(r"\(\s*codenamed\s+([^()]+?)\s*\)", re.IGNORECASE)
 _CODENAME_RE = re.compile(r"[A-Z][A-Za-z]*(?:[ -][A-Z][A-Za-z]*)*(?:-[A-Z0-9]{1,2})?")
-_ZEN_RE = re.compile(r"\b(Zen(?: \d\+?c?)?\+?)(?=[/ ,)]|$)")
+_ZEN_RE = re.compile(r"\b(Zen(?: ?\d\+?c?)?\+?)(?=[/ ,)]|$)")
 
 
 def architecture_from_heading(label: str) -> str:
@@ -175,8 +229,10 @@ def architecture_from_heading(label: str) -> str:
     if (codenamed := _CODENAMED_RE.search(name)) is not None:
         codename = " ".join(codenamed.group(1).split())
         return codename if _CODENAME_RE.fullmatch(codename) else ""
-    if (zen := _ZEN_RE.findall(name)) and len(set(zen)) == 1:
-        return str(zen[0])
+    zen = {re.sub(r"Zen(\d)", r"Zen \1", str(found)) for found in _ZEN_RE.findall(name)}
+    if len(zen) == 1:
+        # "Zen4/RDNA2 based" is spelled without the space.
+        return zen.pop()
     # "Raptor Lake (13th gen)": the codename is outside the parentheses.
     name = " ".join(re.sub(r"\([^()]*\)", " ", name).split())
     if _GENERIC_HEADING_RE.search(name):
@@ -201,6 +257,7 @@ def _build_candidate(
     row: dict[str, str],
     source_url: str,
     heading: str = "",
+    mobile: bool = False,
 ) -> IngestCandidate:
     cores_field = row.get("cores", "")
     threads_field = row.get("threads", "")
@@ -208,7 +265,7 @@ def _build_candidate(
     threads = parse_int(threads_field) or threads_via_slash
 
     release_period = parse_date_period(row.get("release_date", ""))
-    release_date = release_period[0] if release_period else None
+    release_date = release_date_of(release_period)
     base_clock = parse_frequency_ghz(row.get("base_clock", ""))
     boost_clock = parse_frequency_ghz(row.get("boost_clock", ""))
     # "1.7–2.0 GHz" in a single frequency cell is base–boost; the plain parser
@@ -216,9 +273,12 @@ def _build_candidate(
     if (clock_range := parse_frequency_range_ghz(row.get("base_clock", ""))) is not None:
         base_clock = clock_range[0]
         boost_clock = boost_clock or clock_range[1]
+    # A clock outside 0.1–7 GHz is a misread cell (a year, a core count).
+    base_clock = base_clock if base_clock is not None and 0.1 <= base_clock <= 7 else None
+    boost_clock = boost_clock if boost_clock is not None and 0.1 <= boost_clock <= 7 else None
     l3_cache = parse_cache_mb(row.get("l3_cache", ""))
     tdp = parse_tdp_w(row.get("tdp", ""))
-    socket = row.get("socket") or None
+    socket = normalize_socket(row.get("socket", ""))
     process_node = row.get("process_node") or None
     architecture, node_from_heading = _clean_architecture(architecture)
     if not row.get("architecture"):
@@ -227,6 +287,8 @@ def _build_candidate(
     process_node = process_node or node_from_heading
 
     segment = guess_cpu_segment(model)
+    if mobile and segment != "server":
+        segment = "laptop"
     brand = _BRAND_DISPLAY.get(manufacturer, manufacturer.title())
     name = model if model.lower().startswith(manufacturer) else f"{brand} {model}"
 

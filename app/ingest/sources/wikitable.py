@@ -9,6 +9,7 @@ plus a header-keyword matcher that maps columns to canonical field names.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 
@@ -158,7 +159,27 @@ def _span(cell: Tag, attribute: str) -> int:
         raw = raw[0] if raw else None
     if raw is None:
         return 1
-    try:
-        return max(1, int(raw))
-    except (TypeError, ValueError):
-        return 1
+    # Browsers read the leading digits, so colspan="3," spans three columns.
+    digits = re.match(r"\s*(\d+)", str(raw))
+    return max(1, int(digits[1])) if digits else 1
+
+
+def enclosing_headings(table: Tag) -> list[str]:
+    """Texts of the headings a table sits under, innermost first.
+
+    ``["Mobile", "13th generation Core i", "Latest"]`` for a table under that
+    h4, h3 and h2. A heading of a section that already ended is not included.
+    """
+    found: list[str] = []
+    level = 7
+    for heading in table.find_all_previous(["h2", "h3", "h4", "h5", "h6"]):
+        rank = int(heading.name[1])
+        if rank >= level:
+            continue
+        text = heading.get_text(" ", strip=True).split("[")[0].strip()
+        if text:
+            found.append(text)
+        level = rank
+        if rank == 2:
+            break
+    return found

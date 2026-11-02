@@ -91,7 +91,8 @@ def test_codename_and_bus_helpers() -> None:
     assert architecture_from_codename("RV620 PRO", "amd") == "TeraScale"
     assert architecture_from_codename("Rage 4", "amd") is None
     assert normalize_bus_interface("AGP 8×") == "AGP 8x"
-    assert normalize_bus_interface("AGP 4× PCI") == "AGP 4x"
+    # Two buses in one cell are board variants: neither is the part's bus.
+    assert normalize_bus_interface("AGP 4× PCI") is None
     assert normalize_bus_interface("IGP") is None
 
 

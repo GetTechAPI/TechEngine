@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from bs4 import BeautifulSoup
 
-from app.ingest.sources.wikitable import parse_table
+from app.ingest.sources.wikitable import enclosing_headings, parse_table
 
 RULES = {
     "model": ["model"],
@@ -68,3 +68,29 @@ def test_skips_empty_rows() -> None:
     rows = list(parse_table(_table(html), rules))
     models = [r.cells.get("model") for r in rows]
     assert models == ["i9-13900K"]
+
+
+def test_colspan_with_trailing_junk_reads_leading_digits() -> None:
+    html = """
+    <table class="wikitable">
+      <tr><th>Model</th><th>Architecture</th><th>Cores</th><th>TDP</th></tr>
+      <tr><td>i5-8600T</td><td colspan="2,">Coffee Lake</td><td>35 W</td></tr>
+    </table>
+    """
+    rows = list(parse_table(_table(html), RULES))
+    assert rows[0].cells["tdp"] == "35 W"
+
+
+def test_enclosing_headings_are_innermost_first_and_stop_at_h2() -> None:
+    soup = BeautifulSoup(
+        """
+        <h2>Desktop</h2><h3>Old</h3><p></p>
+        <h2>Latest</h2>
+        <h3>13th generation Core i[edit]</h3>
+        <h4>Desktop</h4><p></p>
+        <h4>Mobile</h4>
+        <table class="wikitable"><tr><td>x</td></tr></table>
+        """,
+        "html.parser",
+    )
+    assert enclosing_headings(soup.find("table")) == ["Mobile", "13th generation Core i", "Latest"]

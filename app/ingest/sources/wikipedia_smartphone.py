@@ -5,6 +5,12 @@ Wikipedia. We parse those, look up the SoC name against the curated TechAPI
 SoC catalog, and emit candidates only for phones whose SoC is already
 curated — the validator enforces ``smartphone.soc`` foreign-key integrity
 so unknown SoCs would otherwise tank the whole dataset.
+
+A row is a phone only when it names one model and at least one spec parses.
+Captions, year dividers, legends and the attribute rows of transposed
+comparison tables name no phone; "iPhone 13 Pro / 13 Pro Max" names two.
+Records go to ``smartphone/<brand>/<year>/<slug>.json``, so a row without a
+release date is never written.
 """
 
 from __future__ import annotations
@@ -13,7 +19,7 @@ import re
 from collections.abc import Iterator
 from pathlib import Path
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
 from app.coverage.curated import curated_slugs
 from app.coverage.normalize import slugify
@@ -25,16 +31,16 @@ from ..normalize import (
     parse_date_period,
     parse_ram_gb,
     parse_weight_g,
+    release_date_of,
 )
 from .base import IngestCandidate
-from .wikitable import parse_table
+from .wikitable import _detect_headers, _table_to_grid
 
 PAGES: list[tuple[str, str]] = [
     ("samsung", "List_of_Samsung_Galaxy_smartphones"),
     ("apple", "List_of_iPhone_models"),
     ("google", "Pixel_(smartphone)"),
     ("oneplus", "List_of_OnePlus_products"),
-    ("xiaomi", "List_of_Xiaomi_smartphones"),
 ]
 
 # Brand keys are stored lowercase; these are their display forms used to
@@ -59,6 +65,13 @@ HEADER_RULES: dict[str, list[str]] = {
 # product family (Snapdragon / Dimensity / Exynos / Tensor / Kirin) and drop
 # only the company name. Apple is the exception — "Apple A17 Pro" slugs as
 # ``a17-pro`` because "Apple" is the family identifier, not a vendor prefix.
+# Citation markers left in model cells ("Galaxy Ace 3 [ 35 ]").
+_FOOTNOTE_RE = re.compile(r"\s*\[\s*[\w\s]{1,6}\]")
+# A product word named twice means two phones in one cell ("iPhone 5 iPhone 5c").
+_PRODUCT_WORD_RE = re.compile(r"\b(?:iphone|galaxy|pixel|oneplus|redmi|poco)\b", re.IGNORECASE)
+# Without one of these the row is not a phone (a caption, a legend, a spec label).
+_SPEC_FIELDS = ("soc", "release_date", "ram_gb", "battery_mah", "weight_g")
+
 _SOC_VENDOR_PREFIXES = (
     "qualcomm",
     "mediatek",
@@ -110,19 +123,64 @@ class WikipediaSmartphoneIngest:
         soup = BeautifulSoup(html, "html.parser")
         source_url = f"https://en.wikipedia.org/wiki/{page}"
         for table in soup.select("table.wikitable"):
-            for row in parse_table(table, HEADER_RULES):
-                model = row.cells.get("model", "")
+            for cells in _rows(table):
+                model = _FOOTNOTE_RE.sub("", cells.get("model", "")).strip()
+                if "/" in model or len(_PRODUCT_WORD_RE.findall(model)) > 1:
+                    continue  # two phones in one cell; splitting would guess the names
                 slug = slugify(model, manufacturer=brand)
                 if len(slug) < 3:
                     continue
-                yield _build_candidate(
+                candidate = _build_candidate(
                     brand=brand,
                     model=model,
                     slug=slug,
-                    row=row.cells,
+                    row=cells,
                     source_url=source_url,
                     known_socs=known_socs,
                 )
+                if any(candidate.record.get(field) is not None for field in _SPEC_FIELDS):
+                    yield candidate
+
+
+def _rows(table: Tag) -> Iterator[dict[str, str]]:
+    """Body rows of ``table`` keyed by field, the way ``wikitable.parse_table``
+    reads them, and also through a two-row header: under "Release(d)" spanning
+    "With OS" and "Date", the release date is the "Date" column, and the
+    second header row is not a phone.
+    """
+    grid = _table_to_grid(table)
+    detected = _detect_headers(grid, HEADER_RULES) if grid else None
+    if detected is None:
+        return
+    header, mapping = detected
+    model_column = min(column for column, field in mapping.items() if field == "model")
+    start = header + 1
+    if (
+        start < len(grid)
+        and model_column < len(grid[start])
+        and grid[start][model_column] == grid[header][model_column]
+    ):
+        leaves = grid[start]
+        dates = {
+            column
+            for column, field in mapping.items()
+            if field == "release_date" and column < len(leaves) and "date" in leaves[column].lower()
+        }
+        if dates:
+            mapping = {
+                column: field
+                for column, field in mapping.items()
+                if field != "release_date" or column in dates
+            }
+        start += 1
+    for row in grid[start:]:
+        cells: dict[str, str] = {}
+        for column, text in enumerate(row):
+            field = mapping.get(column)
+            if field and text:
+                cells.setdefault(field, text)
+        if cells:
+            yield cells
 
 
 def soc_text_to_slug(text: str) -> str:
@@ -157,7 +215,7 @@ def _build_candidate(
     known_socs: set[str],
 ) -> IngestCandidate:
     release_period = parse_date_period(row.get("release_date", ""))
-    release_date = release_period[0] if release_period else None
+    release_date = release_date_of(release_period)
     soc_text = row.get("soc", "")
     soc_slug = soc_text_to_slug(soc_text)
     soc_value = soc_slug if soc_slug in known_socs else None
@@ -191,7 +249,11 @@ def _build_candidate(
     required = ("soc", "release_date", "ram_gb", "battery_mah", "weight_g", "os")
     missing = tuple(field for field in required if record.get(field) in (None, ""))
 
-    output_path = Path("smartphone") / brand / f"{slug}.json"
+    year = release_date.year if release_date else "unknown"
+    output_path = Path("smartphone") / brand / str(year) / f"{slug}.json"
+    # The layout files a phone under its release year; without one there is no
+    # folder to put it in, even as a draft.
+    problems = () if release_date else ("no release date to file it under",)
 
     return IngestCandidate(
         category="smartphone",
@@ -201,5 +263,6 @@ def _build_candidate(
         source_url=source_url,
         output_path=output_path,
         missing_fields=missing,
+        problems=problems,
         released_by=release_period[1] if release_period else None,
     )

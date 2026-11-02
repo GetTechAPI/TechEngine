@@ -22,6 +22,11 @@ _PCIE_RE = re.compile(r"PCI[-\s]?[Ee]?\s*(?:Gen\s*)?(\d(?:\.\d)?)", re.IGNORECAS
 _TDP_RE = re.compile(
     r"(?<![\d.])(\d{1,4}(?:\.\d+)?)(?:\s*/\s*\d{1,4}(?:\.\d+)?)?\s*W\b", re.IGNORECASE
 )
+# "12–25 W": a cTDP range, which names no default TDP.
+_TDP_RANGE_RE = re.compile(
+    r"(?<![\d.])\d{1,4}(?:\.\d+)?\s*(?:W\s*)?(?:–|—|−|-|to)\s*\d{1,4}(?:\.\d+)?\s*W\b",
+    re.IGNORECASE,
+)
 _FREQ_RANGE_RE = re.compile(
     r"(\d+(?:\.\d+)?)\s*(?:–|—|-|to)\s*(\d+(?:\.\d+)?)\s*(GHz|MHz)\b", re.IGNORECASE
 )
@@ -47,7 +52,9 @@ _SHORT_DATE_RE = re.compile(
     re.IGNORECASE,
 )
 _QUARTER_RE = re.compile(r"\bQ([1-4])\s*'?(\d{2}|\d{4})\b", re.IGNORECASE)
-_MONTH_YEAR_RE = re.compile(r"\b" + _MONTH_NAME + r"\s+(\d{4})\b", re.IGNORECASE)
+# "1H 2025" and "H2 2024".
+_HALF_YEAR_RE = re.compile(r"\b(?:([12])H|H([12]))\s*(\d{4})\b", re.IGNORECASE)
+_MONTH_YEAR_RE = re.compile(r"\b" + _MONTH_NAME + r",?\s+(\d{4})\b", re.IGNORECASE)
 _YEAR_ONLY_RE = re.compile(r"\b(19\d{2}|20\d{2})\b")
 
 _MONTHS = {
@@ -74,10 +81,15 @@ def parse_frequency_ghz(text: str) -> float | None:
 
 
 def parse_tdp_w(text: str) -> int | None:
-    """``"65 W"`` → ``65``; ``"65/95 W"`` → ``65``; ``"9.5 W"`` → ``10`` (half-up)."""
+    """``"65 W"`` → ``65``; ``"65/95 W"`` → ``65``; ``"9.5 W"`` → ``10`` (half-up).
+
+    ``"45 W (35–54 W)"`` → ``45``: the default precedes its cTDP range. A cell
+    that is only a range (``"12–25 W"``) states no default, so it gives ``None``;
+    neither end of the range is the part's TDP.
+    """
     if not text:
         return None
-    match = _TDP_RE.search(text)
+    match = _TDP_RE.search(_TDP_RANGE_RE.sub(" ", text))
     return math.floor(float(match.group(1)) + 0.5) if match else None
 
 
@@ -142,12 +154,29 @@ def parse_date(text: str) -> date | None:
     return period[0] if period else None
 
 
+# A quarter is the longest period whose first day still stands for the date.
+_LONGEST_DATED_PERIOD_DAYS = 92
+
+
+def release_date_of(period: tuple[date, date] | None) -> date | None:
+    """Release date a collector may write for ``period``, or ``None``.
+
+    A day, a month or a quarter gives its first day, as the curated records
+    do. A half-year or a bare year gives ``None``: January 1 would be a guess.
+    """
+    if period is None:
+        return None
+    first, last = period
+    return first if (last - first).days < _LONGEST_DATED_PERIOD_DAYS else None
+
+
 def parse_date_period(text: str) -> tuple[date, date] | None:
     """``(first, last)`` day of the period a date cell names.
 
     A full date is a one-day period. ``"Q4 2026"`` is Oct 1 – Dec 31, ``"Dec 2024"``
-    the whole month and a bare year the whole year, so a caller can tell whether
-    the period had ended (the part had shipped) by a given day.
+    the whole month, ``"1H 2025"`` Jan 1 – Jun 30 and a bare year the whole year,
+    so a caller can tell whether the period had ended (the part had shipped) by a
+    given day.
     """
     if not text:
         return None
@@ -170,6 +199,9 @@ def parse_date_period(text: str) -> tuple[date, date] | None:
         year_raw = match.group(2)
         year = 2000 + int(year_raw) if len(year_raw) == 2 else int(year_raw)
         return _months(year, (quarter - 1) * 3 + 1, 3)
+    if (match := _HALF_YEAR_RE.search(stripped)):
+        half = int(match.group(1) or match.group(2))
+        return _months(int(match.group(3)), 1 if half == 1 else 7, 6)
     if (match := _MONTH_YEAR_RE.search(stripped)):
         return _months(int(match.group(2)), _MONTHS[match.group(1).lower()[:3]], 1)
     if (match := _YEAR_ONLY_RE.search(stripped)):
@@ -218,6 +250,15 @@ def parse_memory_gb(text: str) -> float | None:
         return None
     value = float(match.group(1))
     return value if match.group(2).lower() == "gb" else round(value / 1024, 3)
+
+
+def mib_to_gb(mib: float) -> float | None:
+    """MiB → GB as the dataset stores it (binary): ``32`` → ``0.03125``.
+
+    Unrounded, so power-of-two sizes stay exact. 1 MiB and less gives ``None``:
+    0.0009765625 is under the validator's 0.001 GB floor.
+    """
+    return mib / 1024 if mib > 1 else None
 
 
 def parse_memory_bus_bit(text: str) -> int | None:
@@ -326,6 +367,17 @@ def guess_os(text: str, *, brand: str = "") -> str | None:
     return None
 
 
+def normalize_socket(text: str) -> str | None:
+    """Socket in the model doc's form: ``"LGA 1151"`` → ``"LGA1151"``,
+    ``"Socket AM4"`` → ``"AM4"``, ``"F"`` → ``"F (1207)"``."""
+    value = " ".join(text.split())
+    value = re.sub(r"^Socket\s+", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"^(FC)?LGA\s+(?=\d)", r"\1LGA", value, flags=re.IGNORECASE)
+    if value == "F":
+        value = "F (1207)"
+    return value or None
+
+
 def guess_cpu_segment(name: str) -> str:
     """Heuristic CPU segment classifier.
 
@@ -353,6 +405,7 @@ def guess_cpu_segment(name: str) -> str:
         suffix = match.group(1) if match else ""
         if any(letter in suffix for letter in ("h", "u", "y", "p", "m")) and "k" not in suffix:
             return "laptop"
-        if suffix in {"x", "xe"}:
+        # Core X/XE parts are HEDT; Ryzen X parts are ordinary desktop chips.
+        if suffix in {"x", "xe"} and re.search(r"\bcore\b", lowered):
             return "hedt"
     return "desktop"

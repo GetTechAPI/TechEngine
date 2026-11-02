@@ -17,6 +17,7 @@ from app.verify.wikipedia_gpu_backfill import (
     form_factor_marks,
     interface_families,
     memory_close,
+    parse_memory_options,
     rows_from_html,
     split_card_name,
 )
@@ -493,3 +494,10 @@ def test_apply_writes_only_confirmed_records(tmp_path: Path) -> None:
     assert written["source_urls"][0] == KAGGLE_GPU_URL
     assert any("en.wikipedia.org/wiki/Quadro" in url for url in written["source_urls"])
     assert other_path.read_text(encoding="utf-8") == other_raw
+
+
+def test_memory_options_are_binary_and_unrounded() -> None:
+    assert parse_memory_options("32 MB") == (0.03125,)
+    assert parse_memory_options("1536 MB") == (1.5,)
+    # 1 MiB is under the dataset's floor, so it is no option at all.
+    assert parse_memory_options("1 MB") == ()

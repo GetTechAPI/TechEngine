@@ -71,9 +71,18 @@ def _gpu(
             "gpu/nvidia/2025/enterprise/rtx-pro-6000-blackwell-max-q.json",
         ),
         (_gpu("quadro-t500-mobile"), "gpu/nvidia/2020/consumer/t500-mobile.json"),
-        # Laptop-only parts listed without "Mobile", and one card per memory size.
-        (_gpu("geforce-rtx-2050"), "gpu/nvidia/2021/consumer/geforce-rtx-2050-mobile.json"),
-        (_gpu("geforce-gtx-1650-ti"), "gpu/nvidia/2020/consumer/geforce-gtx-1650-ti-mobile.json"),
+        # Laptop parts under another laptop marker, and one card per memory size.
+        (
+            _gpu("geforce-rtx-2050-notebook"),
+            "gpu/nvidia/2021/consumer/geforce-rtx-2050-mobile.json",
+        ),
+        (
+            _gpu("geforce-gtx-1650-ti-laptop"),
+            "gpu/nvidia/2020/consumer/geforce-gtx-1650-ti-mobile.json",
+        ),
+        # OEM boards and data-center names.
+        (_gpu("geforce-gtx-1070-oem"), "gpu/nvidia/2016/consumer/geforce-gtx-1070.json"),
+        (_gpu("m6-gpu-accelerator"), "gpu/nvidia/2015/enterprise/tesla-m6-mobile.json"),
         (_gpu("geforce-gtx-1060"), "gpu/nvidia/2016/consumer/geforce-gtx-1060-3gb.json"),
         # Bus and revision variants of a curated board.
         (_gpu("geforce-6800-gt-agp"), "gpu/nvidia/2004/consumer/geforce-6800-gt.json"),
