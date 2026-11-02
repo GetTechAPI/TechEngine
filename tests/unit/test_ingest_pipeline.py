@@ -77,6 +77,8 @@ def test_dedups_repeat_slug_in_same_run(
         data_root=tmp_path,
     )
     assert sorted(c.slug for c in result.written) == ["dup", "uniq"]
+    assert [c.slug for c in result.skipped_same_run] == ["dup"]
+    assert result.reason(result.skipped_same_run[0]).endswith(", added in this run")
 
 
 def test_markdown_summary_includes_counts_and_links(
@@ -92,8 +94,35 @@ def test_markdown_summary_includes_counts_and_links(
     )
     summary = result.markdown_summary()
     assert "written: **1**" in summary
+    assert "skipped (repeats a row added in this run): 0" in summary
     assert "skipped (incomplete or uncertain): 1" in summary
     assert "## Added" in summary
     assert "cpu/intel/2024/consumer/ok.json" in summary
     assert "## Skipped (incomplete or uncertain)" in summary
     assert "missing: cores" in summary
+
+
+def test_rows_sharing_a_slug_with_different_values_are_all_skipped(tmp_path: Path) -> None:
+    gddr5 = _candidate("gt-1030")
+    gddr5.record["memory_type"] = "GDDR5"
+    ddr4 = _candidate("gt-1030")
+    ddr4.record["memory_type"] = "DDR4"
+    result = run([gddr5, ddr4], data_root=tmp_path, include_drafts=True)
+    assert not result.written
+    assert result.skipped_incomplete == [gddr5, ddr4]
+    assert result.reason(ddr4) == (
+        "uncertain: the source lists 2 rows named gt-1030 with different memory_type"
+    )
+
+
+def test_rows_sharing_a_slug_that_only_fill_different_fields_do_not_conflict(
+    tmp_path: Path,
+) -> None:
+    first = _candidate("same")
+    first.record["cores"] = 8
+    second = _candidate("same")
+    second.record["tdp_w"] = 65
+    result = run([first, second], data_root=tmp_path)
+    assert result.written == [first]
+    assert result.skipped_same_run == [second]
+

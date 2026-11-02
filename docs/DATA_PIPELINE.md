@@ -77,8 +77,14 @@ This repo serves **curated, validated** records, but collection now happens
 guesses: a candidate already curated in its category under any manufacturer
 folder or name variant, one the source dates after the run, and one with an
 uncertain value (an architecture taken from a market heading, hybrid core counts
-that disagree) is listed in the summary with its reason and never written; an
-existing file is never written over. Both run on manual dispatch
+that disagree, two rows of one name with different values) is listed in the
+summary with its reason and never written; an existing file is never written
+over. A field is filled only when its cell states one value: a range, an
+estimate, a cell listing variants, or a year or half-year alone leaves it empty
+(neither end of a range stands in), and a row that then misses a required
+field is skipped. Laptop parts are their own records (`-mobile`), integrated
+GPUs are out of scope, and a phone without a release date has no
+`<year>` folder, so it is not written. Both run on manual dispatch
 and their output goes to TechAPI as a PR for human review before anything
 lands (SPEC Section 9.3). The curated
 dataset is a **subset, not exhaustive.**

@@ -30,6 +30,9 @@ class IngestResult:
     written: list[IngestCandidate] = field(default_factory=list)
     skipped_incomplete: list[IngestCandidate] = field(default_factory=list)
     skipped_existing: list[IngestCandidate] = field(default_factory=list)
+    # Rows that repeat a record this run already wrote (a second table row for
+    # the same board, a laptop row listed on two pages).
+    skipped_same_run: list[IngestCandidate] = field(default_factory=list)
     # Why each skipped candidate was skipped, keyed by the candidate's id():
     # one page can list the same slug twice, once complete and once not.
     reasons: dict[int, str] = field(default_factory=dict)
@@ -41,6 +44,7 @@ class IngestResult:
         lines = ["# Ingestion run summary", ""]
         lines.append(f"- written: **{len(self.written)}**")
         lines.append(f"- skipped (already curated): {len(self.skipped_existing)}")
+        lines.append(f"- skipped (repeats a row added in this run): {len(self.skipped_same_run)}")
         lines.append(f"- skipped (incomplete or uncertain): {len(self.skipped_incomplete)}")
         lines.append("")
         if self.written:
@@ -58,6 +62,14 @@ class IngestResult:
             lines.extend(f"- `{c.slug}` — {self.reason(c)}" for c in renamed[:_LIST_LIMIT])
             if len(renamed) > _LIST_LIMIT:
                 lines.append(f"_… and {len(renamed) - _LIST_LIMIT} more._")
+            lines.append("")
+        if self.skipped_same_run:
+            lines.append("## Skipped (repeats a row added in this run)")
+            lines.extend(
+                f"- `{c.slug}` — {self.reason(c)}" for c in self.skipped_same_run[:_LIST_LIMIT]
+            )
+            if len(self.skipped_same_run) > _LIST_LIMIT:
+                lines.append(f"_… and {len(self.skipped_same_run) - _LIST_LIMIT} more._")
             lines.append("")
         if self.skipped_incomplete:
             lines.append("## Skipped (incomplete or uncertain)")
@@ -156,6 +168,40 @@ class _Index:
         return None
 
 
+# Fields that name or file a record rather than describe the part.
+_IDENTITY_FIELDS = frozenset({"slug", "name", "manufacturer", "verified", "source_urls"})
+
+
+def _variant_conflicts(candidates: list[IngestCandidate]) -> dict[int, str]:
+    """Rows that share a slug but disagree on a value, keyed by ``id()``.
+
+    A page often lists one board name per variant ("GeForce GT 1030" with
+    GDDR5 and with DDR4, "GeForce RTX 3060" with 12 and 8 GB), and two pages
+    can disagree on one part. Which row is the part the slug names is then
+    unclear, so none of them is written.
+    """
+    groups: dict[tuple[str, str], list[IngestCandidate]] = {}
+    for candidate in candidates:
+        groups.setdefault((candidate.category, candidate.slug), []).append(candidate)
+    conflicts: dict[int, str] = {}
+    for group in groups.values():
+        if len(group) < 2:
+            continue
+        names = set().union(*(c.record for c in group)) - _IDENTITY_FIELDS
+        fields = sorted(
+            name
+            for name in names
+            if len({json.dumps(c.record[name]) for c in group if c.record.get(name) is not None})
+            > 1
+        )
+        if fields:
+            why = f"the source lists {len(group)} rows named {group[0].slug} with different " + (
+                ", ".join(fields)
+            )
+            conflicts.update((id(c), why) for c in group)
+    return conflicts
+
+
 def _not_released(candidate: IngestCandidate, run_date: date) -> str | None:
     released_by = candidate.released_by
     if released_by is None:
@@ -185,10 +231,13 @@ def run(
     Additions only: a candidate already on file in its category, under any
     manufacturer folder and any spelling ``_Index`` checks, is skipped, and an
     existing path is never written over. A candidate that may not have shipped
-    by ``run_date`` (default: today) or that carries ``problems`` is skipped
-    even with ``include_drafts``. ``dry_run`` runs every check but writes no files.
+    by ``run_date`` (default: today), that carries ``problems`` or whose slug
+    another row of the run lists with different values is skipped even with
+    ``include_drafts``. ``dry_run`` runs every check but writes no files.
     """
     run_date = run_date or date.today()
+    candidates = list(candidates)
+    conflicts = _variant_conflicts(candidates)
     result = IngestResult()
     indexes: dict[str, _Index] = {}
     written_paths: set[str] = set()
@@ -206,15 +255,18 @@ def run(
         if (on_file := index.match(candidate)) is not None:
             path, why = on_file
             if path in written_paths:
-                continue  # a second row for a record this run already wrote
+                skip(result.skipped_same_run, candidate, f"{why}, added in this run")
+                continue
             skip(result.skipped_existing, candidate, why)
             continue
         if (unreleased := _not_released(candidate, run_date)) is not None:
             skip(result.skipped_incomplete, candidate, unreleased)
             continue
-        if candidate.problems:
-            why = "uncertain: " + "; ".join(candidate.problems)
-            skip(result.skipped_incomplete, candidate, why)
+        problems = candidate.problems + (
+            (conflicts[id(candidate)],) if id(candidate) in conflicts else ()
+        )
+        if problems:
+            skip(result.skipped_incomplete, candidate, "uncertain: " + "; ".join(problems))
             continue
         if not candidate.is_complete and not include_drafts:
             skip(
