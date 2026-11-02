@@ -92,8 +92,8 @@ def test_markdown_summary_includes_counts_and_links(
     )
     summary = result.markdown_summary()
     assert "written: **1**" in summary
-    assert "skipped (missing required fields): 1" in summary
+    assert "skipped (incomplete or uncertain): 1" in summary
     assert "## Added" in summary
     assert "cpu/intel/2024/consumer/ok.json" in summary
-    assert "## Skipped (missing required fields)" in summary
+    assert "## Skipped (incomplete or uncertain)" in summary
     assert "missing: cores" in summary

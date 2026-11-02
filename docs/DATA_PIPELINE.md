@@ -73,7 +73,12 @@ worked around. The hosting target depends on the public/private decision
 This repo serves **curated, validated** records, but collection now happens
 **in-repo**: `app/ingest` drafts new SKUs from upstream catalogs and
 `app/ingest/enrich` backfills benchmark columns from multiple sources
-(variant-safe, fill-only-nulls, never overwrites). Both run on manual dispatch
+(variant-safe, fill-only-nulls, never overwrites). Ingest skips rather than
+guesses: a candidate already curated in its category under any manufacturer
+folder or name variant, one the source dates after the run, and one with an
+uncertain value (an architecture taken from a market heading, hybrid core counts
+that disagree) is listed in the summary with its reason and never written; an
+existing file is never written over. Both run on manual dispatch
 and their output goes to TechAPI as a PR for human review before anything
 lands (SPEC Section 9.3). The curated
 dataset is a **subset, not exhaustive.**

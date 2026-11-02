@@ -146,7 +146,9 @@ def test_pipeline_dedups_against_target_root_and_within_run(tmp_path: Path) -> N
     candidates = list(WikipediaCpuIngest._extract(HTML, "amd", "test", "AMD Ryzen"))
     result = run(candidates + candidates, data_root=tmp_path, dry_run=True)
     assert [c.slug for c in result.written] == ["ryzen-7-1800x"]
-    assert len(result.skipped_existing) == 3
+    # Both copies of the curated PRO part; the second 1800X row is dropped silently.
+    assert len(result.skipped_existing) == 2
+    assert all(result.reason(c).startswith("same CPU as ") for c in result.skipped_existing)
     assert list(tmp_path.rglob("*.json")) == [existing]
 
 

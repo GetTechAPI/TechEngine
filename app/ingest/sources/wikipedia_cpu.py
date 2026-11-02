@@ -24,7 +24,7 @@ from ..normalize import (
     guess_cpu_segment,
     parse_cache_mb,
     parse_cores_threads,
-    parse_date,
+    parse_date_period,
     parse_frequency_ghz,
     parse_frequency_range_ghz,
     parse_int,
@@ -111,7 +111,9 @@ class WikipediaCpuIngest:
                     continue
                 if _FAMILY_ONLY_RE.fullmatch(slug):
                     continue
-                architecture = row.get("architecture") or section_label
+                architecture = row.get("architecture") or architecture_from_heading(
+                    section_label
+                )
                 # Parenthesized PRO denotes both ordinary and PRO models in one row.
                 models = [model]
                 if re.search(r"\(\s*PRO\s*\)", model):
@@ -127,6 +129,7 @@ class WikipediaCpuIngest:
                         slug=slugify(variant, manufacturer=manufacturer),
                         row=row,
                         source_url=source_url,
+                        heading=section_label,
                     )
 
 
@@ -146,6 +149,41 @@ def _clean_architecture(label: str) -> tuple[str, str | None]:
     return " ".join(name.split()) or label, node
 
 
+# Headings that name a market or a generation, not a microarchitecture.
+_GENERIC_HEADING_RE = re.compile(
+    r"\b(?:mobile|desktop|server|embedded|iot|processors?|generation|series|workstation|"
+    r"mainstream|laptop|notebook|based)\b",
+    re.IGNORECASE,
+)
+_CODENAMED_RE = re.compile(r"\(\s*codenamed\s+([^()]+?)\s*\)", re.IGNORECASE)
+_CODENAME_RE = re.compile(r"[A-Z][A-Za-z]*(?:[ -][A-Z][A-Za-z]*)*(?:-[A-Z0-9]{1,2})?")
+_ZEN_RE = re.compile(r"\b(Zen(?: \d\+?c?)?\+?)(?=[/ ,)]|$)")
+
+
+def architecture_from_heading(label: str) -> str:
+    """Architecture named by a section heading, or ``""`` when it names none.
+
+    ``'"Denverton" (14 nm)'`` → ``Denverton``; ``"Desktop (codenamed Comet Lake )"``
+    → ``Comet Lake``; ``"Raphael (7000 series, Zen 4/RDNA2 based)"`` → ``Zen 4``.
+    ``"Mobile"``, ``"Fourth generation Epyc (Genoa, Bergamo and Siena)"`` and other
+    market or generation headings name no single architecture, so they give
+    ``""`` and the row is skipped rather than labelled with the heading.
+    """
+    if not label:
+        return ""
+    name, _node = _clean_architecture(label)
+    if (codenamed := _CODENAMED_RE.search(name)) is not None:
+        codename = " ".join(codenamed.group(1).split())
+        return codename if _CODENAME_RE.fullmatch(codename) else ""
+    if (zen := _ZEN_RE.findall(name)) and len(set(zen)) == 1:
+        return str(zen[0])
+    # "Raptor Lake (13th gen)": the codename is outside the parentheses.
+    name = " ".join(re.sub(r"\([^()]*\)", " ", name).split())
+    if _GENERIC_HEADING_RE.search(name):
+        return ""
+    return name if _CODENAME_RE.fullmatch(name) else ""
+
+
 def _nearest_section_label(table: Tag) -> str | None:
     for prev in table.find_all_previous(["h2", "h3", "h4"]):
         text = prev.get_text(" ", strip=True)
@@ -162,13 +200,15 @@ def _build_candidate(
     slug: str,
     row: dict[str, str],
     source_url: str,
+    heading: str = "",
 ) -> IngestCandidate:
     cores_field = row.get("cores", "")
     threads_field = row.get("threads", "")
     cores, threads_via_slash = parse_cores_threads(cores_field)
     threads = parse_int(threads_field) or threads_via_slash
 
-    release_date = parse_date(row.get("release_date", ""))
+    release_period = parse_date_period(row.get("release_date", ""))
+    release_date = release_period[0] if release_period else None
     base_clock = parse_frequency_ghz(row.get("base_clock", ""))
     boost_clock = parse_frequency_ghz(row.get("boost_clock", ""))
     # "1.7–2.0 GHz" in a single frequency cell is base–boost; the plain parser
@@ -181,6 +221,9 @@ def _build_candidate(
     socket = row.get("socket") or None
     process_node = row.get("process_node") or None
     architecture, node_from_heading = _clean_architecture(architecture)
+    if not row.get("architecture"):
+        # The architecture came from the section heading; so may the node.
+        node_from_heading = _clean_architecture(heading)[1]
     process_node = process_node or node_from_heading
 
     segment = guess_cpu_segment(model)
@@ -218,6 +261,7 @@ def _build_candidate(
 
     required = ("release_date", "architecture", "cores", "threads")
     missing = tuple(field for field in required if record.get(field) in (None, ""))
+    problems = (row["cores_note"],) if row.get("cores_note") else ()
 
     year = release_date.year if release_date else "unknown"
     bucket = "enterprise" if segment in ("server", "hedt") else "consumer"
@@ -231,4 +275,6 @@ def _build_candidate(
         source_url=source_url,
         output_path=output_path,
         missing_fields=missing,
+        problems=problems,
+        released_by=release_period[1] if release_period else None,
     )
