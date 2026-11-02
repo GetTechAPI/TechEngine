@@ -16,7 +16,13 @@ from pathlib import Path
 from typing import Any
 
 from .cpu_identity import cpu_key, same_cpu
-from .gpu_identity import gpu_family_key, gpu_key, spec_twins
+from .gpu_identity import (
+    datacenter_family,
+    form_factor_of,
+    gpu_family_key,
+    gpu_key,
+    spec_twins,
+)
 from .sources.base import IngestCandidate
 
 # Rows of the "Skipped" lists printed in the summary; counts are always complete.
@@ -161,7 +167,15 @@ class _Index:
             return None
         if (family := gpu_family_key(candidate.slug)) in self.families:
             path = self.families[family]
-            return path, f"a variant of {path} (bus, memory, laptop or edition name)"
+            return path, f"a variant of {path} (bus, memory, OEM or edition name)"
+        if (base := datacenter_family(candidate.slug)) is not None:
+            children = sorted(
+                path for key, path in self.families.items() if form_factor_of(key, base)
+            )
+            if children:
+                return children[0], (
+                    f"names the board family of {', '.join(children)}; which one is unclear"
+                )
         for entry in self.records:
             if spec_twins(candidate.record, entry.record):
                 return entry.path, f"likely the same board as {entry.path} (same clock and TDP)"

@@ -16,6 +16,13 @@ stay out of the PR unless ``--include-drafts``.
 comes from an explicit Architecture column or from the code name via
 :func:`architecture_from_codename`. Rows whose code name maps to nothing are
 left without an architecture (incomplete) rather than guessed.
+
+A value is written only when its cell states it unambiguously. A cell that
+lists several variants ("GDDR3 GDDR4 GDDR5", "AGP 8× PCIe ×16", "512 1024"),
+a range ("100-260"), an estimate ("~75", "45?") or a year alone leaves the
+field empty, so the row is skipped rather than given one variant's value.
+Integrated GPUs are out of scope, and a laptop table row must name the laptop
+part ("GeForce GTX 1070 (Notebook)" is ``geforce-gtx-1070-mobile``).
 """
 
 from __future__ import annotations
@@ -31,9 +38,9 @@ from bs4 import BeautifulSoup, Tag
 from app.coverage.normalize import slugify
 from app.coverage.sources.wikipedia import fetch_wikipedia_html
 
-from ..normalize import guess_gpu_segment, parse_date_period
+from ..normalize import guess_gpu_segment, mib_to_gb, parse_date_period, release_date_of
 from .base import IngestCandidate
-from .wikitable import parse_table_header_block
+from .wikitable import enclosing_headings, parse_table_header_block
 
 # ``Nvidia_Quadro`` redirects to ``Quadro``, whose AGP/PCI/PCIe and NVS tables
 # carry Quadro4-era boards the GeForce list does not. ATI Rage/Radeon legacy
@@ -69,8 +76,45 @@ _FOOTNOTE_RE = re.compile(r"\s*\[[^\]]{1,12}\]")
 _TRAILING_PAREN_RE = re.compile(r"\s*\([^)]*\)\s*$")
 _MULTI_GPU_RE = re.compile(r"\d\s*[×x]\s*\d")
 _BUS_RE = re.compile(r"\b(PCIe|PCI-E|PCI Express|AGP|PCI|MXM(?:-[A-Z]+)?)\b[^/,;]*", re.IGNORECASE)
+_BUS_NAME_RE = re.compile(r"\b(PCIe|AGP|PCI|MXM)\b", re.IGNORECASE)
 # Integrated/chipset graphics are out of scope for the discrete-GPU table.
 _OUT_OF_SCOPE_RE = re.compile(r"\bIGP\b|integrated|on-?die|\bAPU\b|nForce", re.IGNORECASE)
+# Chipset IGPs: a memory cell naming only system memory ("Up to 256 from system
+# memory", "System shared"), or an internal bus. HyperMemory and TurboCache
+# boards state their onboard memory ("128 + shared", "256 onboard + up to 512 system").
+_SYSTEM_MEMORY_RE = re.compile(r"\bsystem\b", re.IGNORECASE)
+_ONBOARD_RE = re.compile(r"onboard|\+")
+_CHIPSET_BUS_RE = re.compile(r"hyper\s*transport|\binternal\b", re.IGNORECASE)
+# "(Notebook)" names the laptop part; it is not a remark to strip.
+_LAPTOP_PAREN_RE = re.compile(r"\s*\((?:notebook|laptop|mobile)\)\s*$", re.IGNORECASE)
+# A row in a laptop table names its laptop part: "Mobile", "Max-Q", "Go",
+# "Mobility", an M model ("GTX 980M", "M1000M", "MX150").
+_LAPTOP_MARKER_RE = re.compile(
+    r"\b(?:mobile|mobility|laptop|notebook|max-q|go)\b|\b[a-z]?\d{2,5}m[a-z]*\b|\bm\d{3,4}|\bmx\s?\d",
+    re.IGNORECASE,
+)
+_BRAND_WORD_RE = re.compile(r"\b(?:geforce|radeon|quadro|firepro|firegl|tesla)\b", re.IGNORECASE)
+# "Clock Rate / Base (Boost) ( MHz )": "1291 (1392)" is base 1291, boost 1392.
+_BASE_BOOST_RE = re.compile(r"\b(?:base|core)\b[^/]*\(\s*boost|\bbase boost\b")
+_BASE_BOOST_CELL_RE = re.compile(r"\s*(\d[\d,]*)\s*\(\s*(\d[\d,]*)\s*\)\s*")
+_DATE_IN_CELL_RES = (
+    re.compile(r"\b\d{4}-\d{2}-\d{2}\b"),
+    re.compile(
+        r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?,?\s+\d{4}\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\bQ[1-4]\s*'?\d{2,4}\b", re.IGNORECASE),
+    re.compile(r"\b(?:[12]H|H[12])\s*\d{4}\b", re.IGNORECASE),
+    re.compile(
+        r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?,?\s+\d{4}\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\b(?:19|20)\d{2}\b"),
+)
 
 _KNOWN_ARCHITECTURES = (
     "Ada Lovelace", "Blackwell", "Hopper", "Ampere", "Turing", "Volta", "Pascal",
@@ -124,6 +168,10 @@ def architecture_from_codename(codename: str, manufacturer: str) -> str | None:
         family, major, minor = versioned.groups()
         return f"{family.upper()} {major}.{minor or 0}"
     token = re.sub(r"^\s*\d\s*[x×]\s*", "", text)
+    if manufacturer != "nvidia" and re.match(r"RV200\b", token, re.IGNORECASE):
+        # RV200 (Radeon 7500) is a die-shrunk R100, not R200; curated records
+        # disagree on its name, so it is left out.
+        return None
     table = _NVIDIA_CODENAME_ARCH if manufacturer == "nvidia" else _ATI_CODENAME_ARCH
     for pattern, arch in table:
         if re.match(rf"(?:{pattern})", token, re.IGNORECASE) or re.search(
@@ -152,13 +200,21 @@ def classify_column(label: str) -> str | None:
         return "memory_type_width"
     if "memory" in lab and "bus type" in lab:
         return "memory_type"
+    # "Memory Configuration / DRAM Type", "Memory / Type".
+    if "dram type" in lab or ("memory" in lab and re.search(r"/ type$", lab.strip())):
+        return "memory_type"
     if "memory" in lab and "bus width" in lab:
         return "memory_bus"
+    if "clock" in lab and re.search(r"\bshader\b", lab):
+        return None  # "Clock Rate / Shader (Boost)" is the shader clock
+    if _BASE_BOOST_RE.search(lab):
+        return "base_boost"
     if "boost" in lab and "clock" in lab:
         return "boost_clock"
     if "memory" not in lab and "shader" not in lab and (
         "core clock" in lab or "core / clock" in lab or "clock rate / core" in lab
-        or "base clock" in lab
+        or "base clock" in lab or "clock speed / core" in lab or "base core" in lab
+        or "/ core ( mhz )" in lab
     ):
         return "base_clock"
     if "idle" in lab:
@@ -176,55 +232,105 @@ def _unit(label: str) -> str:
     return ""
 
 
-def _number(text: str) -> float | None:
-    match = _NUMBER_RE.search(text.replace(" ", "").replace("\xa0", " "))
-    return float(match.group(0).replace(",", "")) if match else None
+def _single_number(text: str, *, bounds: bool = False) -> float | None:
+    """The one number a cell states, or ``None`` when it states several, a
+    range, an estimate (``"~75"``, ``"45?"``) or a bound. ``bounds`` accepts
+    ``"Up to 512"`` and ``"<75"``, which the curated records keep as the value."""
+    # A thin space separates thousands ("1 024").
+    cleaned = _FOOTNOTE_RE.sub("", text).replace("\u2009", "").replace("\xa0", " ")
+    if "~" in cleaned or "?" in cleaned or _RANGE_RE.search(cleaned):
+        return None
+    if not bounds and ("<" in cleaned or "up to" in cleaned.lower()):
+        return None
+    numbers = _NUMBER_RE.findall(cleaned)
+    return float(numbers[0].replace(",", "")) if len(numbers) == 1 else None
 
 
-def _clock_mhz(text: str, unit: str) -> tuple[int | None, int | None]:
-    """Cell → ``(base, boost)`` MHz. ``"500–700"`` is a base–boost range."""
-    scale = 1000 if unit == "ghz" or "ghz" in text.lower() else 1
-    if (rng := _RANGE_RE.search(text)) is not None:
-        low = float(rng.group(1).replace(",", "")) * scale
-        high = float(rng.group(2).replace(",", "")) * scale
-        if low < high:
-            return round(low), round(high)
-    value = _number(text)
-    return (round(value * scale), None) if value is not None else (None, None)
+def _clock_mhz(text: str, unit: str) -> int | None:
+    """The one clock a cell states, in MHz."""
+    value = _single_number(text)
+    if value is None:
+        return None
+    return round(value * (1000 if unit == "ghz" or "ghz" in text.lower() else 1))
 
 
 def _memory_gb(text: str, unit: str) -> float | None:
-    value = _number(text)
+    value = _single_number(text, bounds=True)
     if value is None:
         return None
     lowered = text.lower()
     if "gb" in lowered or "gib" in lowered or unit in {"gb", "gib"}:
         return value
     if "mb" in lowered or "mib" in lowered or unit in {"mb", "mib"}:
-        return round(value / 1024, 4)
+        return mib_to_gb(value)
     return None
 
 
 def _memory_type(text: str) -> str | None:
+    """The memory type a cell names; ``None`` when it names several."""
     upper = text.upper()
-    for kind in MEMORY_TYPES:
-        if re.search(rf"(?<![A-Z0-9]){kind}(?![A-Z0-9])", upper):
-            return _MEMORY_TYPE_DISPLAY.get(kind, kind)
-    return None
+    kinds = [
+        kind
+        for kind in MEMORY_TYPES
+        if re.search(rf"(?<![A-Z0-9]){kind}(?![A-Z0-9])", upper)
+    ]
+    return _MEMORY_TYPE_DISPLAY.get(kinds[0], kinds[0]) if len(kinds) == 1 else None
+
+
+def _release_period(text: str) -> tuple[date, date] | None:
+    """The release period a cell names; ``None`` for several dates or a ``?``."""
+    cleaned = _FOOTNOTE_RE.sub("", text)
+    if "?" in cleaned:
+        return None
+    taken: list[tuple[int, int]] = []
+    periods: set[tuple[date, date]] = set()
+    for pattern in _DATE_IN_CELL_RES:
+        for match in pattern.finditer(cleaned):
+            if any(start < match.end() and match.start() < end for start, end in taken):
+                continue
+            taken.append(match.span())
+            if (period := parse_date_period(match.group(0))) is not None:
+                periods.add(period)
+    return periods.pop() if len(periods) == 1 else None
 
 
 def normalize_bus_interface(text: str) -> str | None:
-    """``"PCIe 2.0 ×16"`` → ``"PCIe 2.0 x16"``; ``"AGP 8×"`` → ``"AGP 8x"``."""
-    match = _BUS_RE.search(_FOOTNOTE_RE.sub("", text))
+    """Bus as ``"PCIe N.N xN"``: ``"PCIe 2.0 ×16"``, ``"PCIe x16 2.0"``,
+    ``"PCIe 2x16"`` and ``"PCIe 2 x16"`` all give ``"PCIe 2.0 x16"``;
+    ``"AGP 8×"`` → ``"AGP 8x"``.
+
+    A cell naming two buses (``"AGP 8× PCIe ×16"``: board variants) gives
+    ``None``. Several lane widths keep only the version (``"PCIe 3.0"``).
+    Parenthesized remarks are dropped.
+    """
+    cleaned = re.sub(r"\([^()]*\)", " ", _FOOTNOTE_RE.sub("", text)).replace("×", "x")
+    cleaned = re.sub(r"PCI[- ]?E\b|PCI Express", "PCIe", cleaned, flags=re.IGNORECASE)
+    if len({name.lower() for name in _BUS_NAME_RE.findall(cleaned)}) > 1:
+        return None
+    match = _BUS_RE.search(cleaned)
     if not match:
         return None
-    value = match.group(0).replace("×", "x").replace("PCI-E", "PCIe").replace("PCI Express", "PCIe")
-    # "AGP 4× PCI" lists alternative board variants; keep the first bus only.
-    first, *rest = re.split(r"\s(?=(?:PCIe|AGP|PCI|MXM)\b)", value, maxsplit=1)
-    value = first if rest else value
-    value = re.sub(r"\s+x\s*(\d+)", r" x\1", value)
-    value = re.sub(r"(\d)\s*x\b", r"\1x", value)
-    return " ".join(value.split()).strip(" -") or None
+    if match.group(1).lower() != "pcie":
+        value = match.group(0)
+        value = re.sub(r"\s+x\s*(\d+)", r" x\1", value)
+        value = re.sub(r"(\d)\s*x\b", r"\1x", value)
+        return " ".join(value.split()).strip(" -") or None
+    rest = cleaned[match.end(1) :]
+    lanes = {int(lane) for lane in re.findall(r"x\s*(\d{1,2})\b", rest, re.IGNORECASE)}
+    versions = {
+        f"{major}.{minor or 0}"
+        for major, minor in re.findall(
+            r"(?<![\d.])(\d)(?:\.(\d))?(?![\d.])", re.sub(r"x\s*\d{1,2}\b", " ", rest)
+        )
+    }
+    if len(versions) > 1 or (not versions and len(lanes) > 1):
+        return None
+    value = "PCIe"
+    if versions:
+        value += f" {versions.pop()}"
+    if len(lanes) == 1:
+        value += f" x{lanes.pop()}"
+    return value
 
 
 class WikipediaGpuIngest:
@@ -263,19 +369,23 @@ class WikipediaGpuIngest:
             columns = {i: (classify_column(label), _unit(label)) for i, label in enumerate(labels)}
             if not any(key == "model" for key, _ in columns.values()):
                 continue
+            headings = enclosing_headings(table)
             for row in body:
                 cells: dict[str, tuple[str, str]] = {}
                 for i, text in enumerate(row):
                     key, unit = columns.get(i, (None, ""))
                     if key and text and key not in cells:
                         cells[key] = (text, unit)
-                candidate = _build_candidate(manufacturer, cells, source_url)
+                candidate = _build_candidate(manufacturer, cells, source_url, headings)
                 if candidate is not None:
                     yield candidate
 
 
 def _build_candidate(
-    manufacturer: str, cells: dict[str, tuple[str, str]], source_url: str
+    manufacturer: str,
+    cells: dict[str, tuple[str, str]],
+    source_url: str,
+    headings: list[str] | tuple[str, ...] = (),
 ) -> IngestCandidate | None:
     def text(key: str) -> str:
         return cells.get(key, ("", ""))[0]
@@ -283,32 +393,55 @@ def _build_candidate(
     def unit(key: str) -> str:
         return cells.get(key, ("", ""))[1]
 
-    raw_model = _FOOTNOTE_RE.sub("", text("model")).strip()
+    raw_model = _LAPTOP_PAREN_RE.sub(" Mobile", _FOOTNOTE_RE.sub("", text("model")).strip())
+    if raw_model.count("(") != raw_model.count(")"):
+        return None  # "R9 M395X Amethyst XT)": a fragment of a split cell
+    brand_words = [word.lower() for word in _BRAND_WORD_RE.findall(raw_model)]
+    if len(brand_words) != len(set(brand_words)):
+        return None  # "Radeon 530X Radeon 535": two boards in one cell
     model = _TRAILING_PAREN_RE.sub("", raw_model).strip()
     # "Radeon DDR / Radeon 7200": two names for one board; the first is the
     # launch name and is what distinguishes it (SDR vs DDR both became "7200").
-    model = model.split(" / ")[0].strip()
+    model = re.split(r"\s*/\s*", model)[0].strip()
     bus_text = text("bus")
-    if not model or _OUT_OF_SCOPE_RE.search(model) or _OUT_OF_SCOPE_RE.search(bus_text):
+    memory_text = " ".join(text(key) for key in ("memory_size", "memory_type"))
+    if (
+        not model
+        or _OUT_OF_SCOPE_RE.search(model)
+        or _OUT_OF_SCOPE_RE.search(bus_text)
+        or _CHIPSET_BUS_RE.search(bus_text)
+        or (_SYSTEM_MEMORY_RE.search(memory_text) and not _ONBOARD_RE.search(memory_text))
+        or any(heading.upper().startswith("IGP") for heading in headings)
+    ):
         return None
     if _MULTI_GPU_RE.search(text("memory_size")):
         # "2× 128": per-GPU values on dual-GPU boards don't fit one record.
         return None
+    problems: tuple[str, ...] = ()
+    if headings and headings[-1].lower().startswith("mobile") and not _LAPTOP_MARKER_RE.search(
+        raw_model
+    ):
+        problems = ("laptop table row without a laptop marker in its name",)
 
-    release_period = parse_date_period(text("release_date"))
-    release_date = release_period[0] if release_period else None
-    if manufacturer == "amd" and release_date is not None and release_date < _ATI_BRAND_END:
+    release_period = _release_period(text("release_date"))
+    release_date = release_date_of(release_period)
+    if manufacturer == "amd" and release_period is not None and release_period[1] < _ATI_BRAND_END:
         manufacturer = "ati"
     slug = slugify(model, manufacturer=manufacturer)
     if len(slug) < 4 or not any(ch.isdigit() for ch in slug):
         return None
 
-    base_clock, range_boost = _clock_mhz(text("base_clock"), unit("base_clock"))
-    unparenthesized = re.sub(r"\([^)]*\)", "", text("base_clock"))
-    if range_boost is None and len(re.findall(r"\d+", unparenthesized)) > 1:
-        # RDNA/Polaris "Core / Clock" cells stack game + boost ("1855 2495"): no base.
-        base_clock = None
-    boost_clock = _clock_mhz(text("boost_clock"), unit("boost_clock"))[0] or range_boost
+    base_clock = _clock_mhz(text("base_clock"), unit("base_clock"))
+    boost_clock = _clock_mhz(
+        re.sub(r"\([^)]*\)", " ", text("boost_clock")), unit("boost_clock")
+    )
+    if "base_boost" in cells:
+        combined = _FOOTNOTE_RE.sub("", text("base_boost"))
+        if (pair := _BASE_BOOST_CELL_RE.fullmatch(combined)) is not None:
+            base_clock = int(pair[1].replace(",", ""))
+            boost_clock = int(pair[2].replace(",", ""))
+        else:
+            base_clock = _clock_mhz(combined, unit("base_boost"))
     if (
         boost_clock is None
         and base_clock is not None
@@ -322,11 +455,13 @@ def _build_candidate(
 
     type_width = text("memory_type_width")
     memory_type = _memory_type(text("memory_type") or type_width)
-    width_match = re.search(r"(\d+)\s*-?\s*bit", type_width, re.IGNORECASE)
-    memory_bus = _number(text("memory_bus")) or (
-        float(width_match.group(1)) if width_match else None
+    widths = set(re.findall(r"(\d+)\s*-?\s*bit", type_width, re.IGNORECASE))
+    memory_bus = (
+        _single_number(text("memory_bus"))
+        if "memory_bus" in cells
+        else (float(widths.pop()) if len(widths) == 1 else None)
     )
-    tdp = _number(text("tdp"))
+    tdp = _single_number(text("tdp"), bounds=True)
 
     architecture = architecture_from_codename(text("architecture"), manufacturer) or (
         architecture_from_codename(text("codename"), manufacturer)
@@ -366,5 +501,6 @@ def _build_candidate(
         source_url=source_url,
         output_path=Path("gpu") / manufacturer / str(year) / segment / f"{slug}.json",
         missing_fields=missing,
+        problems=problems,
         released_by=release_period[1] if release_period else None,
     )
