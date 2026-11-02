@@ -138,8 +138,18 @@ class _Index:
             return
         if not isinstance(slug, str) or not slug:
             return
-        self.slugs.setdefault(slug, path)
-        self.keys.setdefault(self._key(slug), path)
+        names: list[object] = [slug]
+        if self.category == "smartphone":
+            # A variant record (".../2022/galaxy-m33-5g/sm-m336b.json") names
+            # its phone in base_model_slug and in its folder.
+            names.append(record.get("base_model_slug"))
+            parts = path.split("/")
+            if len(parts) == 5:
+                names.append(parts[3])
+        for name in names:
+            if isinstance(name, str) and name:
+                self.slugs.setdefault(name, path)
+                self.keys.setdefault(self._key(name), path)
         if self.category == "gpu":
             self.families.setdefault(gpu_family_key(slug), path)
 

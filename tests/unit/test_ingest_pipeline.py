@@ -126,3 +126,25 @@ def test_rows_sharing_a_slug_that_only_fill_different_fields_do_not_conflict(
     assert result.written == [first]
     assert result.skipped_same_run == [second]
 
+
+def test_smartphone_variant_folder_and_base_model_count_as_on_file(tmp_path: Path) -> None:
+    variant = tmp_path / "smartphone" / "samsung" / "2022" / "galaxy-m33-5g" / "sm-m336b.json"
+    variant.parent.mkdir(parents=True)
+    variant.write_text(
+        json.dumps({"slug": "sm-m336b", "base_model_slug": "galaxy-m33"}), encoding="utf-8"
+    )
+
+    def phone(slug: str) -> IngestCandidate:
+        return IngestCandidate(
+            category="smartphone",
+            manufacturer="samsung",
+            slug=slug,
+            record={"slug": slug, "name": slug},
+            source_url="https://example.test/phones",
+            output_path=Path("smartphone/samsung/2022") / f"{slug}.json",
+        )
+
+    folder, base = phone("galaxy-m33-5g"), phone("galaxy-m33")
+    result = run([folder, base], data_root=tmp_path)
+    assert not result.written
+    assert result.skipped_existing == [folder, base]
