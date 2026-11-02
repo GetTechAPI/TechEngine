@@ -138,32 +138,56 @@ def parse_cores_threads(text: str) -> tuple[int | None, int | None]:
 
 def parse_date(text: str) -> date | None:
     """Best-effort calendar date. ``"Q3 2023"`` → ``2023-07-01``; year-only → Jan 1."""
+    period = parse_date_period(text)
+    return period[0] if period else None
+
+
+def parse_date_period(text: str) -> tuple[date, date] | None:
+    """``(first, last)`` day of the period a date cell names.
+
+    A full date is a one-day period. ``"Q4 2026"`` is Oct 1 – Dec 31, ``"Dec 2024"``
+    the whole month and a bare year the whole year, so a caller can tell whether
+    the period had ended (the part had shipped) by a given day.
+    """
     if not text:
         return None
     stripped = text.strip()
 
     if (match := _ISO_DATE_RE.match(stripped)):
         year, month, day = (int(g) for g in match.groups())
-        return _safe_date(year, month, day)
+        return _day(_safe_date(year, month, day))
     if (match := _NUMERIC_DATE_RE.match(stripped)):
         year, month, day = (int(g) for g in match.groups())
-        return _safe_date(year, month, day)
+        return _day(_safe_date(year, month, day))
     if (match := _LONG_DATE_RE.search(stripped)):
         month_name, day_str, year_str = match.group(1), match.group(2), match.group(3)
-        return _safe_date(int(year_str), _MONTHS[month_name.lower()[:3]], int(day_str))
+        return _day(_safe_date(int(year_str), _MONTHS[month_name.lower()[:3]], int(day_str)))
     if (match := _SHORT_DATE_RE.search(stripped)):
         day_str, month_name, year_str = match.group(1), match.group(2), match.group(3)
-        return _safe_date(int(year_str), _MONTHS[month_name.lower()[:3]], int(day_str))
+        return _day(_safe_date(int(year_str), _MONTHS[month_name.lower()[:3]], int(day_str)))
     if (match := _QUARTER_RE.search(stripped)):
         quarter = int(match.group(1))
         year_raw = match.group(2)
         year = 2000 + int(year_raw) if len(year_raw) == 2 else int(year_raw)
-        return _safe_date(year, (quarter - 1) * 3 + 1, 1)
+        return _months(year, (quarter - 1) * 3 + 1, 3)
     if (match := _MONTH_YEAR_RE.search(stripped)):
-        return _safe_date(int(match.group(2)), _MONTHS[match.group(1).lower()[:3]], 1)
+        return _months(int(match.group(2)), _MONTHS[match.group(1).lower()[:3]], 1)
     if (match := _YEAR_ONLY_RE.search(stripped)):
-        return _safe_date(int(match.group(1)), 1, 1)
+        return _months(int(match.group(1)), 1, 12)
     return None
+
+
+def _day(day: date | None) -> tuple[date, date] | None:
+    return (day, day) if day else None
+
+
+def _months(year: int, first_month: int, count: int) -> tuple[date, date] | None:
+    first = _safe_date(year, first_month, 1)
+    if first is None:
+        return None
+    last_month = first_month + count - 1
+    after = date(year + 1, 1, 1) if last_month == 12 else date(year, last_month + 1, 1)
+    return first, date.fromordinal(after.toordinal() - 1)
 
 
 def _safe_date(year: int, month: int, day: int) -> date | None:

@@ -71,7 +71,7 @@ def test_extracts_complete_rows_into_records() -> None:
     assert flagship.record["l3_cache_mb"] == 36.0
     assert flagship.record["tdp_w"] == 125
     assert flagship.record["release_date"] == "2022-10-20"
-    assert flagship.record["architecture"] == "Raptor Lake (13th gen)"
+    assert flagship.record["architecture"] == "Raptor Lake"
     assert flagship.record["socket"] == "LGA1700"
     assert flagship.record["process_node"] == "Intel 7"
     assert flagship.record["segment"] == "desktop"

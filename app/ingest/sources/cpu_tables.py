@@ -16,7 +16,8 @@ from .wikitable import _span
 
 def _field(label: str) -> str | None:
     text = label.lower()
-    if re.search(r"\b(gpu|npu)\b", text):
+    # Integrated GPU/NPU columns ("Arc Graphics / X Cores") describe another chip.
+    if re.search(r"\b(gpu|npu|graphics)\b", text):
         return None
     if "branding" in text or "family" in text:
         return "family" if "model" not in text else "model"
@@ -31,12 +32,13 @@ def _field(label: str) -> str | None:
         return "threads"
     if "l3" in text or "smart cache" in text:
         return "l3_cache"
+    # Before the clock checks: "TDP / Base" and "Power / Turbo" are watts.
+    if "tdp" in text or "wattage" in text or text.startswith("power"):
+        return None if "configurable" in text else "tdp"
     if any(token in text for token in ("boost", "turbo", "pbo", "pb2")):
         return "boost_clock"
     if any(token in text for token in ("base", "clock", "freq")):
         return "base_clock"
-    if "tdp" in text or "wattage" in text:
-        return None if "configurable" in text else "tdp"
     if "release" in text or "launch" in text:
         return None if any(token in text for token in ("price", "msrp")) else "release_date"
     if "socket" in text:
@@ -73,6 +75,51 @@ def _with_units(value: str, label: str, field: str) -> str:
         if product:
             value = f"{int(product[1]) * float(product[2])} {product[3]}"
     return value
+
+
+_HYBRID_PARTS = {"p", "e", "lp-e", "total"}
+_COUNT_RE = re.compile(r"\s*(\d+)\s*(?:\(\s*(\d+)\s*\)|/\s*(\d+))?")
+
+
+def _count(value: str) -> tuple[int, int | None]:
+    """``"2 (4)"`` → ``(2, 4)``; ``"8"`` → ``(8, None)``; ``"—"`` → ``(0, 0)``."""
+    match = _COUNT_RE.match(value)
+    if match is None:
+        return 0, 0
+    threads = match[2] or match[3]
+    return int(match[1]), int(threads) if threads else None
+
+
+def _hybrid_cores(parts: dict[str, str]) -> tuple[str, str]:
+    """Total ``"cores / threads"`` of a hybrid chip and a note when it is unsure.
+
+    Hybrid Intel tables split "Cores (threads)" into P, E, LP-E and Total
+    columns. The total is the sum of the parts; when the page's Total cell
+    disagrees with that sum, neither can be trusted and the count is left out.
+    """
+    counted = [_count(value) for leaf, value in parts.items() if leaf != "total"]
+    cores = sum(c for c, _ in counted) if counted else None
+    threads = (
+        sum(t for _, t in counted if t is not None)
+        if counted and all(t is not None for _, t in counted)
+        else None
+    )
+    if "total" in parts:
+        total_cores, total_threads = _count(parts["total"])
+        if cores is not None and (
+            cores != total_cores
+            or (threads is not None and total_threads is not None and threads != total_threads)
+        ):
+            note = (
+                f"P/E/LP-E cores add up to {cores} ({threads}) "
+                f"but the Total column says {parts['total']}"
+            )
+            return "", note
+        cores = total_cores
+        threads = total_threads if total_threads is not None else threads
+    if not cores:
+        return "", ""
+    return (f"{cores} / {threads}" if threads else str(cores)), ""
 
 
 def parse_cpu_table(table: Tag) -> Iterator[dict[str, str]]:
@@ -135,6 +182,11 @@ def parse_cpu_table(table: Tag) -> Iterator[dict[str, str]]:
     model_labels = {
         label.lower() for label, field in zip(labels, fields, strict=True) if field == "model"
     }
+    hybrid = {
+        column: leaf
+        for column, (label, field) in enumerate(zip(labels, fields, strict=True))
+        if field == "cores" and (leaf := label.split(" / ")[-1].strip().lower()) in _HYBRID_PARTS
+    }
     for index in range(end, len(rows)):
         if captions[index]:
             continue
@@ -143,5 +195,14 @@ def parse_cpu_table(table: Tag) -> Iterator[dict[str, str]]:
             field = fields[column]
             if field and value:
                 result.setdefault(field, _with_units(value, labels[column], field))
+        if hybrid:
+            split = {
+                leaf: grid[index][column]
+                for column, leaf in hybrid.items()
+                if column < len(grid[index]) and grid[index][column]
+            }
+            result["cores"], note = _hybrid_cores(split)
+            if note:
+                result["cores_note"] = note
         if result.get("model") and result["model"].lower() not in model_labels:
             yield result

@@ -22,7 +22,7 @@ from app.coverage.sources.wikipedia import fetch_wikipedia_html
 from ..normalize import (
     guess_os,
     parse_battery_mah,
-    parse_date,
+    parse_date_period,
     parse_ram_gb,
     parse_weight_g,
 )
@@ -156,7 +156,8 @@ def _build_candidate(
     source_url: str,
     known_socs: set[str],
 ) -> IngestCandidate:
-    release_date = parse_date(row.get("release_date", ""))
+    release_period = parse_date_period(row.get("release_date", ""))
+    release_date = release_period[0] if release_period else None
     soc_text = row.get("soc", "")
     soc_slug = soc_text_to_slug(soc_text)
     soc_value = soc_slug if soc_slug in known_socs else None
@@ -200,4 +201,5 @@ def _build_candidate(
         source_url=source_url,
         output_path=output_path,
         missing_fields=missing,
+        released_by=release_period[1] if release_period else None,
     )

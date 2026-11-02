@@ -31,7 +31,7 @@ from bs4 import BeautifulSoup, Tag
 from app.coverage.normalize import slugify
 from app.coverage.sources.wikipedia import fetch_wikipedia_html
 
-from ..normalize import guess_gpu_segment, parse_date
+from ..normalize import guess_gpu_segment, parse_date_period
 from .base import IngestCandidate
 from .wikitable import parse_table_header_block
 
@@ -295,7 +295,8 @@ def _build_candidate(
         # "2× 128": per-GPU values on dual-GPU boards don't fit one record.
         return None
 
-    release_date = parse_date(text("release_date"))
+    release_period = parse_date_period(text("release_date"))
+    release_date = release_period[0] if release_period else None
     if manufacturer == "amd" and release_date is not None and release_date < _ATI_BRAND_END:
         manufacturer = "ati"
     slug = slugify(model, manufacturer=manufacturer)
@@ -365,4 +366,5 @@ def _build_candidate(
         source_url=source_url,
         output_path=Path("gpu") / manufacturer / str(year) / segment / f"{slug}.json",
         missing_fields=missing,
+        released_by=release_period[1] if release_period else None,
     )
