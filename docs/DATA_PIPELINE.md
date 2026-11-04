@@ -56,8 +56,9 @@ live-scrape benchmark sources -> commit data/ on collect/refresh
   -> full-dataset gate (app.validate + integrity_check.py --strict)
   -> Tier 0 report for the changed records
   -> upload the commit as collect.patch (artifact collect-refresh)
-  -> a maintainer opens the PR on develop from their own account with
-     TechAPI's .github/scripts/open-collect-pr.sh <run-id>
+  -> a maintainer runs TechAPI's .github/scripts/open-collect-pr.sh <run-id>
+     by hand: their account pushes the collect/* branch and TechEngineBot
+     opens the PR on develop
 ```
 
 The integrity gate re-checks the **whole** dataset every run (not just new

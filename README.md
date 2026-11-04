@@ -48,15 +48,19 @@ TechAPI/               # submodule -> GetTechAPI/TechAPI (clickable @ <sha> link
 Both repos live in the **GetTechAPI** org and each includes the other as a git
 **submodule** (a clickable `@ <sha>` pin). Nothing syncs them automatically.
 
-No workflow here runs on a schedule or uses a personal access token (ADR-017).
-The one comment any workflow posts is TechEngineBot's final check, and only when
-a maintainer adds the `final-check` label to a PR (`final-check.yml`).
+No workflow here runs on a schedule or uses a personal access token (ADR-017),
+and no workflow opens or approves a PR. TechEngineBot opens PRs by hand from a
+maintainer's machine, with its gh login kept apart from the maintainer's own;
+the maintainer's account still commits, pushes and merges. The one comment any
+workflow posts is TechEngineBot's final check, and only when a maintainer adds
+the `final-check` label to a PR (`final-check.yml`).
 Collection runs only when a maintainer dispatches TechAPI's `collect.yml`, which
 calls `ingest.yml`, `refresh.yml` or `verify-promote.yml` with a read-only
 token. Each run commits locally, gates the result with `app.validate` and
 `integrity_check.py --strict`, and uploads the commit as `collect.patch`. A
-maintainer opens the PR from their own account with TechAPI's
-`.github/scripts/open-collect-pr.sh`; no workflow pushes or opens a PR. The
+maintainer then runs TechAPI's `.github/scripts/open-collect-pr.sh` by hand:
+their account pushes the run's `collect/*` branch and TechEngineBot opens the
+PR. No workflow pushes or opens a PR. The
 engine that runs is the TechEngine commit TechAPI pins as its submodule.
 Crawlers identify themselves with a `TechEngine-*` User-Agent.
 
