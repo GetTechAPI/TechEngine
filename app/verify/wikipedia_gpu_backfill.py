@@ -30,7 +30,7 @@ the Wikipedia URL to ``source_urls`` for CONFIRM rows only.
 ::
 
     python -m app.verify.wikipedia_gpu_backfill \\
-        --data-root C:/path/to/TechAPI --limit 200 --sleep 1.5 --dry-run
+        --data-root ../TechAPI --limit 200 --sleep 1.5 --dry-run
 """
 
 from __future__ import annotations

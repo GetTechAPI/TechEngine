@@ -9,9 +9,12 @@ Usage::
 
     python integrity_check.py [DATA_ROOT] [--strict] [--hard-report PATH]
 
+Without ``DATA_ROOT`` the scan reads the directory ``app.data_root`` resolves:
+``$TECHAPI_DATA_DIR``, else ``../data``, else ``../TechAPI/data``.
+
 By default it prints every flagged item and exits 0 (human-review mode). With
 ``--strict`` it additionally exits non-zero when any *hard* anomaly is found —
-unambiguous corruption that must block the weekly refresh PR: duplicate slugs,
+unambiguous corruption that must block a collection or refresh PR: duplicate slugs,
 slug/filename mismatches, and physically-impossible single>multi benchmarks.
 The statistical cross-source/era outliers stay advisory (a heterogeneous catalog
 of server + desktop + mobile parts legitimately produces many ratio outliers), so
@@ -24,6 +27,7 @@ median (see mad_outliers).
 from __future__ import annotations
 import os, json, math, re, statistics, sys
 from app.categories import CATEGORIES
+from app.data_root import get_data_root
 
 # Em-dash etc. in section headers must not crash on legacy consoles (e.g. cp949).
 try:
@@ -45,9 +49,9 @@ ONLY_FILE = _argv[_only_index + 1] if _only_index >= 0 else None
 if _only_index >= 0:
     del _argv[_only_index:_only_index + 2]
 _positional = [a for a in _argv if not a.startswith("-")]
-ROOT = _positional[0] if _positional else r"C:\Users\29\Desktop\TechAPI\data"
+ROOT = _positional[0] if _positional else str(get_data_root())
 
-# Hard anomalies block the weekly gate under --strict; soft ones are review-only.
+# Hard anomalies block the gate under --strict; soft ones are review-only.
 HARD: list[str] = []
 def hard(msg: str) -> None:
     HARD.append(msg)

@@ -26,7 +26,7 @@ GSMArena, PhoneDB, and DeviceSpecifications are never contacted.
 ::
 
     python -m app.verify.wikipedia_smartphone_backfill \\
-        --data-root C:/path/to/TechAPI --limit 300 --sleep 1.0 --dry-run
+        --data-root ../TechAPI --limit 300 --sleep 1.0 --dry-run
 """
 
 from __future__ import annotations

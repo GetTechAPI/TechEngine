@@ -31,7 +31,7 @@ DeviceSpecifications are never requested.
 ::
 
     python -m app.verify.wikipedia_soc_backfill \\
-        --data-root C:/path/to/TechAPI --limit 200 --sleep 1.5 --dry-run
+        --data-root ../TechAPI --limit 200 --sleep 1.5 --dry-run
 """
 
 from __future__ import annotations
