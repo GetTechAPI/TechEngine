@@ -4,7 +4,7 @@ name: final-check
 # runs what test.yml runs (ruff, mypy, the seed-data validator, pytest with
 # coverage) on the PR, and TechEngineBot leaves ONE comment with the verdict;
 # adding the label again edits that comment. This is the only place the
-# TechEngineBot account is used in this repo, and it replaces Copilot reviews.
+# TechEngineBot account is used by a workflow in this repo.
 #
 # The check job runs PR code, so it gets no secrets and a read-only token.
 # Only the comment job sees TECHENGINEBOT_TOKEN, which must be a fine-grained

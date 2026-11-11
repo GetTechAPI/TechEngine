@@ -102,7 +102,7 @@ python -m app.dump               # generate ./dump/ static tree (gitignored)
 ## Conventions (IMPORTANT)
 
 - **Commits**: Conventional Commits (`feat(api): …`, `data: …`, `docs: …`).
-  Keep commit messages clean — no tool/AI attribution trailers. Commit/push only when asked.
+  Keep commit messages clean and to the point.
 - **Data accuracy**: only real, sourced models. All brand, device, and chip
   records require `source_urls`. Do not fabricate unsourced "all devices" data
   (SPEC §1.6).
