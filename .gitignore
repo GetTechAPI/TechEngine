@@ -29,9 +29,6 @@ env/
 # Local-only handoff notes (private; never committed to the public repo)
 *.local.md
 
-# Local tooling/editor config (kept out of the public repo)
-.claude/
-
 # Note: data/_staging/ (raw collected candidate pool) is intentionally tracked —
 # comprehensive data collection is a purpose of this repo.
 
