@@ -1,4 +1,9 @@
-"""Resolve the TechAPI data directory for sibling and submodule layouts."""
+"""Resolve the TechAPI data directory.
+
+Order: ``TECHAPI_DATA_DIR``; then ``../data`` (this repo checked out as
+TechAPI's ``TechEngine`` submodule); then ``../TechAPI/data`` (the two repos
+cloned side by side).
+"""
 
 from __future__ import annotations
 

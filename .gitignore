@@ -19,6 +19,10 @@ env/
 *.sqlite
 *.sqlite3
 
+# A TechAPI checkout placed inside this repo (CI does this and sets
+# TECHAPI_DATA_DIR); the dataset is never committed here.
+/TechAPI/
+
 # Generated static dump (build artifact; published by refresh-data workflow)
 /dump/
 

@@ -31,7 +31,6 @@ app/
 tests/                 # unit + integration
 site/                  # Astro engine landing (deploys to Pages)
 docs/                  # SPEC / DATA_PIPELINE / DEVELOPMENT
-TechAPI/               # submodule -> GetTechAPI/TechAPI (clickable @ <sha> link)
 .github/workflows/
   test.yml             # lint + type-check + tests
   validate-data.yml    # read-only data validation (workflow_call or manual)
@@ -45,8 +44,10 @@ TechAPI/               # submodule -> GetTechAPI/TechAPI (clickable @ <sha> link
 
 ## How The Two Repos Connect
 
-Both repos live in the **GetTechAPI** org and each includes the other as a git
-**submodule** (a clickable `@ <sha>` pin). Nothing syncs them automatically.
+Both repos live in the **GetTechAPI** org. TechAPI pins this repo as its
+`TechEngine` git **submodule** (a clickable `@ <sha>` pin); this repo does not
+pin TechAPI back, so there is no submodule loop. Nothing syncs them
+automatically: the pin moves only when a TechAPI commit moves it.
 
 No workflow here runs on a schedule or uses a personal access token (ADR-017),
 and no workflow opens or approves a PR. TechEngineBot opens PRs by hand from a
@@ -66,7 +67,8 @@ Crawlers identify themselves with a `TechEngine-*` User-Agent.
 
 Every Python entry point reads data from a **TechAPI checkout**. The location
 can be overridden via `TECHAPI_DATA_DIR`; by default TechEngine supports both
-layouts: `TechAPI/TechEngine` as a submodule and `TechAPI` beside `TechEngine`.
+layouts: `TechAPI/TechEngine` as TechAPI's submodule and `TechAPI` beside
+`TechEngine`.
 
 ## Quickstart
 
