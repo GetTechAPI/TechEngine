@@ -16,8 +16,9 @@ Sources (``--source``):
     python -m app.ingest.enrich --source cinebench-legacy \\
         --data-root ../TechAPI/data --min-year 2011 --summary enrich.md
 
-Run output is a PR-ready Markdown summary. Designed for the weekly-ingest
-workflow, but safe to run locally (respects ``--dry-run`` and ``--sleep``).
+Run output is a PR-ready Markdown summary. Designed for the manually
+dispatched ingest and refresh workflows, but safe to run locally (respects
+``--dry-run`` and ``--sleep``).
 
 DOM note: each source's extractor is validated against live HTML on first run;
 adjust selectors if a site's markup drifts. Pure logic is covered by
