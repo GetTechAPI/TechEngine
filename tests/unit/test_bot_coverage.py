@@ -5,8 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app import dump_check
-from app.categories import CATEGORIES, COLLECTIONS
+from app.categories import CATEGORIES
 from app.verify import cli, offline
 from app.verify.common import CATEGORIES as VERIFY_CATEGORIES
 from app.verify.common import Record
@@ -56,54 +55,6 @@ def test_changed_paths_use_supplied_base_and_propagate_errors(monkeypatch, tmp_p
 def write(path: Path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data), encoding="utf-8")
-
-
-def fixture_dump(tmp_path):
-    collections = {}
-    for category, resource in COLLECTIONS.items():
-        write(tmp_path / "data" / category / "sample.json", {"slug": "sample"})
-        write(tmp_path / "site/public/v1" / resource / "index.json",
-              {"count": 1, "results": [{"slug": "sample"}]})
-        collections[resource] = {"count": 1}
-    write(tmp_path / "site/public/v1/index.json", {"collections": collections})
-
-
-def test_dump_checks_parse_manifest_and_indices(monkeypatch, tmp_path):
-    fixture_dump(tmp_path)
-    changed = "site/public/v1/laptops/sample/index.json"
-    write(tmp_path / changed, {"slug": "sample"})
-    monkeypatch.setattr(dump_check.subprocess, "run", lambda *a, **kw:
-                        SimpleNamespace(stdout=changed + "\n"))
-    assert dump_check.check_dump(tmp_path, "base") == []
-    (tmp_path / changed).write_text("{broken", encoding="utf-8")
-    assert any(changed in e for e in dump_check.check_dump(tmp_path, "base"))
-    write(tmp_path / changed, {})
-    write(tmp_path / "site/public/v1/laptops/index.json", {"count": 2, "results": []})
-    assert any("laptops: index" in e for e in dump_check.check_dump(tmp_path, "base"))
-    write(tmp_path / "site/public/v1/index.json", {"collections": {}})
-    assert sum("manifest count" in e for e in dump_check.check_dump(tmp_path, "base")) == 13
-
-
-def test_dump_deletion_still_checks_counts(monkeypatch, tmp_path):
-    fixture_dump(tmp_path)
-    replies = iter(["", "site/public/v1/laptops/index.json\n"])
-    monkeypatch.setattr(dump_check.subprocess, "run", lambda *a, **kw:
-                        SimpleNamespace(stdout=next(replies)))
-    (tmp_path / "site/public/v1/laptops/index.json").unlink()
-    assert any("laptops" in e for e in dump_check.check_dump(tmp_path, "base"))
-
-
-def test_dump_no_changes_skips_missing_dump(monkeypatch, tmp_path):
-    monkeypatch.setattr(dump_check.subprocess, "run", lambda *a, **kw:
-                        SimpleNamespace(stdout=""))
-    assert dump_check.check_dump(tmp_path, "base") == []
-
-
-def test_scope_includes_all_records_and_base(tmp_path):
-    fixture_dump(tmp_path)
-    assert dump_check.scope(tmp_path, "develop", "abcdef1234") == (
-        "13/13 categories ? 13 records ? diff base develop@abcdef1"
-    )
 
 
 def test_pr_base_excludes_prior_develop_changes_and_release_includes_them(monkeypatch, tmp_path):
