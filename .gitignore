@@ -19,14 +19,15 @@ env/
 *.sqlite
 *.sqlite3
 
+# A TechAPI checkout placed inside this repo (CI does this and sets
+# TECHAPI_DATA_DIR); the dataset is never committed here.
+/TechAPI/
+
 # Generated static dump (build artifact; published by refresh-data workflow)
 /dump/
 
 # Local-only handoff notes (private; never committed to the public repo)
 *.local.md
-
-# Local tooling/editor config (kept out of the public repo)
-.claude/
 
 # Note: data/_staging/ (raw collected candidate pool) is intentionally tracked —
 # comprehensive data collection is a purpose of this repo.

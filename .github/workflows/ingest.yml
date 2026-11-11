@@ -188,8 +188,9 @@ jobs:
           PY
 
       # The token is read-only, so the commit leaves the run as a patch. A
-      # maintainer opens the PR from their own account with TechAPI's
-      # .github/scripts/open-collect-pr.sh <run-id>, so the PR's checks run.
+      # maintainer runs TechAPI's .github/scripts/open-collect-pr.sh <run-id>:
+      # their account pushes the branch and TechEngineBot opens the PR, so the
+      # PR's checks run.
       - name: Export the commit as collect.patch
         if: steps.commit.outputs.changed == 'true'
         env:

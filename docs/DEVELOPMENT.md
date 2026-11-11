@@ -21,8 +21,8 @@ see "Data scope" below).
 - **Formats**: list `{count,next,previous,results}` (§7.4); error
   `{error:{code,message,request_id,documentation_url}}` (§7.5); smartphone detail
   per SPEC appendix C (embeds brand+soc+manufacturer + computed `score`).
-- **Tests**: `pytest` is the canonical test runner. `ruff` + `mypy app scripts`
-  are the static gates in CI.
+- **Tests**: `pytest` is the canonical test runner. `ruff check app tests` +
+  `mypy app` are the static gates in CI.
 - **NOT done**: cloud deploy (Railway/Fly need accounts) and public static hosting.
   Dockerfile + workflows written but not executed in the cloud.
 
@@ -46,20 +46,22 @@ app/                 FastAPI app
   database.py        engine + get_session (SQLite or Postgres)
   models/            SQLModel tables: brand, soc, smartphone, gpu, cpu
   schemas/           Pydantic response models + serializers.py (ORM→schema, URLs)
-  services/scoring.py  open 0–100 scoring (§8); reference-based min-max (Phase 0)
-  routers/           meta, brands, socs, smartphones, gpus, cpus
+  services/scoring/  open 0–100 scoring (§8); weights in config/scoring.yaml
+  routers/           meta, brands, socs, smartphones, mobile_devices (tablets,
+                     watches, pdas), gpus, cpus, laptops, monitors, software,
+                     websites, device_catalog
   errors.py          §7.5 error envelope + handlers
-data/                CURATED SEED DATA — singular folder names, organised by brand:
-  brand/<country>/<slug>.json
-  soc/<manufacturer>/<year>/<slug>.json
-  smartphone/<brand>/<year>/<slug>.json
-  gpu/<manufacturer>/<year>/<segment>/<slug>.json
-  cpu/<manufacturer>/<year>/<segment>/<slug>.json
-scripts/
-  seed.py            data/ → DB (recurses brand subfolders; coerces ISO dates)
-  validate.py        schema/range/FK/slug checks (run in CI on data changes)
+  data_root.py       finds the dataset: TECHAPI_DATA_DIR, ../data, ../TechAPI/data
+  seed.py            dataset → DB (recurses brand subfolders; coerces ISO dates)
+  validate.py        schema/range/FK/slug checks
   dump.py            DB → static JSON dump (replays API in-process) → ./dump
-tests/               unit/ + integration/ (conftest seeds a temp SQLite from data/)
+  coverage/          upstream-vs-curated gap report
+  ingest/            collectors: draft new records, refresh benchmarks
+  verify/            trust tiers 0–3, verified promotion, backfill tools
+integrity_check.py   whole-dataset anomaly scan (the --strict gate)
+config/scoring.yaml  scoring weights and reference scales
+tests/               unit/ + integration/ + verify/
+site/                Astro landing page (deploy-pages.yml publishes it with the dump)
 docs/                SPEC.md, DATA_PIPELINE.md, DEVELOPMENT.md
 .github/workflows/   test.yml, validate-data.yml, deploy-pages.yml, coverage-report.yml,
                      final-check.yml (`final-check` label -> one TechEngineBot comment), and
@@ -68,15 +70,17 @@ docs/                SPEC.md, DATA_PIPELINE.md, DEVELOPMENT.md
                      collect.patch; nothing scheduled; ADR-017)
 ```
 
-> Note: **data folders are singular** (`data/soc/…`) but **API routes are plural**
-> (`/v1/socs`). Intentional.
+> Note: the dataset is **not in this repo**. It lives in TechAPI's `data/`
+> (`brand/<country>/<slug>.json`, `cpu/<manufacturer>/<year>/<segment>/<slug>.json`, …)
+> and is found through `app/data_root.py`. Data folders are singular
+> (`data/soc/…`) but API routes are plural (`/v1/socs`). Intentional.
 
 ## How to run
 
 ```bash
 pip install -e ".[dev]"          # deps already installed in this Codespace
 python -m app.validate           # check curated data
-python -m app.seed               # data/ → ./techapi.db (SQLite)
+python -m app.seed               # dataset → ./techapi.db (SQLite)
 uvicorn app.main:app --reload    # serve; curl http://localhost:8000/v1/smartphones/galaxy-s25
 pytest -q --cov=app              # tests (target >60%, currently ~98%)
 ruff check app tests && mypy app
@@ -98,7 +102,7 @@ python -m app.dump               # generate ./dump/ static tree (gitignored)
 ## Conventions (IMPORTANT)
 
 - **Commits**: Conventional Commits (`feat(api): …`, `data: …`, `docs: …`).
-  Keep commit messages clean — no tool/AI attribution trailers. Commit/push only when asked.
+  Keep commit messages clean and to the point.
 - **Data accuracy**: only real, sourced models. All brand, device, and chip
   records require `source_urls`. Do not fabricate unsourced "all devices" data
   (SPEC §1.6).

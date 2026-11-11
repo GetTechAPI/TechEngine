@@ -22,7 +22,7 @@ modified just to remember progress.
 
 ::
 
-    python -m app.verify.gsmarena_backfill --data-root C:/Users/29/Desktop/TechAPI \\
+    python -m app.verify.gsmarena_backfill --data-root ../TechAPI \\
         --limit 200 --sleep 1.5 --dry-run --summary .gsmarena-backfill/summary.md
 """
 

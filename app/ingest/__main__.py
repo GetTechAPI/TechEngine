@@ -7,7 +7,7 @@
 
 Streams candidates from every wired source for ``--category``, dedups
 against the curated dataset, writes additions to ``--data-root``, and
-emits a Markdown summary (used by the weekly workflow as the PR body).
+emits a Markdown summary (ingest.yml puts it in the PR body it uploads).
 """
 
 from __future__ import annotations
