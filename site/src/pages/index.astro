@@ -3,36 +3,38 @@ const raw = import.meta.env.BASE_URL;
 const base = raw.endsWith("/") ? raw : raw + "/";
 
 const ghEngine = "https://github.com/GetTechAPI/TechEngine";
-const ghData = "https://github.com/Seungpyo1007/TechAPI";
+const ghData = "https://github.com/GetTechAPI/TechAPI";
 
 const pillars = [
   {
     title: "Validate",
-    blurb: "Schema, slug, range, and uniqueness checks gate every PR to the dataset.",
+    blurb: "Schema, slug, range, and uniqueness checks run on every PR to the dataset.",
     cmd: "python -m app.validate",
     link: `${ghEngine}/blob/main/app/validate.py`,
   },
   {
     title: "Cover",
-    blurb: "Diff the curated dataset against upstream catalogs (Wikipedia today; ARK / vendor pages next) and surface missing SKUs as weekly reports.",
+    blurb: "Diff the curated dataset against upstream catalogs (Wikipedia today) and list missing SKUs in an on-demand report.",
     cmd: "python -m app.coverage",
     link: `${ghEngine}/blob/main/app/coverage`,
   },
   {
     title: "Ingest",
-    blurb: "Drafts new records from canonical sources and opens PRs against TechAPI for human review.",
+    blurb: "Drafts new records from canonical sources as a patch; a maintainer reviews it and opens the PR against TechAPI.",
     cmd: "python -m app.ingest --category cpu",
     link: `${ghEngine}/blob/main/app/ingest`,
   },
 ];
 
 const workflows = [
-  { name: "validate-data", file: "validate-data.yml", desc: "Reusable: called by TechAPI on every PR + push." },
-  { name: "refresh-data", file: "refresh-data.yml", desc: "Cron Mondays 06:17 UTC — regenerates the static dump." },
-  { name: "coverage-report", file: "coverage-report.yml", desc: "Cron Mondays 06:23 UTC — diffs upstream vs curated, syncs sticky issue." },
-  { name: "weekly-ingest", file: "weekly-ingest.yml", desc: "Cron Mondays 06:29 UTC — drafts missing SKUs, opens PR against TechAPI." },
-  { name: "test", file: "test.yml", desc: "Lint + type-check + pytest on every push." },
-  { name: "deploy-pages", file: "deploy-pages.yml", desc: "Builds this site + dump and publishes to Pages." },
+  { name: "test", file: "test.yml", desc: "Lint + type-check + pytest on PRs and pushes to main." },
+  { name: "validate-data", file: "validate-data.yml", desc: "Reusable or manual: read-only validation of a TechAPI ref." },
+  { name: "deploy-pages", file: "deploy-pages.yml", desc: "On push to main: builds this site + dump and publishes to Pages." },
+  { name: "coverage-report", file: "coverage-report.yml", desc: "Manual: diffs upstream vs curated into the job summary." },
+  { name: "ingest", file: "ingest.yml", desc: "Called by TechAPI's collect.yml: drafts missing SKUs as a patch." },
+  { name: "refresh", file: "refresh.yml", desc: "Called by TechAPI's collect.yml: re-scrapes benchmarks as a patch." },
+  { name: "verify-promote", file: "verify-promote.yml", desc: "Called by TechAPI's collect.yml: Tier 1-3 checks, verified promotion." },
+  { name: "final-check", file: "final-check.yml", desc: "On the final-check label: full checks + one bot comment." },
 ];
 ---
 <!doctype html>
@@ -41,7 +43,7 @@ const workflows = [
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>TechEngine — validation & ingestion for the TechAPI dataset</title>
-  <meta name="description" content="The engine that validates, fills, and serves the TechAPI dataset. Schema checks, coverage diffs against upstream catalogs, and a weekly ingestion crawler that opens PRs." />
+  <meta name="description" content="The engine that validates, fills, and serves the TechAPI dataset. Schema checks, coverage diffs against upstream catalogs, and manually run collectors that draft new records for review." />
 </head>
 <body>
   <div class="bg-grid" aria-hidden="true"></div>
@@ -68,8 +70,8 @@ const workflows = [
       <h1>The engine behind <a href={ghData} target="_blank" rel="noopener" class="grad">TechAPI</a></h1>
       <p class="tagline">
         TechEngine validates every change to the dataset, diffs it against upstream
-        catalogs to surface what is missing, and (next) drafts new records
-        automatically so curators only review.
+        catalogs to surface what is missing, and drafts new records for
+        maintainers to review. Nothing runs on a schedule.
       </p>
       <div class="cta">
         <a class="btn primary" href={`${base}docs`}>Read API docs →</a>
@@ -86,7 +88,7 @@ const workflows = [
     <section id="pillars">
       <div class="sec-head">
         <h2>Three pillars</h2>
-        <p class="sec-sub">Each pillar is a Python module under <code>app/</code>; CI orchestrates them.</p>
+        <p class="sec-sub">Each pillar is a Python module under <code>app/</code>; CI and manually dispatched workflows run them.</p>
       </div>
       <div class="hiw">
         {pillars.map((p) => (
@@ -109,7 +111,7 @@ const workflows = [
     <section id="status">
       <div class="sec-head">
         <h2>Status</h2>
-        <p class="sec-sub">Pulled from the static dump's manifest. Populates once <code>refresh-data</code> has run.</p>
+        <p class="sec-sub">Pulled from the static dump's manifest, which <code>deploy-pages</code> regenerates with this site.</p>
       </div>
       <div class="pg">
         <div class="pg-reqline">
@@ -128,7 +130,7 @@ const workflows = [
         <h2>How the two repos connect</h2>
         <p class="sec-sub">
           The dataset lives in <a href={ghData} target="_blank" rel="noopener">TechAPI</a>.
-          TechEngine reads it via a sibling checkout, validates, and emits artifacts.
+          TechAPI pins TechEngine as a submodule; the engine reads the data from a TechAPI checkout, validates it, and emits artifacts.
         </p>
       </div>
       <div class="flow">
@@ -142,14 +144,14 @@ const workflows = [
         <div class="flow-arrow">
           <div class="flow-arrow-label">workflow_call</div>
           <div class="flow-arrow-line">⟶</div>
-          <div class="flow-arrow-label muted">checkout sibling</div>
+          <div class="flow-arrow-label muted">submodule pin</div>
         </div>
         <div class="flow-card">
           <div class="flow-head">TechEngine</div>
           <div class="flow-body">
             <code>app/validate.py</code> (heavy)<br/>
             <code>app/seed.py · dump.py</code><br/>
-            <span class="muted">app/coverage · app/ingest (planned)</span>
+            <span class="muted">app/coverage · app/ingest · app/verify</span>
           </div>
         </div>
       </div>
@@ -178,21 +180,21 @@ const workflows = [
     <section>
       <div class="sec-head">
         <h2>Roadmap</h2>
-        <p class="sec-sub">Each line is a tracked GitHub issue.</p>
+        <p class="sec-sub">Each line is a tracked GitHub issue; both have shipped.</p>
       </div>
       <ul class="ep">
         <li>
           <a href={`${ghEngine}/issues/1`} target="_blank" rel="noopener">
             <span class="method">#1</span>
             <span class="ep-path">coverage gap detector</span>
-            <span class="ep-desc">Diff curated dataset vs upstream catalogs; weekly report.</span>
+            <span class="ep-desc">Diff curated dataset vs upstream catalogs; on-demand report.</span>
           </a>
         </li>
         <li>
           <a href={`${ghEngine}/issues/2`} target="_blank" rel="noopener">
             <span class="method">#2</span>
             <span class="ep-path">ingestion crawler</span>
-            <span class="ep-desc">Weekly automated PRs to TechAPI with proposed new SKUs.</span>
+            <span class="ep-desc">Drafts proposed new SKUs as a patch, on manual dispatch.</span>
           </a>
         </li>
       </ul>
@@ -257,12 +259,12 @@ const workflows = [
       document.getElementById("status-out").innerHTML = highlightJSON(m);
     }).catch((e) => {
       document.getElementById("stats").innerHTML =
-        '<div class="stat"><div class="n">—</div><div class="l">run refresh-data</div></div>';
+        '<div class="stat"><div class="n">—</div><div class="l">no dump</div></div>';
       const pill = document.getElementById("status-pill");
       pill.textContent = "no dump yet";
       pill.className = "status err";
       document.getElementById("status-out").innerHTML =
-        '<span class="j-null">No dump artifact deployed yet. Trigger the refresh-data workflow to populate this panel.</span>';
+        '<span class="j-null">No dump artifact deployed yet. The deploy-pages workflow publishes it with this site.</span>';
     });
   </script>
 
