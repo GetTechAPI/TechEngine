@@ -39,7 +39,7 @@ tests/                 # unit/, integration/, verify/
 site/                  # Astro landing page, deployed to GitHub Pages
 docs/                  # SPEC, DATA_PIPELINE, DEVELOPMENT
 .github/workflows/     # CI; every workflow is listed below
-Dockerfile, docker-compose.yml   # stale, do not build (see Docker)
+Dockerfile, docker-compose.yml   # API + Postgres, dataset mounted (see Docker)
 ```
 
 Routes under `/v1`: `health`, `version`, `brands`, `socs`, `smartphones`,
@@ -115,11 +115,19 @@ Smartphones continue to require numeric values for both fields.
 
 ### Docker
 
-`Dockerfile` and `docker-compose.yml` predate the split from TechAPI and do
-not work as they are: the Dockerfile copies `data/` and `scripts/`, which no
-longer exist here, so the image does not build, and the compose file mounts no
-TechAPI checkout for `app.seed` to read. No workflow builds or uses them. Use
-the Quickstart above; for Postgres, point `DATABASE_URL` at your own instance.
+The image holds the engine only and expects the dataset at `/data`
+(`TECHAPI_DATA_DIR`). `docker-compose.yml` starts Postgres and the API, and
+mounts `../TechAPI/data` read-only at that path, so clone the two repos side by
+side:
+
+```text
+<parent>/TechEngine   # this repo; run `docker compose up --build` here
+<parent>/TechAPI      # the dataset
+```
+
+The API seeds the database from the mount before it serves, which takes a
+while on the full dataset. The image has no git, so record timestamps are the
+seed time. No workflow builds or uses these files.
 
 ## Roadmap
 

@@ -1,5 +1,5 @@
 name: "🐛 Bug report"
-description: Report a bug in the API or tooling
+description: Report a bug in the validator, API server, dump generator, collectors or verification
 labels: ["type:bug"]
 body:
   - type: textarea
@@ -13,9 +13,10 @@ body:
     id: reproduce
     attributes:
       label: Steps to reproduce
-      description: Include the exact request (curl) where possible.
+      description: Include the exact command or request, and the TechEngine commit you ran.
       placeholder: |
-        curl https://api.techapi.dev/v1/smartphones/galaxy-s25
+        python -m app.validate
+        curl http://localhost:8000/v1/smartphones/galaxy-s25
     validations:
       required: true
   - type: textarea
@@ -28,4 +29,4 @@ body:
     id: request-id
     attributes:
       label: request_id (if any)
-      description: The `request_id` from the error response helps us trace it.
+      description: For API errors, the `request_id` from the error response.

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Missing or incorrect data
+    url: https://github.com/GetTechAPI/TechAPI/issues/new/choose
+    about: This repository holds no data. Report a missing record or a wrong value in the TechAPI repository.
+  - name: Video games
+    url: https://github.com/GetTechAPI/game-catalog/issues
+    about: Game records live in the game-catalog repository.

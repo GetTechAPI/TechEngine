@@ -1,41 +1,43 @@
-# TechAPI — development guide & handoff
+# TechEngine development guide
 
 > Read this first. Full spec: [SPEC.md](SPEC.md). Static-dump design:
 > [DATA_PIPELINE.md](DATA_PIPELINE.md).
 
 ## What this is
 
-TechAPI — a free, open REST API for consumer-electronics specs (smartphones,
-SoCs, GPUs, CPUs, brands). FastAPI + SQLModel. **This repo is
-the public product: the API + a curated dataset + a static JSON dump.** It does
-**not** contain data-collection/scraping tooling (that is maintained separately;
-see "Data scope" below).
+TechEngine is the engine for the TechAPI dataset of consumer-electronics specs:
+the validator, the FastAPI read API, the static JSON dump generator, the
+coverage report, the collectors (`app/ingest`) and the verification tiers
+(`app/verify`). **It holds no data.** The dataset lives in
+[GetTechAPI/TechAPI](https://github.com/GetTechAPI/TechAPI) and is read from a
+TechAPI checkout (see the note under "Repo layout").
 
 ## Current status
 
 - **Stack**: FastAPI, SQLModel, Pydantic v2, Python 3.12. DB defaults to SQLite
   (`DATABASE_URL`); Postgres 16 via `docker-compose.yml`.
-- **Endpoints** (under `/v1`): `health`, `version`, `brands`(+`/{slug}` +`/{slug}/smartphones`),
-  `socs`(+`/{slug}` +`/{slug}/smartphones`), `smartphones`(+`/{slug}` +`/{slug}/score`),
-  `gpus`(+`/{slug}`), `cpus`(+`/{slug}`, `?segment=`). Docs at `/scalar` and `/docs`.
+- **Endpoints** (under `/v1`): `health`, `version`, and one list + `/{slug}`
+  detail per collection: `brands` (+`/{slug}/smartphones`), `socs`
+  (+`/{slug}/smartphones`), `smartphones`, `tablets`, `watches`, `pdas`, `gpus`,
+  `cpus` (`?segment=`), `laptops`, `monitors`, `software`, `websites`,
+  `device-catalog`. `socs`, `smartphones`, `gpus` and `cpus` also have
+  `/{slug}/score`. Docs at `/scalar` and `/docs`.
 - **Formats**: list `{count,next,previous,results}` (§7.4); error
   `{error:{code,message,request_id,documentation_url}}` (§7.5); smartphone detail
   per SPEC appendix C (embeds brand+soc+manufacturer + computed `score`).
 - **Tests**: `pytest` is the canonical test runner. `ruff check app tests` +
   `mypy app` are the static gates in CI.
-- **NOT done**: cloud deploy (Railway/Fly need accounts) and public static hosting.
-  Dockerfile + workflows written but not executed in the cloud.
+- **Hosting**: there is no hosted API server. `deploy-pages.yml` publishes the
+  landing site with a static dump to GitHub Pages on every push to `main`;
+  TechAPI builds its own copy of the dump with the engine commit it pins.
 
-### Curated dataset (validated, what the API serves)
-brand 129 · soc 123 · smartphone 367 · gpu 330 · cpu 976. **This is a curated subset,
-NOT an exhaustive catalog of every device.** It is intentionally hand-verified;
-breadth is expanded out-of-band (see "Data scope").
+### Data scope
 
-### Data scope (important)
-This repo holds only **curated, validated** data and serves/dumps it. Bulk
-collection/scraping and the pre-review candidate pool are **not part of this
-repo** and are maintained through a separate pipeline. Local contributors working
-in this Codespace: see `NOTES.local.md` (gitignored, not committed).
+The dataset is large and changes often, so no record counts are kept here; see
+TechAPI's README. Collectors live in `app/ingest` and `app/verify`. Nothing runs
+on a schedule: they run when a maintainer dispatches TechAPI's `collect.yml`,
+and each run uploads a patch that a maintainer turns into a TechAPI PR. Do not
+run them against a TechAPI checkout you are not prepared to diff and review.
 
 ## Repo layout
 
@@ -78,11 +80,12 @@ docs/                SPEC.md, DATA_PIPELINE.md, DEVELOPMENT.md
 ## How to run
 
 ```bash
-pip install -e ".[dev]"          # deps already installed in this Codespace
-python -m app.validate           # check curated data
+git clone https://github.com/GetTechAPI/TechAPI.git ../TechAPI   # the data
+pip install -e ".[dev]"
+python -m app.validate           # check the dataset
 python -m app.seed               # dataset → ./techapi.db (SQLite)
 uvicorn app.main:app --reload    # serve; curl http://localhost:8000/v1/smartphones/galaxy-s25
-pytest -q --cov=app              # tests (target >60%, currently ~98%)
+pytest -q --cov=app              # tests (CI fails under 60% coverage)
 ruff check app tests && mypy app
 python -m app.dump               # generate ./dump/ static tree (gitignored)
 ```
@@ -95,24 +98,26 @@ python -m app.dump               # generate ./dump/ static tree (gitignored)
 - **Data restructured** to singular names + brand subfolders (maintainer request).
 - **Static-dump pivot** — `app/dump.py` exports the API to a static JSON tree,
   built by TechAPI at deploy time (see DATA_PIPELINE.md §3).
-- **Scoring** is a Phase-0 reference-based approximation; Phase 1 → dataset-wide
-  min-max (§8.4). Raw third-party benchmarks (Geekbench/AnTuTu/Cinebench/Time Spy)
-  are stored as algorithm inputs but NOT exposed (ADR-006).
+- **Scoring** reads its weights and reference scales from `config/scoring.yaml`
+  (§8). Raw third-party benchmarks (Geekbench/AnTuTu/Cinebench/Time Spy) are
+  stored as algorithm inputs but NOT exposed (ADR-006).
 
 ## Conventions (IMPORTANT)
 
-- **Commits**: Conventional Commits (`feat(api): …`, `data: …`, `docs: …`).
+- **Commits**: Conventional Commits (`feat(api): …`, `fix(ingest): …`, `docs: …`).
   Keep commit messages clean and to the point.
 - **Data accuracy**: only real, sourced models. All brand, device, and chip
   records require `source_urls`. Do not fabricate unsourced "all devices" data
   (SPEC §1.6).
-- 100% type hints; tests alongside code; new top-level data fields must match the
+- 100% type hints; tests under `tests/`; new top-level data fields must match the
   SQLModel (seeder does `Model(**record)` — unknown keys break it).
 
 ## Gotchas
 
 - SQLModel `table=True` models skip Pydantic validation, so `seed.py` coerces
   `release_date` strings to `date` objects manually.
-- `app/services/scoring.py` camera score is intentionally simple (a 50MP flagship
-  can score below a 200MP phone) — known Phase-0 limitation, not a data bug.
-- Nothing is committed yet — `git status` shows the build as adds.
+- The camera score in `app/services/scoring/phones.py` is intentionally simple
+  (a 50MP flagship can score below a 200MP phone): a known limitation, not a
+  data bug.
+- `app.seed` reads record timestamps from the TechAPI checkout's git history; a
+  shallow clone or a plain copy of `data/` falls back to the seed time.
