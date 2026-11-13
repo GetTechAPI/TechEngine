@@ -79,7 +79,7 @@ def test_catalog_valid_and_required(tmp_path, monkeypatch) -> None:
 @pytest.mark.parametrize("patch,needle", [
     ({"form_factor": "phablet"}, "form_factor 'phablet'"),
     ({"device_type_guess": "tv-box"}, "device_type_guess 'tv-box'"),
-    ({"android_sdk_min": "30"}, "android_sdk_min must be an integer"),
+    ({"android_sdk_min": "30"}, "android_sdk_min='30' must be an integer"),
     ({"android_sdk_min": 0}, "android_sdk_min=0"),
     ({"promoted_to": "laptop/x"}, "promoted_to 'laptop/x'"),
     ({"promoted_to": "smartphone"}, "promoted_to 'smartphone'"),
