@@ -1,7 +1,7 @@
 """Validate seed JSON against the schema and conventions (§9.3, §15.3).
 
 Checks: required fields, slug convention (§14.1), value ranges/units (§14.3),
-and foreign-key integrity by slug. Run with ``python -m app.validate``;
+integer-typed fields, and foreign-key integrity by slug. Run with ``python -m app.validate``;
 exits non-zero on the first failure set (used by CI ``validate-data.yml``).
 
 ``DATA_DIR`` defaults to the nearest TechAPI data checkout and can be
@@ -146,6 +146,83 @@ RESOLUTION_RE = re.compile(r"^[1-9]\d{1,4}x[1-9]\d{1,4}$")
 
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
+# Fields the models (app/models/) type as int, per category. Kept by hand so
+# this module needs nothing but the standard library: TechAPI's PR checks run
+# it without installing the engine. tests/unit/test_validate_integers.py fails
+# when a model and this list disagree.
+BRAND_INTEGERS = {"founded_year"}
+SOC_INTEGERS = {
+    "gpu_cores",
+    "gpu_clock_mhz",
+    "geekbench_single",
+    "geekbench_multi",
+    "antutu_score",
+}
+# smartphone, tablet, watch and pda share these.
+DEVICE_INTEGERS = {"msrp_usd", "battery_mah"}
+DEVICE_INTEGER_LISTS = {"storage_options_gb"}
+GPU_INTEGERS = {
+    "msrp_usd",
+    "cuda_cores",
+    "stream_processors",
+    "rt_cores",
+    "tensor_cores",
+    "memory_bus_bit",
+    "base_clock_mhz",
+    "boost_clock_mhz",
+    "tdp_w",
+    "timespy_score",
+    "passmark_g3d_mark",
+    "timespy_extreme_score",
+    "speedway_score",
+    "octanebench_score",
+}
+CPU_INTEGERS = {
+    "cores",
+    "threads",
+    "p_cores",
+    "e_cores",
+    "tdp_w",
+    "max_tdp_w",
+    "cinebench_r23_single",
+    "cinebench_r23_multi",
+    "cinebench_2024_single",
+    "cinebench_2024_multi",
+    "geekbench_single",
+    "geekbench_multi",
+    "cinebench_r15_single",
+    "cinebench_r15_multi",
+    "cinebench_r10_single",
+    "cinebench_r10_multi",
+    "passmark_single",
+    "passmark_cpu_mark",
+    "msrp_usd",
+}
+LAPTOP_INTEGERS = {"msrp_usd", "ram_gb", "storage_gb"}
+MONITOR_INTEGERS = {"msrp_usd", "refresh_hz", "ppi"}
+DEVICE_CATALOG_INTEGERS = {
+    "screen_density_dpi",
+    "android_sdk_min",
+    "android_sdk_max",
+    "release_year",
+}
+# category -> (integer fields, list-of-integer fields)
+INTEGER_FIELDS: dict[str, tuple[set[str], set[str]]] = {
+    "brand": (BRAND_INTEGERS, set()),
+    "soc": (SOC_INTEGERS, set()),
+    "smartphone": (DEVICE_INTEGERS, DEVICE_INTEGER_LISTS),
+    "tablet": (DEVICE_INTEGERS, DEVICE_INTEGER_LISTS),
+    "watch": (DEVICE_INTEGERS, DEVICE_INTEGER_LISTS),
+    "pda": (DEVICE_INTEGERS, DEVICE_INTEGER_LISTS),
+    "gpu": (GPU_INTEGERS, set()),
+    "cpu": (CPU_INTEGERS, set()),
+    "laptop": (LAPTOP_INTEGERS, set()),
+    "monitor": (MONITOR_INTEGERS, set()),
+    "software": (set(), set()),
+    "website": (set(), set()),
+    "device_catalog": (DEVICE_CATALOG_INTEGERS, set()),
+}
+
 
 def _load(subdir: str, only: set[str] | None = None) -> list[tuple[str, dict[str, Any]]]:
     """Load every ``*.json`` under ``subdir``; with ``only``, just those paths.
@@ -235,6 +312,34 @@ def _check_range(
         return
     if not isinstance(value, (int, float)) or not (lo <= value <= hi):
         errors.append(f"{name}: {field}={value} out of range [{lo}, {hi}]")
+
+
+def _is_integer(value: object) -> bool:
+    # 65.0 passes: the read schemas load it as 65 and existing records hold it.
+    if isinstance(value, bool):
+        return False
+    return isinstance(value, int) or (isinstance(value, float) and value.is_integer())
+
+
+def _check_integers(
+    name: str, record: dict[str, Any], category: str, errors: list[str]
+) -> None:
+    """Fields the API types as integers must not hold 11.5, true or "12".
+
+    The table models skip validation, so such a value only fails later, when
+    the dump builds the read schema.
+    """
+    scalars, lists = INTEGER_FIELDS[category]
+    for field in sorted(scalars):
+        value = record.get(field)
+        if value is not None and not _is_integer(value):
+            errors.append(f"{name}: {field}={value!r} must be an integer")
+    for field in sorted(lists):
+        value = record.get(field)
+        if value is not None and not (
+            isinstance(value, list) and all(_is_integer(item) for item in value)
+        ):
+            errors.append(f"{name}: {field}={value!r} must be a list of integers")
 
 
 def _check_date(name: str, value: object, errors: list[str]) -> None:
@@ -394,6 +499,7 @@ def validate(only: set[str] | None = None) -> list[str]:
             _check_unique_slugs(category, records, errors)
         for fname, rec in records:
             _check_media(fname, rec, errors)
+            _check_integers(fname, rec, category, errors)
 
     for fname, rec in brands:
         _check_required(fname, rec, BRAND_REQUIRED, errors)
@@ -580,9 +686,7 @@ def validate(only: set[str] | None = None) -> list[str]:
             ("release_year", 1990, 2100),
         ):
             value = rec.get(field)
-            if value is not None and (isinstance(value, bool) or not isinstance(value, int)):
-                errors.append(f"{fname}: {field} must be an integer")
-            else:
+            if _is_integer(value):  # anything else is reported by _check_integers
                 _check_range(fname, field, value, lo, hi, errors)
         sdk_min, sdk_max = rec.get("android_sdk_min"), rec.get("android_sdk_max")
         if isinstance(sdk_min, int) and isinstance(sdk_max, int) and sdk_max < sdk_min:
