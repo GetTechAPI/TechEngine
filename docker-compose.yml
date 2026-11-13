@@ -25,6 +25,12 @@ services:
       API_ENV: development
     ports:
       - "8000:8000"
+    # The dataset comes from a TechAPI checkout next to this repo:
+    #   <parent>/TechEngine   (this repo; run docker compose here)
+    #   <parent>/TechAPI      (git clone https://github.com/GetTechAPI/TechAPI.git)
+    # Its data/ is mounted read-only where the image's TECHAPI_DATA_DIR points.
+    volumes:
+      - ../TechAPI/data:/data:ro
     # Seed the database, then serve. Idempotent: re-running skips existing rows.
     command: >
       sh -c "python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port 8000"

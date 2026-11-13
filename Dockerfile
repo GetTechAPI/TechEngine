@@ -11,9 +11,10 @@ COPY pyproject.toml README.md ./
 COPY app ./app
 RUN pip install --no-cache-dir .
 
-# Runtime assets.
-COPY data ./data
-COPY scripts ./scripts
+# Runtime assets. The dataset is not part of the image: mount a TechAPI
+# checkout's data/ at /data (see docker-compose.yml).
+COPY config ./config
+ENV TECHAPI_DATA_DIR=/data
 
 # Run as a non-root user.
 RUN useradd --create-home --uid 10001 appuser \
