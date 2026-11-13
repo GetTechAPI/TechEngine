@@ -23,14 +23,11 @@ env/
 # TECHAPI_DATA_DIR); the dataset is never committed here.
 /TechAPI/
 
-# Generated static dump (build artifact; published by refresh-data workflow)
+# Generated static dump (build artifact; deploy-pages.yml publishes it)
 /dump/
 
 # Local-only handoff notes (private; never committed to the public repo)
 *.local.md
-
-# Note: data/_staging/ (raw collected candidate pool) is intentionally tracked —
-# comprehensive data collection is a purpose of this repo.
 
 # Local Wikipedia GPU backfill cache and dry-run reports (never a TechAPI write)
 .wikipedia-gpu-backfill/
@@ -55,6 +52,3 @@ coverage.xml
 
 # Local Wikipedia SoC backfill cache and reports (never commit)
 .wikipedia-soc-backfill/
-
-# Recomputable verifier cache
-/data/_verify/state/
