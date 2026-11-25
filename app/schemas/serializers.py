@@ -243,8 +243,8 @@ def cpu_read(cpu: CPU, manufacturer: Brand, score: CPUScore) -> CPURead:
 def smartphone_read(
     phone: Smartphone,
     brand: Brand,
-    soc: SoC,
-    soc_manufacturer: Brand,
+    soc: SoC | None,
+    soc_manufacturer: Brand | None,
     scores: PhoneScore,
 ) -> SmartphoneRead:
     assert phone.id is not None
@@ -254,7 +254,7 @@ def smartphone_read(
         base_model_slug=phone.base_model_slug,
         name=phone.name,
         brand=brand_summary(brand),
-        soc=soc_summary(soc, soc_manufacturer),
+        soc=soc_summary(soc, soc_manufacturer) if soc and soc_manufacturer else None,
         release_date=phone.release_date,
         release_date_precision=phone.release_date_precision,
         msrp_usd=phone.msrp_usd,

@@ -33,7 +33,7 @@ class SmartphoneRead(BaseModel):
     base_model_slug: str | None = None
     name: str
     brand: BrandSummary
-    soc: SoCSummary
+    soc: SoCSummary | None = None
     release_date: date
     release_date_precision: str | None = None
     msrp_usd: int | None = None
