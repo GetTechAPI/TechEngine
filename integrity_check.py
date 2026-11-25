@@ -15,7 +15,8 @@ Without ``DATA_ROOT`` the scan reads the directory ``app.data_root`` resolves:
 By default it prints every flagged item and exits 0 (human-review mode). With
 ``--strict`` it additionally exits non-zero when any *hard* anomaly is found —
 unambiguous corruption that must block a collection or refresh PR: duplicate slugs,
-slug/filename mismatches, and physically-impossible single>multi benchmarks.
+slug/filename mismatches, the same SoC stored under two names, and
+physically-impossible single>multi benchmarks.
 The statistical cross-source/era outliers stay advisory (a heterogeneous catalog
 of server + desktop + mobile parts legitimately produces many ratio outliers), so
 they are printed for review but never fail the gate. The CPU cross-source ratio
@@ -28,6 +29,7 @@ from __future__ import annotations
 import os, json, math, re, statistics, sys
 from app.categories import CATEGORIES
 from app.data_root import get_data_root
+from app.soc_names import soc_key
 
 # Em-dash etc. in section headers must not crash on legacy consoles (e.g. cp949).
 try:
@@ -222,6 +224,15 @@ def main() -> None:
             if len(fl) > 1: hard(f"  [{comp}] DUP slug {s}: {sorted(fl)}")
         for n, fl in names.items():
             if comp in ("cpu", "gpu") and len(fl) > 1: hard(f"  [{comp}] DUP name {n!r}: {sorted(fl)}")
+        # One chip, one record: "Qualcomm SDM660 Snapdragon 660" and "Snapdragon 660"
+        # share a key (app/soc_names.py). Names without a key are not compared.
+        chips = {}
+        if comp == "soc":
+            for p, fn, d in recs:
+                key = soc_key(d.get("name") or "")
+                if key: chips.setdefault(key, []).append(fn)
+            for k, fl in chips.items():
+                if len(fl) > 1: hard(f"  [{comp}] DUP chip {k!r}: {sorted(fl)}")
         if scoped and recs:
             # Changed records vs the rest of the catalog. File names equal slugs by
             # convention, so listing names finds a slug clash without parsing.
@@ -241,6 +252,13 @@ def main() -> None:
                 for n in names:
                     if len(known.get(n, [])) > len(names[n]):
                         hard(f"  [{comp}] DUP name {n!r}: {sorted(known[n])}")
+            if chips:
+                known = {}
+                for p, fn, d in load(comp, full=True):
+                    known.setdefault(soc_key(d.get("name") or ""), []).append(fn)
+                for k in chips:
+                    if len(known.get(k, [])) > len(chips[k]):
+                        hard(f"  [{comp}] DUP chip {k!r}: {sorted(known[k])}")
 
     # --- 2. AMD Ryzen line vs DESKTOP model tier-digit (2nd digit); APU/mobile excepted ---
     section("CPU name/tier consistency (desktop mainstream only)")
