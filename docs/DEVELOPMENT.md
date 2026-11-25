@@ -56,6 +56,8 @@ app/                 FastAPI app
   data_root.py       finds the dataset: TECHAPI_DATA_DIR, ../data, ../TechAPI/data
   seed.py            dataset → DB (recurses brand subfolders; coerces ISO dates)
   validate.py        schema/range/FK/slug checks
+  soc_names.py       SoC name rules: validate.py rejects placeholder names ("1.0 GHz"),
+                     integrity_check.py rejects one chip stored under two names
   dump.py            DB → static JSON dump (replays API in-process) → ./dump
   coverage/          upstream-vs-curated gap report
   ingest/            collectors: draft new records, refresh benchmarks

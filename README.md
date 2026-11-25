@@ -28,13 +28,14 @@ app/                   # the engine (the one installable Python package)
   data_root.py         # finds the TechAPI dataset (see below)
   categories.py        # the 13 dataset categories and their collection names
   validate.py          # schema/range/uniqueness checks on the dataset
+  soc_names.py         # SoC name rules: placeholder names, one key per chip
   seed.py              # dataset -> SQL database
   dump.py              # API -> static JSON tree (./dump)
   coverage/            # upstream-vs-curated gap report
   ingest/              # collectors: draft new records, refresh benchmarks
   verify/              # trust tiers 0-3, verified promotion, backfill tools
 config/scoring.yaml    # scoring weights and reference scales
-integrity_check.py     # whole-dataset anomaly scan (the --strict gate)
+integrity_check.py     # whole-dataset anomaly scan (the --strict gate), incl. duplicate chips
 tests/                 # unit/, integration/, verify/
 site/                  # Astro landing page, deployed to GitHub Pages
 docs/                  # SPEC, DATA_PIPELINE, DEVELOPMENT

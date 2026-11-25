@@ -21,6 +21,7 @@ from typing import Any
 
 from app.categories import CATEGORIES
 from app.data_root import get_data_root
+from app.soc_names import is_placeholder
 
 DATA_DIR = get_data_root()
 
@@ -541,6 +542,12 @@ def validate(only: set[str] | None = None) -> list[str]:
         if "release_date" in rec:
             _check_date(fname, rec["release_date"], errors)
         _check_range(fname, "process_nm", rec.get("process_nm"), 1.0, 100.0, errors)
+        name = rec.get("name")
+        if isinstance(name, str) and is_placeholder(name):
+            errors.append(
+                f"{fname}: name {name!r} is a placeholder, not a chip "
+                "(leave the device's soc empty instead)"
+            )
         if rec.get("manufacturer") not in brand_slugs:
             errors.append(f"{fname}: manufacturer '{rec.get('manufacturer')}' not a known brand")
 
