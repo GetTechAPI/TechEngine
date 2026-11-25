@@ -87,17 +87,25 @@ def list_smartphones(
     )
 
 
-def _load_full(session: SessionDep, slug: str) -> tuple[Smartphone, Brand, SoC, Brand]:
+def _load_full(
+    session: SessionDep, slug: str
+) -> tuple[Smartphone, Brand, SoC | None, Brand | None]:
     phone = session.exec(select(Smartphone).where(Smartphone.slug == slug)).first()
     if phone is None:
         raise not_found("Smartphone", slug)
     brand = session.get(Brand, phone.brand_id)
-    soc = session.get(SoC, phone.soc_id)
-    if brand is None or soc is None:  # pragma: no cover - guarded by FK + validation
+    if brand is None:  # pragma: no cover - guarded by FK + validation
         raise not_found("Smartphone", slug)
-    soc_manufacturer = session.get(Brand, soc.manufacturer_id)
-    if soc_manufacturer is None:  # pragma: no cover
-        raise not_found("Brand", str(soc.manufacturer_id))
+
+    soc = None
+    soc_manufacturer = None
+    if phone.soc_id is not None:
+        soc = session.get(SoC, phone.soc_id)
+        if soc is None:  # pragma: no cover - guarded by FK + validation
+            raise not_found("Smartphone", slug)
+        soc_manufacturer = session.get(Brand, soc.manufacturer_id)
+        if soc_manufacturer is None:  # pragma: no cover
+            raise not_found("Brand", str(soc.manufacturer_id))
     return phone, brand, soc, soc_manufacturer
 
 

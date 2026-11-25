@@ -58,6 +58,20 @@ def test_phone_battery_and_weight_optional(tmp_path, monkeypatch) -> None:
     phone = {"slug": "p", "name": "P", "brand": "acme", "soc": "c1",
              "release_date": "2020-01-01", "ram_gb": 4, "os": "Android", "source_urls": SRC}
     assert _errors(tmp_path, monkeypatch, "smartphone/acme/2020/p.json", phone) == []
+
+
+@pytest.mark.parametrize("patch", [{"soc": None}, {}], ids=["null", "omitted"])
+def test_phone_soc_optional(tmp_path, monkeypatch, patch) -> None:
+    phone = {"slug": "p", "name": "P", "brand": "acme", "release_date": "2020-01-01",
+             "ram_gb": 4, "os": "Android", "source_urls": SRC, **patch}
+    assert _errors(tmp_path, monkeypatch, "smartphone/acme/2020/p.json", phone) == []
+
+
+def test_phone_unknown_soc_still_rejected(tmp_path, monkeypatch) -> None:
+    phone = {"slug": "p", "name": "P", "brand": "acme", "soc": "no-such-chip",
+             "release_date": "2020-01-01", "ram_gb": 4, "os": "Android", "source_urls": SRC}
+    errs = _errors(tmp_path, monkeypatch, "smartphone/acme/2020/p.json", phone)
+    assert any("soc 'no-such-chip' not a known SoC" in e for e in errs), errs
     bad = {**phone, "battery_mah": 10, "codenames": ["x", "x"]}
     errs = _errors(tmp_path, monkeypatch, "smartphone/acme/2020/p.json", bad)
     assert any("battery_mah=10" in e for e in errs)

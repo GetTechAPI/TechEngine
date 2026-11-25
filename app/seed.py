@@ -206,14 +206,14 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
         if record["slug"] in phone_slugs:
             continue
         brand_slug = record.pop("brand")
-        soc_slug = record.pop("soc")
+        soc_slug = record.pop("soc", None)
         brand_id = brand_id_by_slug.get(brand_slug)
-        soc_id = soc_id_by_slug.get(soc_slug)
+        soc_id = soc_id_by_slug.get(soc_slug) if soc_slug else None
         if brand_id is None:
             raise ValueError(
                 f"Smartphone '{record['slug']}' references unknown brand '{brand_slug}'"
             )
-        if soc_id is None:
+        if soc_slug and soc_id is None:
             raise ValueError(
                 f"Smartphone '{record['slug']}' references unknown SoC '{soc_slug}'"
             )

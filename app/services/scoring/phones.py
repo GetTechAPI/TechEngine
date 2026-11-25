@@ -45,8 +45,14 @@ def _coalesce(value: float | None, default: float) -> float:
 
 
 def _perf(
-    phone: Smartphone, soc: SoC, cfg: ScoringConfig, era: str | None, stats: StatsLike | None
+    phone: Smartphone,
+    soc: SoC | None,
+    cfg: ScoringConfig,
+    era: str | None,
+    stats: StatsLike | None,
 ) -> Hybrid:
+    if soc is None:
+        return Hybrid(era=era)  # unknown chipset: same gate as a SoC without benchmarks
     scales = cfg.reference_scales[CATEGORY]
     weights = cfg.weights["phone_perf"]
     single = capability(soc.geekbench_single, scales["geekbench_single"])
@@ -139,7 +145,7 @@ def _value(
 
 def score_phone(
     phone: Smartphone,
-    soc: SoC,
+    soc: SoC | None,
     stats: StatsLike | None = None,
     config: ScoringConfig | None = None,
 ) -> PhoneScore:
@@ -152,7 +158,7 @@ def score_phone(
         phone.battery_mah,
         phone.charging_wired_w,
         phone.charging_wireless_w,
-        soc.process_nm,
+        soc.process_nm if soc is not None else None,
         scales,
     )
     display = _display(phone.display, scales)

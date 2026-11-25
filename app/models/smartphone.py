@@ -23,7 +23,8 @@ class Smartphone(SQLModel, table=True):
     base_model_slug: str | None = Field(default=None, index=True)
     name: str
     brand_id: int = Field(foreign_key="brands.id", index=True)
-    soc_id: int = Field(foreign_key="socs.id", index=True)
+    # None = chipset unknown.
+    soc_id: int | None = Field(default=None, foreign_key="socs.id", index=True)
 
     release_date: date
     # day | month | year | year_estimated; None = unspecified (legacy records).

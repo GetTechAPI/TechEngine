@@ -552,7 +552,7 @@ class Smartphone:
     slug: str                   # "galaxy-s25"
     name: str                   # "Galaxy S25"
     brand_id: int               # FK → Brand
-    soc_id: int                 # FK → SoC
+    soc_id: int | None          # FK → SoC (None = 칩셋 미상)
 
     release_date: date
     msrp_usd: int | None
