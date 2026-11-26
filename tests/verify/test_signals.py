@@ -105,6 +105,11 @@ def test_soc_process_nm_era():
     assert _named(signals.soc_signals(rec, NOW), "process_nm_era").result == "fail"
 
 
+def test_soc_unknown_gpu_name_is_not_a_failure():
+    assert _named(signals.soc_signals({}, NOW), "gpu_name_present").result == "na"
+    assert _named(signals.soc_signals({"gpu_name": " "}, NOW), "gpu_name_present").result == "fail"
+
+
 def test_missing_core_count_is_not_a_contradiction():
     """An absent core count is a gap `completeness` already scores — and on a
     pre-unified-shader part the field does not apply at all."""

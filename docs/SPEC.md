@@ -515,15 +515,15 @@ class SoC:
     slug: str                   # "snapdragon-8-elite"
     name: str                   # "Snapdragon 8 Elite"
     manufacturer_id: int        # FK → Brand
-    release_date: date
-    process_nm: float           # 3.0
+    release_date: date | None   # None = 출시일 미상 (연도 폴더는 `unknown`)
+    process_nm: float | None    # 3.0 (None = 미상)
     transistors_billion: float | None
 
     # CPU
     cpu_config: dict            # JSONB: {"performance": 2, "efficiency": 6, "clocks": [...]}
 
     # GPU (integrated)
-    gpu_name: str               # "Adreno 830"
+    gpu_name: str | None        # "Adreno 830" (None = 미상)
     gpu_cores: int | None
     gpu_clock_mhz: int | None
 
@@ -544,6 +544,8 @@ class SoC:
     created_at: datetime
     updated_at: datetime
 ```
+
+> 칩 3종(soc, gpu, cpu)의 필수 필드도 식별·출처 정보뿐이다: `slug`, `name`, `manufacturer`, `source_urls`, 그리고 GPU·CPU는 `release_date`. 출처에 없는 스펙은 null로 둔다: SoC는 `release_date`, `process_nm`, `gpu_name`, GPU는 `architecture`, `memory_gb`, `memory_type`, `memory_bus_bit`, `base_clock_mhz`, `boost_clock_mhz`, `tdp_w`, `pcie_version`, CPU는 `segment`, `architecture`, `cores`, `threads`. 값이 있으면 기존 규칙대로 검증한다. `release_date`가 null인 SoC는 `soc/<manufacturer>/unknown/<slug>.json`에, `segment`가 null인 CPU는 `cpu/<manufacturer>/<year>/unknown/<slug>.json`에 둔다. 값이 없는 칩은 해당 입력 없이 점수를 계산한다(출시일이 없으면 세대 구간·백분위 없음).
 
 ### 6.4 Smartphone
 ```python
@@ -611,7 +613,7 @@ class DiscreteGPU:
     slug: str                   # "rtx-5090"
     name: str                   # "GeForce RTX 5090"
     manufacturer_id: int        # FK → Brand
-    architecture: str           # "Blackwell"
+    architecture: str | None    # "Blackwell" (None = 미상, 아래 메모리·클럭·전력도 동일)
     release_date: date
     msrp_usd: int | None
 
@@ -622,18 +624,18 @@ class DiscreteGPU:
     tensor_cores: int | None
 
     # Memory
-    memory_gb: int
-    memory_type: str            # "GDDR7"
-    memory_bus_bit: int
+    memory_gb: float | None
+    memory_type: str | None     # "GDDR7"
+    memory_bus_bit: int | None
     memory_bandwidth_gbps: float | None
 
     # Clock
-    base_clock_mhz: int
-    boost_clock_mhz: int
+    base_clock_mhz: int | None
+    boost_clock_mhz: int | None
 
     # Power
-    tdp_w: int
-    pcie_version: str
+    tdp_w: int | None
+    pcie_version: str | None
 
     # Benchmarks (open licenses only)
     blender_score: float | None
@@ -665,13 +667,13 @@ class CPU:
     name: str                   # "Core i9-14900K"
     manufacturer_id: int        # FK → Brand (intel, amd)
     release_date: date
-    segment: str                # "desktop" | "laptop" | "hedt" | "server"
-    architecture: str           # "Raptor Lake", "Zen 4"
+    segment: str | None         # "desktop" | "laptop" | "hedt" | "server" (None = 미상, 폴더는 `unknown`)
+    architecture: str | None    # "Raptor Lake", "Zen 4"
     socket: str | None          # "LGA1700", "AM5"
     process_node: str | None    # "Intel 7", "TSMC N4" (CPU 공정명은 단일 nm float로 환원 어려움)
 
-    cores: int
-    threads: int
+    cores: int | None
+    threads: int | None
     p_cores: int | None
     e_cores: int | None
 

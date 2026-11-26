@@ -117,6 +117,14 @@ Specs are optional: seed records may omit `release_date`, `ram_gb`, `os`,
 preserve unknown values as `null`. A record without a `release_date` lives in
 an `unknown` folder in place of the year (`smartphone/<brand>/unknown/<slug>.json`).
 
+Chips follow the same rule. A CPU or GPU needs `slug`, `name`, `manufacturer`,
+`release_date` and `source_urls`; a SoC needs `slug`, `name`, `manufacturer` and
+`source_urls`. Every other spec (a CPU's `segment`, `architecture`, `cores`,
+`threads`; a GPU's `architecture`, memory, clocks, `tdp_w`, `pcie_version`; a
+SoC's `release_date`, `process_nm`, `gpu_name`) may be `null`. A SoC without a
+`release_date` lives at `soc/<manufacturer>/unknown/<slug>.json`, and a CPU
+without a `segment` at `cpu/<manufacturer>/<year>/unknown/<slug>.json`.
+
 ### Docker
 
 The image holds the engine only and expects the dataset at `/data`

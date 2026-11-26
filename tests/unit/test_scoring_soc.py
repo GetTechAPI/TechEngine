@@ -40,3 +40,15 @@ def test_soc_without_benchmark_is_null() -> None:
     score = score_soc(_soc())
     assert score.overall is None
     assert score.cpu.index is None and score.system.index is None
+
+
+def test_missing_specs_contribute_nothing() -> None:
+    bare = score_soc(SoC(slug="bare-soc", name="Bare SoC", manufacturer_id=1))
+    assert bare.overall is None
+    assert bare.cpu.era is None
+    # An undated chip still scores from its benchmarks; only the era cohort is unknown.
+    undated = score_soc(_soc(release_date=None, process_nm=None, gpu_name=None,
+                             geekbench_single=3000, geekbench_multi=9000))
+    assert undated.cpu.index is not None
+    assert undated.cpu.era is None
+    assert undated.cpu.percentile is None

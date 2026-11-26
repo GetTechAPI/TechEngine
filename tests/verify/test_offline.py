@@ -149,3 +149,23 @@ def test_device_with_unknown_specs_scores_without_crashing(category, specs):
         assert bare.flags == []
         assert bare.band != "green"
         assert bare.score <= full.score
+
+
+@pytest.mark.parametrize("category,required,specs", [
+    ("cpu", {"release_date": "2020-01-01"},
+     {"segment": "desktop", "architecture": "Zen 2", "cores": 8, "threads": 16}),
+    ("gpu", {"release_date": "2020-01-01"},
+     {"architecture": "Ampere", "memory_gb": 8, "memory_type": "GDDR6", "memory_bus_bit": 256,
+      "base_clock_mhz": 1500, "boost_clock_mhz": 1700, "tdp_w": 220,
+      "pcie_version": "PCIe 4.0 x16"}),
+    ("soc", {}, {"release_date": "2020-01-01", "process_nm": 7, "gpu_name": "Adreno 650"}),
+])
+def test_chip_with_unknown_specs_scores_without_crashing(category, required, specs):
+    identity = {"slug": "x", "name": "X", "manufacturer": "acme", "verified": False,
+                "source_urls": ["https://en.wikipedia.org/wiki/X"], **required}
+    full = _score(category, {**identity, **specs})
+    nulled = {**identity, **dict.fromkeys(specs)}
+    for bare in (_score(category, identity), _score(category, nulled)):
+        assert bare.flags == []
+        assert bare.band != "green"
+        assert bare.score <= full.score

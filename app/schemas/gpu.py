@@ -28,21 +28,21 @@ class GPURead(BaseModel):
     slug: str
     name: str
     manufacturer: ManufacturerRef
-    architecture: str
+    architecture: str | None = None
     release_date: date
     msrp_usd: int | None = None
     cuda_cores: int | None = None
     stream_processors: int | None = None
     rt_cores: int | None = None
     tensor_cores: int | None = None
-    memory_gb: float
-    memory_type: str
-    memory_bus_bit: int
+    memory_gb: float | None = None
+    memory_type: str | None = None
+    memory_bus_bit: int | None = None
     memory_bandwidth_gbps: float | None = None
-    base_clock_mhz: int
-    boost_clock_mhz: int
-    tdp_w: int
-    pcie_version: str
+    base_clock_mhz: int | None = None
+    boost_clock_mhz: int | None = None
+    tdp_w: int | None = None
+    pcie_version: str | None = None
     fp32_tflops: float | None = None
     blender_score: float | None = None
     score: GPUScoreRead

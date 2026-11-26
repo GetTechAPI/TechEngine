@@ -17,7 +17,8 @@ class DiscreteGPU(SQLModel, table=True):
     slug: str = Field(index=True, unique=True)
     name: str
     manufacturer_id: int = Field(foreign_key="brands.id", index=True)
-    architecture: str
+    # None = unknown, never estimated (also the memory, clock and power specs below).
+    architecture: str | None = None
     release_date: date
     msrp_usd: int | None = None
 
@@ -28,18 +29,18 @@ class DiscreteGPU(SQLModel, table=True):
     tensor_cores: int | None = None
 
     # Memory
-    memory_gb: float
-    memory_type: str
-    memory_bus_bit: int
+    memory_gb: float | None = None
+    memory_type: str | None = None
+    memory_bus_bit: int | None = None
     memory_bandwidth_gbps: float | None = None
 
     # Clock
-    base_clock_mhz: int
-    boost_clock_mhz: int
+    base_clock_mhz: int | None = None
+    boost_clock_mhz: int | None = None
 
     # Power
-    tdp_w: int
-    pcie_version: str
+    tdp_w: int | None = None
+    pcie_version: str | None = None
 
     # Benchmarks (open licenses only)
     blender_score: float | None = None

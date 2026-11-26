@@ -270,14 +270,18 @@ def soc_signals(rec: dict[str, Any], now_year: int) -> list[Signal]:
         out.append(Signal("process_nm_era", "fail" if too_advanced else "pass", hard=False))
     else:
         out.append(Signal("process_nm_era", "na", hard=False))
+    # gpu_name is optional: null is unknown (NA), an empty or non-string value fails.
     gpu_name = rec.get("gpu_name")
-    out.append(
-        Signal(
-            "gpu_name_present",
-            "pass" if isinstance(gpu_name, str) and gpu_name.strip() else "fail",
-            hard=False,
+    if gpu_name is None:
+        out.append(Signal("gpu_name_present", "na", hard=False))
+    else:
+        out.append(
+            Signal(
+                "gpu_name_present",
+                "pass" if isinstance(gpu_name, str) and gpu_name.strip() else "fail",
+                hard=False,
+            )
         )
-    )
     return out
 
 
