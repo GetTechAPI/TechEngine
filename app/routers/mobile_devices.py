@@ -34,6 +34,8 @@ def _make_router(resource: str, model: Any) -> APIRouter:
         "release_date": model.release_date,
         "msrp_usd": model.msrp_usd,
     }
+    # Optional specs: records without a value sort last in either direction.
+    nulls_last = {"release_date"}
 
     def apply_sort(stmt: SelectOfScalar[Any], sort: str | None) -> SelectOfScalar[Any]:
         if not sort:
@@ -43,7 +45,8 @@ def _make_router(resource: str, model: Any) -> APIRouter:
         column = sort_fields.get(field)
         if column is None:
             raise APIError(400, "INVALID_REQUEST", f"Cannot sort by '{field}'")
-        return stmt.order_by(column.desc() if descending else column.asc())
+        order = column.desc() if descending else column.asc()
+        return stmt.order_by(order.nulls_last() if field in nulls_last else order)
 
     @router.get("", summary=f"List {resource}")
     def list_devices(

@@ -31,8 +31,10 @@ from app.services.scoring import CPUScore, GPUScore, Hybrid, PhoneScore, SoCScor
 PREFIX = settings.api_version_prefix
 
 
-def _whole_as_int(value: float) -> int | float:
+def _whole_as_int(value: float | None) -> int | float | None:
     """8.0 → 8 so whole-GB phones keep their integer JSON; 0.125 stays a float."""
+    if value is None:
+        return None
     return int(value) if float(value).is_integer() else value
 
 

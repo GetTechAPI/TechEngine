@@ -109,10 +109,13 @@ python -m app.dump              # generate ./dump/v1/... static tree
 
 `TECHAPI_DATA_DIR=/path/to/TechAPI/data` overrides the data location.
 
-For tablets, watches, and PDAs, `battery_mah` and `weight_g` are optional:
-seed records may omit them or use `null` when no source value is known, and API
-detail responses and static dumps preserve unknown values as `null`.
-Smartphones continue to require numeric values for both fields.
+A device record (smartphone, tablet, watch, PDA, laptop, monitor) needs only
+its identity and a source: `slug`, `name`, `brand`, `source_urls`, `verified`.
+Specs are optional: seed records may omit `release_date`, `ram_gb`, `os`,
+`battery_mah`, `weight_g` (and a monitor's `size_inch`, `resolution`) or use
+`null` when no source value is known, and API detail responses and static dumps
+preserve unknown values as `null`. A record without a `release_date` lives in
+an `unknown` folder in place of the year (`smartphone/<brand>/unknown/<slug>.json`).
 
 ### Docker
 

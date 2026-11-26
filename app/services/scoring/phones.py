@@ -60,7 +60,7 @@ def _perf(
     system = capability(soc.antutu_score, scales["antutu_score"])
     if single is None and multi is None and system is None:
         return Hybrid(era=era)  # benchmark-only gate: RAM alone never yields a perf score
-    ram = capability(float(phone.ram_gb), scales["ram_gb"])
+    ram = capability(phone.ram_gb, scales["ram_gb"])  # unknown RAM: no contribution
     index = combine(
         [
             (single, weights["single"]),
