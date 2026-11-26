@@ -120,3 +120,16 @@ def test_relative_fields_filled_only_with_stats() -> None:
     ranked = score_phone(_phone(), soc, stats=stats)
     assert ranked.perf.percentile is not None
     assert ranked.perf.tier is not None
+
+
+def test_missing_specs_contribute_nothing() -> None:
+    # Unknown RAM drops out of the performance mix; an unknown date leaves no era.
+    bare = score_phone(_phone(ram_gb=None, release_date=None, os=None), _soc())
+    assert bare.performance is not None
+    assert bare.perf.era is None
+    assert bare.perf.percentile is None
+    empty = score_phone(
+        Smartphone(slug="bare-phone", name="Bare Phone", brand_id=1), None
+    )
+    assert empty.overall is None
+    assert empty.performance is None

@@ -60,6 +60,57 @@ def test_phone_battery_and_weight_optional(tmp_path, monkeypatch) -> None:
     assert _errors(tmp_path, monkeypatch, "smartphone/acme/2020/p.json", phone) == []
 
 
+DEVICE = {"slug": "d", "name": "D", "brand": "acme", "source_urls": SRC, "verified": False}
+DEVICE_SPECS = {"release_date": "2020-01-01", "ram_gb": 4, "os": "Android"}
+MONITOR_SPECS = {"release_date": "2020-01-01", "size_inch": 27, "resolution": "2560x1440"}
+DEVICE_CASES = [
+    ("smartphone", "smartphone/acme/{year}/d.json", DEVICE_SPECS),
+    ("smartphone-variant", "smartphone/acme/{year}/base/d.json", DEVICE_SPECS),
+    ("tablet", "tablet/acme/{year}/base/d.json", DEVICE_SPECS),
+    ("watch", "watch/acme/{year}/base/d.json", DEVICE_SPECS),
+    ("pda", "pda/acme/{year}/base/d.json", DEVICE_SPECS),
+    ("laptop", "laptop/acme/{year}/d.json", DEVICE_SPECS),
+    ("monitor", "monitor/acme/{year}/d.json", MONITOR_SPECS),
+]
+device_cases = pytest.mark.parametrize(
+    "rel,specs", [case[1:] for case in DEVICE_CASES], ids=[case[0] for case in DEVICE_CASES]
+)
+
+
+@device_cases
+@pytest.mark.parametrize("null", [True, False], ids=["null", "omitted"])
+def test_device_specs_optional(tmp_path, monkeypatch, rel, specs, null) -> None:
+    device = {**DEVICE, **(dict.fromkeys(specs) if null else {})}
+    assert _errors(tmp_path, monkeypatch, rel.format(year="unknown"), device) == []
+
+
+@device_cases
+def test_device_without_date_rejected_in_year_folder(tmp_path, monkeypatch, rel, specs) -> None:
+    device = {**DEVICE, **specs, "release_date": None}
+    errs = _errors(tmp_path, monkeypatch, rel.format(year="2020"), device)
+    assert any("lives in year '2020' but release_date is null" in e for e in errs), errs
+
+
+@device_cases
+def test_device_with_date_rejected_in_unknown_folder(tmp_path, monkeypatch, rel, specs) -> None:
+    device = {**DEVICE, **specs}
+    assert _errors(tmp_path, monkeypatch, rel.format(year="2020"), device) == []
+    (tmp_path / rel.format(year="2020")).unlink()
+    errs = _errors(tmp_path, monkeypatch, rel.format(year="unknown"), device)
+    assert any("lives in year 'unknown' but release_date starts with '2020'" in e
+               for e in errs), errs
+
+
+@device_cases
+def test_device_specs_still_validated_when_set(tmp_path, monkeypatch, rel, specs) -> None:
+    bad = {"size_inch": 500} if "size_inch" in specs else {"ram_gb": 4096}
+    errs = _errors(tmp_path, monkeypatch, rel.format(year="2020"), {**DEVICE, **specs, **bad})
+    assert any("out of range" in e for e in errs), errs
+    errs = _errors(tmp_path, monkeypatch, rel.format(year="2020"),
+                   {**DEVICE, **specs, "release_date": "2020"})
+    assert any("must be ISO 8601" in e for e in errs), errs
+
+
 @pytest.mark.parametrize("patch", [{"soc": None}, {}], ids=["null", "omitted"])
 def test_phone_soc_optional(tmp_path, monkeypatch, patch) -> None:
     phone = {"slug": "p", "name": "P", "brand": "acme", "release_date": "2020-01-01",

@@ -32,7 +32,8 @@ class Laptop(SQLModel, table=True):
     cpu_id: int | None = Field(default=None, foreign_key="cpus.id", index=True)
     gpu_id: int | None = Field(default=None, foreign_key="gpus.id", index=True)
 
-    release_date: date
+    # None = unknown, never estimated (also ram_gb and os below).
+    release_date: date | None = None
     msrp_usd: int | None = None
     device_category: str | None = None  # e.g. "Gaming", "Thin & Light", "2-in-1"
 
@@ -42,7 +43,7 @@ class Laptop(SQLModel, table=True):
     gpu_type: str | None = None  # "Dedicated" | "Integrated"
 
     # Memory / storage
-    ram_gb: int
+    ram_gb: int | None = None
     storage_gb: int | None = None
 
     # Display — {size_inch, resolution, refresh_hz, panel, ...}
@@ -52,7 +53,7 @@ class Laptop(SQLModel, table=True):
     weight_g: float | None = None
 
     # Software
-    os: str
+    os: str | None = None
     os_version: str | None = None
 
     # Source tracking (dataset row provenance)

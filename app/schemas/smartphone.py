@@ -34,12 +34,12 @@ class SmartphoneRead(BaseModel):
     name: str
     brand: BrandSummary
     soc: SoCSummary | None = None
-    release_date: date
+    release_date: date | None = None
     release_date_precision: str | None = None
     msrp_usd: int | None = None
     model_numbers: list[str] = []
     codenames: list[str] = []
-    ram_gb: int | float
+    ram_gb: int | float | None = None
     storage_options_gb: list[int]
     variant: dict[str, Any]
     display: dict[str, Any]
@@ -50,7 +50,7 @@ class SmartphoneRead(BaseModel):
     weight_g: float | None = None
     dimensions: dict[str, Any]
     ip_rating: str | None = None
-    os: str
+    os: str | None = None
     os_version: str | None = None
     connectivity: dict[str, Any]
     image_url: str | None = None

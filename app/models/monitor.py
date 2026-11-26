@@ -29,12 +29,13 @@ class Monitor(SQLModel, table=True):
     name: str
     brand_id: int = Field(foreign_key="brands.id", index=True)
 
-    release_date: date
+    # None = unknown, never estimated (also size_inch and resolution below).
+    release_date: date | None = None
     msrp_usd: int | None = None
 
     # Display
-    size_inch: float
-    resolution: str  # e.g. "1920x1080"
+    size_inch: float | None = None
+    resolution: str | None = None  # e.g. "1920x1080"
     aspect_ratio: str | None = None  # e.g. "16:9"
     refresh_hz: int | None = None
     panel_type: str | None = None  # IPS / VA / OLED / TN

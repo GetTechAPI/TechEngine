@@ -27,6 +27,8 @@ _SORT_FIELDS: dict[str, Any] = {
     "size_inch": Monitor.size_inch,
     "refresh_hz": Monitor.refresh_hz,
 }
+# Optional specs: records without a value sort last in either direction.
+_NULLS_LAST = {"release_date", "size_inch"}
 
 
 def _resolve_id(session: Session, model: Any, slug: str | None) -> int | None | str:
@@ -44,7 +46,8 @@ def _apply_sort(stmt: SelectOfScalar[Any], sort: str | None) -> SelectOfScalar[A
     column = _SORT_FIELDS.get(field)
     if column is None:
         raise APIError(400, "INVALID_REQUEST", f"Cannot sort by '{field}'")
-    return stmt.order_by(column.desc() if descending else column.asc())
+    order = column.desc() if descending else column.asc()
+    return stmt.order_by(order.nulls_last() if field in _NULLS_LAST else order)
 
 
 @router.get("", summary="List monitors")

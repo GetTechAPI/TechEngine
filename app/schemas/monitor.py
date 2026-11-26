@@ -18,10 +18,10 @@ class MonitorRead(BaseModel):
     base_model_slug: str | None = None
     name: str
     brand: BrandSummary
-    release_date: date
+    release_date: date | None = None
     msrp_usd: int | None = None
-    size_inch: float
-    resolution: str
+    size_inch: float | None = None
+    resolution: str | None = None
     aspect_ratio: str | None = None
     refresh_hz: int | None = None
     panel_type: str | None = None

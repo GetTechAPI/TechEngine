@@ -26,17 +26,17 @@ class LaptopRead(BaseModel):
     brand: BrandSummary
     cpu: ResourceRef | None = None
     gpu: ResourceRef | None = None
-    release_date: date
+    release_date: date | None = None
     msrp_usd: int | None = None
     device_category: str | None = None
     cpu_name: str | None = None
     gpu_name: str | None = None
     gpu_type: str | None = None
-    ram_gb: int
+    ram_gb: int | None = None
     storage_gb: int | None = None
     display: dict[str, Any]
     weight_g: float | None = None
-    os: str
+    os: str | None = None
     os_version: str | None = None
     variant: dict[str, Any]
     image_url: str | None = None

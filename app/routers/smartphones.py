@@ -28,6 +28,8 @@ _SORT_FIELDS: dict[str, Any] = {
     "release_date": Smartphone.release_date,
     "msrp_usd": Smartphone.msrp_usd,
 }
+# Optional specs: records without a value sort last in either direction.
+_NULLS_LAST = {"release_date"}
 
 
 def _apply_sort(stmt: SelectOfScalar[Smartphone], sort: str | None) -> SelectOfScalar[Smartphone]:
@@ -38,7 +40,8 @@ def _apply_sort(stmt: SelectOfScalar[Smartphone], sort: str | None) -> SelectOfS
     column = _SORT_FIELDS.get(field)
     if column is None:
         raise APIError(400, "INVALID_REQUEST", f"Cannot sort by '{field}'")
-    return stmt.order_by(column.desc() if descending else column.asc())
+    order = column.desc() if descending else column.asc()
+    return stmt.order_by(order.nulls_last() if field in _NULLS_LAST else order)
 
 
 def _resolve_id(session: Session, model: Any, slug: str | None) -> int | None | str:

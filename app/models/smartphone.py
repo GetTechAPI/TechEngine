@@ -26,7 +26,8 @@ class Smartphone(SQLModel, table=True):
     # None = chipset unknown.
     soc_id: int | None = Field(default=None, foreign_key="socs.id", index=True)
 
-    release_date: date
+    # None = unknown, never estimated (also ram_gb and os below).
+    release_date: date | None = None
     # day | month | year | year_estimated; None = unspecified (legacy records).
     release_date_precision: str | None = None
     msrp_usd: int | None = None
@@ -36,7 +37,7 @@ class Smartphone(SQLModel, table=True):
     codenames: list[str] = Field(default_factory=list, sa_column=Column(JSON))
 
     # Memory
-    ram_gb: float  # sub-GB on 2006-2012 phones (original iPhone 0.125)
+    ram_gb: float | None = None  # sub-GB on 2006-2012 phones (original iPhone 0.125)
     storage_options_gb: list[int] = Field(default_factory=list, sa_column=Column(JSON))
     variant: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
 
@@ -57,7 +58,7 @@ class Smartphone(SQLModel, table=True):
     ip_rating: str | None = None
 
     # Software
-    os: str
+    os: str | None = None
     os_version: str | None = None
 
     # Connectivity — {wifi, bluetooth, nfc, usb}

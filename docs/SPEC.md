@@ -554,11 +554,11 @@ class Smartphone:
     brand_id: int               # FK → Brand
     soc_id: int | None          # FK → SoC (None = 칩셋 미상)
 
-    release_date: date
+    release_date: date | None   # None = 출시일 미상 (연도 폴더는 `unknown`)
     msrp_usd: int | None
 
     # Memory
-    ram_gb: int
+    ram_gb: float | None        # None = 미상
     storage_options_gb: list[int]
 
     # Display (JSONB)
@@ -580,7 +580,7 @@ class Smartphone:
     ip_rating: str | None       # "IP68"
 
     # Software
-    os: str                     # "Android" | "iOS"
+    os: str | None              # "Android" | "iOS" (None = 미상)
     os_version: str | None
 
     # Connectivity
@@ -601,6 +601,8 @@ class Smartphone:
     created_at: datetime
     updated_at: datetime
 ```
+
+> 기기 6종(smartphone, tablet, watch, pda, laptop, monitor)의 필수 필드는 식별·출처 정보뿐이다(`slug`, `name`, `brand`, `source_urls`, `verified`). 출처에 없는 스펙은 지어내지 않고 null로 둔다: `release_date`, `ram_gb`, `os`, 모니터는 `size_inch`, `resolution`. 값이 있으면 기존 규칙대로 검증한다. 연도 폴더는 `release_date`의 연도와 같아야 하고, `release_date`가 null이면 `unknown`이어야 한다(`smartphone/<brand>/unknown/<slug>.json`). 목록을 날짜로 정렬하면 값이 없는 레코드는 항상 마지막에 온다.
 
 ### 6.5 Discrete GPU
 ```python

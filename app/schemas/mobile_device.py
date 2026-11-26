@@ -20,12 +20,12 @@ class MobileDeviceRead(BaseModel):
     name: str
     brand: BrandSummary
     soc: SoCSummary | None = None
-    release_date: date
+    release_date: date | None = None
     release_date_precision: str | None = None
     msrp_usd: int | None = None
     model_numbers: list[str] = Field(default_factory=list)
     codenames: list[str] = Field(default_factory=list)
-    ram_gb: float
+    ram_gb: float | None = None
     storage_options_gb: list[int]
     variant: dict[str, Any]
     display: dict[str, Any]
@@ -36,7 +36,7 @@ class MobileDeviceRead(BaseModel):
     weight_g: float | None = None
     dimensions: dict[str, Any]
     ip_rating: str | None = None
-    os: str
+    os: str | None = None
     os_version: str | None = None
     connectivity: dict[str, Any]
     image_url: str | None = None

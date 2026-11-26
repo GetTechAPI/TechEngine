@@ -130,3 +130,22 @@ def test_sparse_bulk_laptop_monitor_stays_yellow(category):
     assert score.band == "yellow"
     assert "domain_rules_unavailable" not in score.flags
     assert score.subscores["consistency"] == 35
+
+
+@pytest.mark.parametrize("category,specs", [
+    ("smartphone", {"release_date": "2020-01-01", "ram_gb": 4, "os": "Android 10",
+                    "storage_options_gb": [64]}),
+    ("tablet", {"release_date": "2020-01-01", "ram_gb": 4, "os": "Android 10",
+                "storage_options_gb": [64]}),
+    ("laptop", {"release_date": "2020-01-01", "ram_gb": 16, "os": "Windows 10"}),
+    ("monitor", {"release_date": "2020-01-01", "size_inch": 27, "resolution": "2560x1440"}),
+])
+def test_device_with_unknown_specs_scores_without_crashing(category, specs):
+    identity = {"slug": "x", "name": "X", "brand": "acme", "verified": False,
+                "source_urls": ["https://en.wikipedia.org/wiki/X"]}
+    full = _score(category, {**identity, **specs})
+    nulled = {**identity, **dict.fromkeys(specs)}
+    for bare in (_score(category, identity), _score(category, nulled)):
+        assert bare.flags == []
+        assert bare.band != "green"
+        assert bare.score <= full.score
