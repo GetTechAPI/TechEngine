@@ -111,6 +111,66 @@ def test_device_specs_still_validated_when_set(tmp_path, monkeypatch, rel, specs
     assert any("must be ISO 8601" in e for e in errs), errs
 
 
+CHIP = {"slug": "c", "name": "C", "manufacturer": "acme", "source_urls": SRC, "verified": False}
+CPU_SPECS = {"segment": "desktop", "architecture": "Zen 4", "cores": 8, "threads": 16}
+GPU_SPECS = {"architecture": "Ada", "memory_gb": 8, "memory_type": "GDDR6",
+             "memory_bus_bit": 128, "base_clock_mhz": 1000, "boost_clock_mhz": 1200,
+             "tdp_w": 150, "pcie_version": "PCIe 4.0 x16"}
+SOC_SPECS = {"release_date": "2020-01-01", "process_nm": 7, "gpu_name": "G"}
+DATED = {"release_date": "2020-01-01"}
+
+
+@pytest.mark.parametrize("null", [True, False], ids=["null", "omitted"])
+@pytest.mark.parametrize("rel,required,specs", [
+    ("cpu/acme/2020/unknown/c.json", DATED, CPU_SPECS),
+    ("gpu/acme/2020/consumer/c.json", DATED, GPU_SPECS),
+    ("soc/acme/unknown/c.json", {}, SOC_SPECS),
+], ids=["cpu", "gpu", "soc"])
+def test_chip_specs_optional(tmp_path, monkeypatch, rel, required, specs, null) -> None:
+    chip = {**CHIP, **required, **(dict.fromkeys(specs) if null else {})}
+    assert _errors(tmp_path, monkeypatch, rel, chip) == []
+
+
+@pytest.mark.parametrize("category", ["cpu", "gpu"])
+@pytest.mark.parametrize("patch", [{}, {"release_date": None}], ids=["omitted", "null"])
+def test_cpu_and_gpu_still_need_a_release_date(tmp_path, monkeypatch, category, patch) -> None:
+    errs = _errors(tmp_path, monkeypatch, f"{category}/acme/2020/unknown/c.json",
+                   {**CHIP, **patch})
+    assert any("release_date" in e for e in errs), errs
+
+
+@pytest.mark.parametrize("rel,chip,needle", [
+    ("cpu/acme/2020/consumer/c.json", {**DATED, **CPU_SPECS, "segment": None},
+     "segment is null, so it must live at"),
+    ("cpu/acme/c.json", DATED, "segment is null, so it must live at"),
+    ("cpu/acme/2020/unknown/c.json", {**DATED, **CPU_SPECS},
+     "lives in 'unknown/' but segment='desktop'"),
+    ("soc/acme/2020/c.json", {**SOC_SPECS, "release_date": None},
+     "lives in year '2020' but release_date is null"),
+    ("soc/acme/c.json", {}, "release_date is null, so it must live at"),
+    ("soc/acme/unknown/c.json", SOC_SPECS,
+     "lives in year 'unknown' but release_date starts with '2020'"),
+])
+def test_chip_unknown_folder_rules(tmp_path, monkeypatch, rel, chip, needle) -> None:
+    errs = _errors(tmp_path, monkeypatch, rel, {**CHIP, **chip})
+    assert any(needle in e for e in errs), errs
+
+
+@pytest.mark.parametrize("rel,chip,needle", [
+    ("cpu/acme/2020/consumer/c.json", {**DATED, **CPU_SPECS, "cores": 0}, "out of range"),
+    ("cpu/acme/2020/consumer/c.json", {**DATED, **CPU_SPECS, "segment": "phone"},
+     "segment 'phone' not in"),
+    ("gpu/acme/2020/consumer/c.json", {**DATED, **GPU_SPECS, "tdp_w": 9000}, "out of range"),
+    ("gpu/acme/2020/consumer/c.json", {**DATED, **GPU_SPECS, "memory_bus_bit": 1.5},
+     "must be an integer"),
+    ("soc/acme/2020/c.json", {**SOC_SPECS, "process_nm": 500}, "out of range"),
+    ("soc/acme/2020/c.json", {**SOC_SPECS, "release_date": "2020"}, "must be ISO 8601"),
+])
+def test_chip_specs_still_validated_when_set(tmp_path, monkeypatch, rel, chip, needle) -> None:
+    errs = _errors(tmp_path, monkeypatch, rel, {**CHIP, **chip})
+    assert any(needle in e for e in errs), errs
+
+
 @pytest.mark.parametrize("patch", [{"soc": None}, {}], ids=["null", "omitted"])
 def test_phone_soc_optional(tmp_path, monkeypatch, patch) -> None:
     phone = {"slug": "p", "name": "P", "brand": "acme", "release_date": "2020-01-01",

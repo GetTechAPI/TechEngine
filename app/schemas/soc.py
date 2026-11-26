@@ -38,8 +38,8 @@ class SoCSummary(BaseModel):
     slug: str
     name: str
     manufacturer: SoCManufacturer
-    process_nm: float
-    gpu_name: str
+    process_nm: float | None = None
+    gpu_name: str | None = None
     url: str
 
 
@@ -50,11 +50,11 @@ class SoCRead(BaseModel):
     slug: str
     name: str
     manufacturer: SoCManufacturer
-    release_date: date
-    process_nm: float
+    release_date: date | None = None
+    process_nm: float | None = None
     transistors_billion: float | None = None
     cpu_config: dict[str, Any]
-    gpu_name: str
+    gpu_name: str | None = None
     gpu_cores: int | None = None
     gpu_clock_mhz: int | None = None
     npu_tops: float | None = None

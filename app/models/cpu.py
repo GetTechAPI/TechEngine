@@ -26,14 +26,15 @@ class CPU(SQLModel, table=True):
     name: str
     manufacturer_id: int = Field(foreign_key="brands.id", index=True)
     release_date: date
-    segment: str  # "desktop" | "laptop" | "hedt" | "server"
-    architecture: str  # "Raptor Lake", "Zen 4"
+    # None = unknown, never estimated (also architecture, cores and threads below).
+    segment: str | None = None  # "desktop" | "laptop" | "hedt" | "server"
+    architecture: str | None = None  # "Raptor Lake", "Zen 4"
     socket: str | None = None  # "LGA1700", "AM5"
     process_node: str | None = None  # "Intel 7", "TSMC N4" (CPU nodes resist a single nm float)
 
     # Cores
-    cores: int
-    threads: int
+    cores: int | None = None
+    threads: int | None = None
     p_cores: int | None = None
     e_cores: int | None = None
 

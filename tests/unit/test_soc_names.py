@@ -91,7 +91,7 @@ def test_validator_rejects_a_placeholder_soc(tmp_path, monkeypatch) -> None:
     _put(tmp_path, "brand/us/acme.json", BRAND)
     _put(tmp_path, "soc/acme/2017/snapdragon-660.json", _soc("snapdragon-660", "Snapdragon 660"))
     assert validate.validate() == []
-    _put(tmp_path, "soc/acme/2010/nokia-mobile-platform-2010.json",
+    _put(tmp_path, "soc/acme/2017/nokia-mobile-platform-2010.json",
          _soc("nokia-mobile-platform-2010", "Nokia mobile platform 2010"))
     errs = validate.validate()
     assert len(errs) == 1, errs

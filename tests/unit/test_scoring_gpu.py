@@ -46,3 +46,12 @@ def test_gpu_without_benchmark_is_null() -> None:
     score = score_gpu(_gpu())
     assert score.overall is None
     assert score.graphics.index is None
+
+
+def test_missing_specs_contribute_nothing() -> None:
+    bare = DiscreteGPU(
+        slug="bare-gpu", name="Bare GPU", manufacturer_id=1, release_date=date(2025, 1, 1)
+    )
+    score = score_gpu(bare)
+    assert score.overall is None
+    assert score.graphics.index is None

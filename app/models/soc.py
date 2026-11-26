@@ -22,15 +22,16 @@ class SoC(SQLModel, table=True):
     slug: str = Field(index=True, unique=True)
     name: str
     manufacturer_id: int = Field(foreign_key="brands.id", index=True)
-    release_date: date
-    process_nm: float
+    # None = unknown, never estimated (also process_nm and gpu_name below).
+    release_date: date | None = None
+    process_nm: float | None = None
     transistors_billion: float | None = None
 
     # CPU — JSONB: {"performance": 2, "efficiency": 6, "clocks": [...]}
     cpu_config: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
 
     # Integrated GPU
-    gpu_name: str
+    gpu_name: str | None = None
     gpu_cores: int | None = None
     gpu_clock_mhz: int | None = None
 

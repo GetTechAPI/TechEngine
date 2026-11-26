@@ -47,3 +47,13 @@ def test_no_benchmark_yields_null_overall_not_zero() -> None:
     assert score.single.index is None and score.multi.index is None
     # era is still attached even with no benchmark
     assert score.multi.era == "2024-2026"
+
+
+def test_missing_specs_contribute_nothing() -> None:
+    bare = CPU(slug="bare-cpu", name="Bare CPU", manufacturer_id=1, release_date=date(2024, 1, 1))
+    assert score_cpu(bare).overall is None
+    # Unknown cores, threads, segment and architecture leave a benchmark score as it is.
+    scored = score_cpu(_cpu(cinebench_r23_multi=35000))
+    partial = score_cpu(_cpu(segment=None, architecture=None, cores=None, threads=None,
+                             cinebench_r23_multi=35000))
+    assert partial.multi.index == scored.multi.index

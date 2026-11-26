@@ -30,12 +30,12 @@ class CPURead(BaseModel):
     name: str
     manufacturer: ManufacturerRef
     release_date: date
-    segment: str
-    architecture: str
+    segment: str | None = None
+    architecture: str | None = None
     socket: str | None = None
     process_node: str | None = None
-    cores: int
-    threads: int
+    cores: int | None = None
+    threads: int | None = None
     p_cores: int | None = None
     e_cores: int | None = None
     base_clock_ghz: float | None = None
