@@ -63,6 +63,7 @@ DEPENDENTS: dict[str, list[str] | None] = {
     "soc": ["socs", "smartphones", "tablets", "watches", "pdas", "device-catalog"],
     "cpu": ["cpus", "laptops"],
     "gpu": ["gpus", "laptops"],
+    "socket": ["sockets", "chipsets"],
 }
 
 

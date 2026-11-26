@@ -2,9 +2,9 @@
 
 CATEGORIES: tuple[str, ...] = (
     "brand", "soc", "smartphone", "tablet", "watch", "pda", "gpu", "cpu",
-    "laptop", "monitor", "software", "website", "device_catalog",
+    "laptop", "monitor", "software", "website", "device_catalog", "socket", "chipset",
 )
 COLLECTIONS = dict(zip(CATEGORIES, (
     "brands", "socs", "smartphones", "tablets", "watches", "pdas", "gpus", "cpus",
-    "laptops", "monitors", "software", "websites", "device-catalog",
+    "laptops", "monitors", "software", "websites", "device-catalog", "sockets", "chipsets",
 ), strict=True))

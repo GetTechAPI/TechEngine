@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.config import settings
 from app.models.brand import Brand
+from app.models.chipset import Chipset
 from app.models.cpu import CPU
 from app.models.device_catalog import DeviceCatalog
 from app.models.gpu import DiscreteGPU
@@ -12,9 +13,11 @@ from app.models.mobile_device import MobileDeviceFields
 from app.models.monitor import Monitor
 from app.models.smartphone import Smartphone
 from app.models.soc import SoC
+from app.models.socket import Socket
 from app.models.software import Software
 from app.models.website import Website
 from app.schemas.brand import BrandRead, BrandSummary
+from app.schemas.chipset import ChipsetRead
 from app.schemas.common import HybridRead, ManufacturerRef, ResourceRef
 from app.schemas.cpu import CPURead, CPUScoreRead
 from app.schemas.device_catalog import DeviceCatalogRead
@@ -24,6 +27,7 @@ from app.schemas.mobile_device import MobileDeviceRead
 from app.schemas.monitor import MonitorRead
 from app.schemas.smartphone import ScoreRead, SmartphoneRead
 from app.schemas.soc import SoCManufacturer, SoCRead, SoCScoreRead, SoCSummary
+from app.schemas.socket import SocketRead
 from app.schemas.software import SoftwareRead
 from app.schemas.website import WebsiteRead
 from app.services.scoring import CPUScore, GPUScore, Hybrid, PhoneScore, SoCScore
@@ -480,4 +484,59 @@ def device_catalog_read(
         created_at=entry.created_at,
         updated_at=entry.updated_at,
         url=url_for("device-catalog", entry.slug),
+    )
+
+
+def _maker_ref(manufacturer: Brand) -> ManufacturerRef:
+    return ManufacturerRef(
+        slug=manufacturer.slug,
+        name=manufacturer.name,
+        url=url_for("brands", manufacturer.slug),
+    )
+
+
+def socket_read(socket: Socket, manufacturer: Brand | None) -> SocketRead:
+    assert socket.id is not None
+    return SocketRead(
+        id=socket.id,
+        slug=socket.slug,
+        name=socket.name,
+        manufacturer=_maker_ref(manufacturer) if manufacturer else None,
+        aliases=socket.aliases,
+        release_date=socket.release_date,
+        package_type=socket.package_type,
+        pin_count=socket.pin_count,
+        verified=socket.verified,
+        source_urls=socket.source_urls,
+        created_at=socket.created_at,
+        updated_at=socket.updated_at,
+        url=url_for("sockets", socket.slug),
+    )
+
+
+def chipset_read(chipset: Chipset, manufacturer: Brand, sockets: list[Socket]) -> ChipsetRead:
+    assert chipset.id is not None
+    return ChipsetRead(
+        id=chipset.id,
+        slug=chipset.slug,
+        name=chipset.name,
+        manufacturer=_maker_ref(manufacturer),
+        aliases=chipset.aliases,
+        series=chipset.series,
+        release_date=chipset.release_date,
+        sockets=[resource_ref("sockets", socket.slug, socket.name) for socket in sockets],
+        segment=chipset.segment,
+        cpu_overclocking=chipset.cpu_overclocking,
+        memory_types=chipset.memory_types,
+        max_memory_gb=chipset.max_memory_gb,
+        pcie_version=chipset.pcie_version,
+        usb_ports=chipset.usb_ports,
+        sata_ports=chipset.sata_ports,
+        tdp_w=chipset.tdp_w,
+        process_nm=chipset.process_nm,
+        verified=chipset.verified,
+        source_urls=chipset.source_urls,
+        created_at=chipset.created_at,
+        updated_at=chipset.updated_at,
+        url=url_for("chipsets", chipset.slug),
     )

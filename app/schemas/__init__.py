@@ -1,12 +1,14 @@
 """Pydantic response schemas (§7.4 list, appendix C detail, §7.5 error)."""
 
 from app.schemas.brand import BrandRead, BrandSummary
+from app.schemas.chipset import ChipsetRead
 from app.schemas.common import ErrorBody, ErrorResponse, Page, ResourceRef
 from app.schemas.device_catalog import DeviceCatalogRead
 from app.schemas.laptop import LaptopRead
 from app.schemas.monitor import MonitorRead
 from app.schemas.smartphone import ScoreRead, SmartphoneRead
 from app.schemas.soc import SoCManufacturer, SoCRead, SoCSummary
+from app.schemas.socket import SocketRead
 from app.schemas.software import SoftwareRead
 
 __all__ = [
@@ -25,4 +27,6 @@ __all__ = [
     "MonitorRead",
     "SoftwareRead",
     "DeviceCatalogRead",
+    "SocketRead",
+    "ChipsetRead",
 ]

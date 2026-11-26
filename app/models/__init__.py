@@ -4,6 +4,7 @@ Importing this package registers every table on ``SQLModel.metadata``.
 """
 
 from app.models.brand import Brand
+from app.models.chipset import Chipset
 from app.models.cpu import CPU
 from app.models.device_catalog import DeviceCatalog
 from app.models.gpu import DiscreteGPU
@@ -12,6 +13,7 @@ from app.models.mobile_device import PDA, Tablet, Watch
 from app.models.monitor import Monitor
 from app.models.smartphone import Smartphone
 from app.models.soc import SoC
+from app.models.socket import Socket
 from app.models.software import Software
 
 __all__ = [
@@ -27,4 +29,6 @@ __all__ = [
     "Monitor",
     "Software",
     "DeviceCatalog",
+    "Socket",
+    "Chipset",
 ]

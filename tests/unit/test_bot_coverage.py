@@ -13,10 +13,10 @@ from app.verify.common import Record
 
 def test_all_categories_share_registry():
     assert VERIFY_CATEGORIES is CATEGORIES
-    assert len(CATEGORIES) == len(set(CATEGORIES)) == 13
+    assert len(CATEGORIES) == len(set(CATEGORIES)) == 15
     assert set(CATEGORIES) == {
         "smartphone", "tablet", "watch", "pda", "cpu", "gpu", "soc", "laptop",
-        "monitor", "software", "website", "brand", "device_catalog",
+        "monitor", "software", "website", "brand", "device_catalog", "socket", "chipset",
     }
 
 
@@ -93,7 +93,7 @@ def test_integrity_scans_non_chip_categories(tmp_path):
         ["python", "integrity_check.py", str(tmp_path), "--hard-report", str(report)],
         capture_output=True, text=True, encoding="utf-8", check=True,
     )
-    assert "13/13 categories" in result.stdout
+    assert "15/15 categories" in result.stdout
     anomalies = json.loads(report.read_text(encoding="utf-8"))
     for category in ("laptop", "monitor", "software", "website"):
         assert any(f"[{category}] DUP slug" in item for item in anomalies)

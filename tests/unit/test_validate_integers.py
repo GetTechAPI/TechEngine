@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from app import validate
 from app.models.brand import Brand
+from app.models.chipset import Chipset
 from app.models.cpu import CPU
 from app.models.device_catalog import DeviceCatalog
 from app.models.gpu import DiscreteGPU
@@ -22,14 +23,17 @@ from app.models.mobile_device import PDA, Tablet, Watch
 from app.models.monitor import Monitor
 from app.models.smartphone import Smartphone
 from app.models.soc import SoC
+from app.models.socket import Socket
 from app.models.software import Software
 from app.models.website import Website
 from app.schemas import (
     BrandRead,
+    ChipsetRead,
     DeviceCatalogRead,
     LaptopRead,
     MonitorRead,
     SmartphoneRead,
+    SocketRead,
     SoCRead,
     SoftwareRead,
 )
@@ -42,13 +46,14 @@ REPO = Path(__file__).resolve().parents[2]
 
 MODELS: dict[str, type[BaseModel]] = dict(zip(validate.CATEGORIES, (
     Brand, SoC, Smartphone, Tablet, Watch, PDA, DiscreteGPU, CPU,
-    Laptop, Monitor, Software, Website, DeviceCatalog,
+    Laptop, Monitor, Software, Website, DeviceCatalog, Socket, Chipset,
 ), strict=True))
 READ_SCHEMAS: dict[str, type[BaseModel]] = {
     "brand": BrandRead, "soc": SoCRead, "smartphone": SmartphoneRead,
     "tablet": MobileDeviceRead, "watch": MobileDeviceRead, "pda": MobileDeviceRead,
     "gpu": GPURead, "cpu": CPURead, "laptop": LaptopRead, "monitor": MonitorRead,
     "software": SoftwareRead, "website": WebsiteRead, "device_catalog": DeviceCatalogRead,
+    "socket": SocketRead, "chipset": ChipsetRead,
 }
 
 # One record path and one integer field per category that has any.
@@ -64,6 +69,8 @@ SAMPLES = [
     ("laptop/acme/2020/l.json", "ram_gb"),
     ("monitor/acme/2020/m.json", "refresh_hz"),
     ("device_catalog/acme/acme-x.json", "android_sdk_min"),
+    ("socket/s1.json", "pin_count"),
+    ("chipset/acme/c1.json", "sata_ports"),
 ]
 
 

@@ -161,5 +161,7 @@ def test_resolve_collections_only() -> None:
 def test_collections_for_changes_maps_dependents() -> None:
     assert collections_for_changes({"website/a/x.json"}) == ["websites"]
     assert collections_for_changes({"cpu/i/1/x.json"}) == ["cpus", "laptops"]
+    assert collections_for_changes({"socket/am5.json"}) == ["sockets", "chipsets"]
+    assert collections_for_changes({"chipset/amd/amd-x670.json"}) == ["chipsets"]
     assert collections_for_changes({"_verify/status.json"}) == []
     assert collections_for_changes({"brand/us/acme.json"}) == COLLECTIONS
