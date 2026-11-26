@@ -45,7 +45,7 @@ Dockerfile, docker-compose.yml   # API + Postgres, dataset mounted (see Docker)
 
 Routes under `/v1`: `health`, `version`, `brands`, `socs`, `smartphones`,
 `tablets`, `watches`, `pdas`, `gpus`, `cpus`, `laptops`, `monitors`,
-`software`, `websites`, `device-catalog`. Dataset folders are singular
+`software`, `websites`, `device-catalog`, `sockets`, `chipsets`. Dataset folders are singular
 (`cpu/`), routes are plural (`/v1/cpus`); `app/categories.py` holds the mapping.
 
 **How the engine finds the dataset.** This repo holds no data. Every entry
@@ -124,6 +124,12 @@ Chips follow the same rule. A CPU or GPU needs `slug`, `name`, `manufacturer`,
 SoC's `release_date`, `process_nm`, `gpu_name`) may be `null`. A SoC without a
 `release_date` lives at `soc/<manufacturer>/unknown/<slug>.json`, and a CPU
 without a `segment` at `cpu/<manufacturer>/<year>/unknown/<slug>.json`.
+
+Sockets and chipsets have no year folder: `socket/<slug>.json` (flat, because a
+socket's `manufacturer` may be `null`) and `chipset/<manufacturer>/<slug>.json`.
+Their `release_date` may be `YYYY`, `YYYY-MM` or `YYYY-MM-DD` and is served as
+written. A chipset lists the sockets it supports by slug in `sockets`. Both
+collections are empty until the dataset has a `socket/` or `chipset/` folder.
 
 ### Docker
 

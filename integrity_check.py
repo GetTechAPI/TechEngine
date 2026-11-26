@@ -15,8 +15,9 @@ Without ``DATA_ROOT`` the scan reads the directory ``app.data_root`` resolves:
 By default it prints every flagged item and exits 0 (human-review mode). With
 ``--strict`` it additionally exits non-zero when any *hard* anomaly is found —
 unambiguous corruption that must block a collection or refresh PR: duplicate slugs,
-slug/filename mismatches, the same SoC stored under two names, and
-physically-impossible single>multi benchmarks.
+slug/filename mismatches, the same SoC stored under two names, the same socket or
+chipset stored twice (by name or by alias), and physically-impossible single>multi
+benchmarks.
 The statistical cross-source/era outliers stay advisory (a heterogeneous catalog
 of server + desktop + mobile parts legitimately produces many ratio outliers), so
 they are printed for review but never fail the gate. The CPU cross-source ratio
@@ -191,6 +192,41 @@ def mad_outliers(pairs):
         for i in range(len(rows)) if abs(scores[i] - med) > 4 * mad
     ]
 
+def part_key(text) -> str:
+    """Socket/chipset name for comparison: 'LGA 1156', 'LGA1156' and 'lga-1156' are one.
+
+    '+' is kept as 'plus': Socket AM2 and Socket AM2+ are two sockets.
+    """
+    return re.sub(r"[^a-z0-9]+", "", str(text or "").lower().replace("+", "plus"))
+
+def part_duplicates(comp: str, pool: list, changed: set[str] | None = None) -> list[str]:
+    """Two sockets, or two chipsets of one manufacturer, that are the same part.
+
+    Same normalized name, or an alias of one equal to the name or slug of
+    another. ``changed`` (file stems) limits the findings to those records.
+    """
+    names: dict[tuple[str, str], list[str]] = {}
+    owners: dict[tuple[str, str], set[str]] = {}
+    for p, fn, d in pool:
+        scope = str(d.get("manufacturer")) if comp == "chipset" else ""
+        key = part_key(d.get("name"))
+        if key:
+            names.setdefault((scope, key), []).append(fn)
+        for own in {key, part_key(d.get("slug"))} - {""}:
+            owners.setdefault((scope, own), set()).add(fn)
+    found: set[str] = set()
+    for (_scope, _key), fl in names.items():
+        if len(fl) > 1 and (changed is None or changed & set(fl)):
+            found.add(f"  [{comp}] DUP name {_key!r}: {sorted(fl)}")
+    for p, fn, d in pool:
+        scope = str(d.get("manufacturer")) if comp == "chipset" else ""
+        aliases = d.get("aliases")
+        for alias in aliases if isinstance(aliases, list) else []:
+            for other in sorted(owners.get((scope, part_key(alias)), set()) - {fn}):
+                if changed is None or changed & {fn, other}:
+                    found.add(f"  [{comp}] alias {alias!r} of {fn} is the name or slug of {other}")
+    return sorted(found)
+
 def section(t): print(f"\n### {t}")
 
 def collect(recs, fa, fb):
@@ -233,6 +269,10 @@ def main() -> None:
                 if key: chips.setdefault(key, []).append(fn)
             for k, fl in chips.items():
                 if len(fl) > 1: hard(f"  [{comp}] DUP chip {k!r}: {sorted(fl)}")
+        if comp in ("socket", "chipset") and recs:
+            pool = load(comp, full=True) if scoped else recs
+            for msg in part_duplicates(comp, pool, {fn for _, fn, _ in recs} if scoped else None):
+                hard(msg)
         if scoped and recs:
             # Changed records vs the rest of the catalog. File names equal slugs by
             # convention, so listing names finds a slug clash without parsing.

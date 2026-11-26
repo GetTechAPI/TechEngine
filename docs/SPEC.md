@@ -699,6 +699,53 @@ class CPU:
     updated_at: datetime
 ```
 
+### 6.8 Socket / Chipset
+
+> CPU 소켓과 메인보드 칩셋. 점수 없음. 경로는 `socket/<slug>.json`(평면, 제조사 폴더 없음)과 `chipset/<manufacturer>/<slug>.json`(폴더 = `manufacturer`). API는 `/v1/sockets`, `/v1/chipsets`(목록 `?manufacturer=`, `?sort=name|release_date`, 상세 `/{slug}`).
+
+```python
+class Socket:
+    id: int
+    slug: str                   # "lga1700"
+    name: str                   # "LGA 1700"
+    manufacturer_id: int | None # FK → Brand (None = 특정 제조사 소유가 아닌 소켓)
+    aliases: list[str]          # ["Socket V"]
+    release_date: str | None    # "YYYY" | "YYYY-MM" | "YYYY-MM-DD", 적힌 그대로
+    package_type: str | None    # "LGA", "PGA"
+    pin_count: int | None       # 1..10000
+
+    verified: bool = False
+    source_urls: list[str]
+    created_at: datetime
+    updated_at: datetime
+
+class Chipset:
+    id: int
+    slug: str                   # "intel-z790"
+    name: str                   # "Z790"
+    manufacturer_id: int        # FK → Brand
+    aliases: list[str]
+    series: str | None          # "700 Series"
+    release_date: str | None    # "YYYY" | "YYYY-MM" | "YYYY-MM-DD", 적힌 그대로
+    sockets: list[str]          # 소켓 slug 목록 (빈 목록 = 미상), 응답에서는 소켓 참조로 펼친다
+    segment: str | None         # "desktop" | "mobile" | "server" | "workstation" | "embedded"
+    cpu_overclocking: bool | None
+    memory_types: list[str] | None  # ["DDR4", "DDR5"]
+    max_memory_gb: float | None
+    pcie_version: str | None    # "5.0"
+    usb_ports: dict[str, int] | None  # {"USB 3.2 Gen 2x1": 4}
+    sata_ports: int | None
+    tdp_w: float | None
+    process_nm: float | None
+
+    verified: bool = False
+    source_urls: list[str]
+    created_at: datetime
+    updated_at: datetime
+```
+
+> 필수 필드: 소켓은 `slug`, `name`, `verified`, `source_urls`, 칩셋은 여기에 `manufacturer`를 더한다. `manufacturer`가 있으면 brand에 존재해야 하고, 칩셋의 `sockets` 항목은 모두 socket에 존재해야 한다. `release_date`는 이 두 카테고리에서만 연도·연월까지 허용한다(다른 카테고리는 `YYYY-MM-DD`). `integrity_check.py`는 소켓끼리, 같은 제조사의 칩셋끼리 slug 중복·정규화한 이름 중복·다른 레코드의 이름이나 slug와 같은 alias를 hard anomaly로 잡는다. 데이터 폴더가 아직 없어도 두 컬렉션은 빈 목록으로 동작한다.
+
 ---
 
 ## 7. API 설계

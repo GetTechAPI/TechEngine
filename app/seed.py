@@ -27,6 +27,7 @@ from sqlmodel import Session, SQLModel, select
 from app.data_root import get_data_root
 from app.database import create_db_and_tables, engine
 from app.models.brand import Brand
+from app.models.chipset import Chipset
 from app.models.cpu import CPU
 from app.models.device_catalog import DeviceCatalog
 from app.models.gpu import DiscreteGPU
@@ -35,6 +36,7 @@ from app.models.mobile_device import PDA, Tablet, Watch
 from app.models.monitor import Monitor
 from app.models.smartphone import Smartphone
 from app.models.soc import SoC
+from app.models.socket import Socket
 from app.models.software import Software
 from app.models.website import Website
 
@@ -78,7 +80,7 @@ def _git_timestamps(data_dir: Path) -> dict[str, tuple[datetime, datetime]]:
     return stamps
 
 
-def _load_dir(subdir: Path) -> list[dict[str, Any]]:
+def _load_dir(subdir: Path, *, coerce_dates: bool = True) -> list[dict[str, Any]]:
     if not subdir.exists():
         return []
     items: list[dict[str, Any]] = []
@@ -88,8 +90,10 @@ def _load_dir(subdir: Path) -> list[dict[str, Any]]:
         # Keyed on the *_date suffix rather than one field name: a category whose
         # date column is not called release_date (website.launch_date) would
         # otherwise reach SQLite as a str and fail the insert.
+        # Sockets and chipsets opt out: their dates may be "YYYY" or "YYYY-MM"
+        # and are stored as written.
         for key, value in list(record.items()):
-            if key.endswith("_date") and isinstance(value, str):
+            if coerce_dates and key.endswith("_date") and isinstance(value, str):
                 record[key] = date.fromisoformat(value)
         record["__path"] = path.relative_to(subdir.parent).as_posix()
         items.append(record)
@@ -167,6 +171,8 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
         "software": 0,
         "websites": 0,
         "device-catalog": 0,
+        "sockets": 0,
+        "chipsets": 0,
     }
 
     # --- Brands ---
@@ -363,6 +369,42 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
             _row(DeviceCatalog, record, taken, stamps, brand_id=brand_id, soc_id=soc_id)
         )
         counts["device-catalog"] += 1
+    session.commit()
+
+    # --- Sockets (manufacturer [optional]) ---
+    socket_slugs = _existing_slugs(session, Socket)
+    for record in _load_dir(data_dir / "socket", coerce_dates=False):
+        if record["slug"] in socket_slugs:
+            continue
+        manufacturer = record.pop("manufacturer", None)
+        manufacturer_id = brand_id_by_slug.get(manufacturer) if manufacturer else None
+        if manufacturer and manufacturer_id is None:
+            raise ValueError(
+                f"Socket '{record['slug']}' references unknown brand '{manufacturer}'"
+            )
+        session.add(_row(Socket, record, taken, stamps, manufacturer_id=manufacturer_id))
+        counts["sockets"] += 1
+    session.commit()
+
+    # --- Chipsets (reference brand [required], sockets by slug) ---
+    socket_slugs = _existing_slugs(session, Socket)
+    chipset_slugs = _existing_slugs(session, Chipset)
+    for record in _load_dir(data_dir / "chipset", coerce_dates=False):
+        if record["slug"] in chipset_slugs:
+            continue
+        manufacturer = record.pop("manufacturer")
+        manufacturer_id = brand_id_by_slug.get(manufacturer)
+        if manufacturer_id is None:
+            raise ValueError(
+                f"Chipset '{record['slug']}' references unknown brand '{manufacturer}'"
+            )
+        for socket_slug in record.get("sockets") or []:
+            if socket_slug not in socket_slugs:
+                raise ValueError(
+                    f"Chipset '{record['slug']}' references unknown socket '{socket_slug}'"
+                )
+        session.add(_row(Chipset, record, taken, stamps, manufacturer_id=manufacturer_id))
+        counts["chipsets"] += 1
     session.commit()
 
     return counts

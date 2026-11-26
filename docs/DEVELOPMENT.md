@@ -20,7 +20,7 @@ TechAPI checkout (see the note under "Repo layout").
   detail per collection: `brands` (+`/{slug}/smartphones`), `socs`
   (+`/{slug}/smartphones`), `smartphones`, `tablets`, `watches`, `pdas`, `gpus`,
   `cpus` (`?segment=`), `laptops`, `monitors`, `software`, `websites`,
-  `device-catalog`. `socs`, `smartphones`, `gpus` and `cpus` also have
+  `device-catalog`, `sockets` and `chipsets` (`?manufacturer=`). `socs`, `smartphones`, `gpus` and `cpus` also have
   `/{slug}/score`. Docs at `/scalar` and `/docs`.
 - **Formats**: list `{count,next,previous,results}` (§7.4); error
   `{error:{code,message,request_id,documentation_url}}` (§7.5); smartphone detail
@@ -51,7 +51,7 @@ app/                 FastAPI app
   services/scoring/  open 0–100 scoring (§8); weights in config/scoring.yaml
   routers/           meta, brands, socs, smartphones, mobile_devices (tablets,
                      watches, pdas), gpus, cpus, laptops, monitors, software,
-                     websites, device_catalog
+                     websites, device_catalog, sockets, chipsets
   errors.py          §7.5 error envelope + handlers
   data_root.py       finds the dataset: TECHAPI_DATA_DIR, ../data, ../TechAPI/data
   seed.py            dataset → DB (recurses brand subfolders; coerces ISO dates)

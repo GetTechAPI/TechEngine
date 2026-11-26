@@ -16,6 +16,7 @@ from app.database import create_db_and_tables
 from app.errors import register_error_handlers
 from app.routers import (
     brands,
+    chipsets,
     cpus,
     device_catalog,
     gpus,
@@ -24,6 +25,7 @@ from app.routers import (
     mobile_devices,
     monitors,
     smartphones,
+    sockets,
     socs,
     software,
     websites,
@@ -93,6 +95,8 @@ app.include_router(monitors.router, prefix=PREFIX)
 app.include_router(software.router, prefix=PREFIX)
 app.include_router(websites.router, prefix=PREFIX)
 app.include_router(device_catalog.router, prefix=PREFIX)
+app.include_router(sockets.router, prefix=PREFIX)
+app.include_router(chipsets.router, prefix=PREFIX)
 
 
 @app.get("/", include_in_schema=False)

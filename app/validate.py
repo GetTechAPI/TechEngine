@@ -122,6 +122,21 @@ DEVICE_CATALOG_REQUIRED = {
     "source_urls",
     "verified",
 }
+SOCKET_REQUIRED = {
+    "slug",
+    "name",
+    "source_urls",
+    "verified",
+}
+
+CHIPSET_REQUIRED = {
+    "slug",
+    "name",
+    "manufacturer",
+    "source_urls",
+    "verified",
+}
+CHIPSET_SEGMENTS = {"desktop", "mobile", "server", "workstation", "embedded"}
 FORM_FACTORS = {"phone", "tablet", "watch", "tv", "other"}
 # Categories a catalog entry can be promoted to (``promoted_to`` = "<category>/<slug>").
 PROMOTION_TARGETS = {"smartphone", "tablet", "watch", "pda"}
@@ -130,6 +145,8 @@ RELEASE_YEAR_SOURCES = {"model_code", "record"}
 RESOLUTION_RE = re.compile(r"^[1-9]\d{1,4}x[1-9]\d{1,4}$")
 
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+# Sockets and chipsets only: sources often give just the year or the month.
+PARTIAL_DATE_RE = re.compile(r"^\d{4}(-\d{2}(-\d{2})?)?$")
 
 # Fields the models (app/models/) type as int, per category. Kept by hand so
 # this module needs nothing but the standard library: TechAPI's PR checks run
@@ -191,6 +208,8 @@ DEVICE_CATALOG_INTEGERS = {
     "android_sdk_max",
     "release_year",
 }
+SOCKET_INTEGERS = {"pin_count"}
+CHIPSET_INTEGERS = {"sata_ports"}
 # category -> (integer fields, list-of-integer fields)
 INTEGER_FIELDS: dict[str, tuple[set[str], set[str]]] = {
     "brand": (BRAND_INTEGERS, set()),
@@ -206,6 +225,8 @@ INTEGER_FIELDS: dict[str, tuple[set[str], set[str]]] = {
     "software": (set(), set()),
     "website": (set(), set()),
     "device_catalog": (DEVICE_CATALOG_INTEGERS, set()),
+    "socket": (SOCKET_INTEGERS, set()),
+    "chipset": (CHIPSET_INTEGERS, set()),
 }
 
 
@@ -231,9 +252,9 @@ def _load(subdir: str, only: set[str] | None = None) -> list[tuple[str, dict[str
     ]
 
 
-# Categories other records reference by slug (brand/soc/cpu/gpu). A scoped run
-# still loads these whole (~9k files) so foreign-key checks stay exact.
-FK_CATEGORIES = ("brand", "soc", "cpu", "gpu")
+# Categories other records reference by slug (brand/soc/cpu/gpu/socket). A scoped
+# run still loads these whole (~9k files) so foreign-key checks stay exact.
+FK_CATEGORIES = ("brand", "soc", "cpu", "gpu", "socket")
 
 
 def changed_paths(base: str) -> set[str]:
@@ -330,6 +351,31 @@ def _check_integers(
 def _check_date(name: str, value: object, errors: list[str]) -> None:
     if not isinstance(value, str) or not DATE_RE.match(value):
         errors.append(f"{name}: release_date '{value}' must be ISO 8601 YYYY-MM-DD (§14.2)")
+
+
+def _check_partial_date(name: str, value: object, errors: list[str]) -> None:
+    if not isinstance(value, str) or not PARTIAL_DATE_RE.match(value):
+        errors.append(
+            f"{name}: release_date '{value}' must be YYYY, YYYY-MM or YYYY-MM-DD"
+        )
+
+
+def _check_number(
+    name: str, field: str, value: object, lo: float, hi: float, errors: list[str]
+) -> None:
+    """Optional number in [lo, hi]; unlike _check_range, true/false is not a number."""
+    if isinstance(value, bool):
+        errors.append(f"{name}: {field}={value!r} must be a number")
+    else:
+        _check_range(name, field, value, lo, hi, errors)
+
+
+def _check_optional_string(
+    name: str, record: dict[str, Any], field: str, errors: list[str]
+) -> None:
+    value = record.get(field)
+    if value is not None and not (isinstance(value, str) and value.strip()):
+        errors.append(f"{name}: {field} must be a non-empty string or null")
 
 
 def _check_string_list(
@@ -482,7 +528,7 @@ def validate(only: set[str] | None = None) -> list[str]:
         for category in CATEGORIES
     }
     (brands, socs, phones, tablets, watches, pdas, gpus, cpus,
-     laptops, monitors, software, websites, catalog) = (
+     laptops, monitors, software, websites, catalog, sockets, chipsets) = (
         loaded[category] for category in CATEGORIES
     )
 
@@ -490,6 +536,7 @@ def validate(only: set[str] | None = None) -> list[str]:
     soc_slugs = {rec["slug"] for _, rec in socs if "slug" in rec}
     cpu_slugs = {rec["slug"] for _, rec in cpus if "slug" in rec}
     gpu_slugs = {rec["slug"] for _, rec in gpus if "slug" in rec}
+    socket_slugs = {rec["slug"] for _, rec in sockets if "slug" in rec}
 
     for category, records in loaded.items():
         if only is not None and category not in FK_CATEGORIES:
@@ -760,6 +807,86 @@ def validate(only: set[str] | None = None) -> list[str]:
             if parts[1] != rec.get("brand"):
                 errors.append(
                     f"{fname}: lives in brand '{parts[1]}' but brand='{rec.get('brand')}'"
+                )
+            if parts[2] != f"{rec.get('slug')}.json":
+                errors.append(f"{fname}: filename must match slug '{rec.get('slug')}'")
+
+    for fname, rec in sockets:
+        _check_required(fname, rec, SOCKET_REQUIRED, errors)
+        _check_source_urls(fname, rec, errors)
+        _check_slug(fname, rec.get("slug"), errors)
+        if "verified" in rec and not isinstance(rec["verified"], bool):
+            errors.append(f"{fname}: verified must be a boolean")
+        _check_string_list(fname, rec, "aliases", errors)
+        if rec.get("release_date") is not None:
+            _check_partial_date(fname, rec["release_date"], errors)
+        _check_optional_string(fname, rec, "package_type", errors)
+        if _is_integer(rec.get("pin_count")):  # anything else is reported by _check_integers
+            _check_range(fname, "pin_count", rec["pin_count"], 1, 10000, errors)
+        # A socket shared by several makers has no manufacturer.
+        if rec.get("manufacturer") is not None and rec["manufacturer"] not in brand_slugs:
+            errors.append(f"{fname}: manufacturer '{rec['manufacturer']}' not a known brand")
+        # Flat: a socket's manufacturer may be null, so there is no maker folder.
+        parts = Path(fname).parts
+        if len(parts) != 2:
+            errors.append(f"{fname}: sockets must live at 'socket/<slug>.json'")
+        elif parts[1] != f"{rec.get('slug')}.json":
+            errors.append(f"{fname}: filename must match slug '{rec.get('slug')}'")
+
+    for fname, rec in chipsets:
+        _check_required(fname, rec, CHIPSET_REQUIRED, errors)
+        _check_source_urls(fname, rec, errors)
+        _check_slug(fname, rec.get("slug"), errors)
+        if "verified" in rec and not isinstance(rec["verified"], bool):
+            errors.append(f"{fname}: verified must be a boolean")
+        _check_string_list(fname, rec, "aliases", errors)
+        if rec.get("memory_types") is not None:
+            _check_string_list(fname, rec, "memory_types", errors)
+        for field in ("series", "pcie_version"):
+            _check_optional_string(fname, rec, field, errors)
+        if rec.get("release_date") is not None:
+            _check_partial_date(fname, rec["release_date"], errors)
+        socket_refs = rec.get("sockets", [])
+        if not isinstance(socket_refs, list) or not all(isinstance(s, str) for s in socket_refs):
+            errors.append(f"{fname}: sockets must be a list of socket slugs")
+        else:
+            if len(set(socket_refs)) != len(socket_refs):
+                errors.append(f"{fname}: sockets contains duplicates")
+            for socket_slug in socket_refs:
+                if socket_slug not in socket_slugs:
+                    errors.append(f"{fname}: socket '{socket_slug}' not a known socket")
+        segment = rec.get("segment")
+        if segment is not None and segment not in CHIPSET_SEGMENTS:
+            errors.append(f"{fname}: segment '{segment}' not in {sorted(CHIPSET_SEGMENTS)}")
+        overclocking = rec.get("cpu_overclocking")
+        if overclocking is not None and not isinstance(overclocking, bool):
+            errors.append(f"{fname}: cpu_overclocking must be a boolean or null")
+        _check_number(fname, "max_memory_gb", rec.get("max_memory_gb"), 0.001, 65536, errors)
+        _check_number(fname, "tdp_w", rec.get("tdp_w"), 0.01, 1000, errors)
+        _check_number(fname, "process_nm", rec.get("process_nm"), 1, 10000, errors)
+        if _is_integer(rec.get("sata_ports")):  # anything else is reported by _check_integers
+            _check_range(fname, "sata_ports", rec["sata_ports"], 0, 64, errors)
+        usb_ports = rec.get("usb_ports")
+        if usb_ports is not None and not (
+            isinstance(usb_ports, dict)
+            and all(
+                isinstance(key, str) and key.strip() and _is_integer(count) and 0 <= count <= 64
+                for key, count in usb_ports.items()
+            )
+        ):
+            errors.append(
+                f"{fname}: usb_ports must map a port type to an integer count (0-64), or be null"
+            )
+        if rec.get("manufacturer") not in brand_slugs:
+            errors.append(f"{fname}: manufacturer '{rec.get('manufacturer')}' not a known brand")
+        parts = Path(fname).parts
+        if len(parts) != 3:
+            errors.append(f"{fname}: chipsets must live at 'chipset/<manufacturer>/<slug>.json'")
+        else:
+            if parts[1] != rec.get("manufacturer"):
+                errors.append(
+                    f"{fname}: lives in manufacturer '{parts[1]}' but "
+                    f"manufacturer='{rec.get('manufacturer')}'"
                 )
             if parts[2] != f"{rec.get('slug')}.json":
                 errors.append(f"{fname}: filename must match slug '{rec.get('slug')}'")
