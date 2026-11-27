@@ -516,6 +516,7 @@ class SoC:
     name: str                   # "Snapdragon 8 Elite"
     manufacturer_id: int        # FK → Brand
     release_date: date | None   # None = 출시일 미상 (연도 폴더는 `unknown`)
+    release_date_precision: str | None  # "day" | "month" | "year" (None = day)
     process_nm: float | None    # 3.0 (None = 미상)
     transistors_billion: float | None
 
@@ -545,7 +546,7 @@ class SoC:
     updated_at: datetime
 ```
 
-> 칩 3종(soc, gpu, cpu)의 필수 필드도 식별·출처 정보뿐이다: `slug`, `name`, `manufacturer`, `source_urls`. 출처에 없는 스펙은 null로 둔다: 세 종 모두 `release_date`, SoC는 `process_nm`, `gpu_name`, GPU는 `architecture`, `memory_gb`, `memory_type`, `memory_bus_bit`, `base_clock_mhz`, `boost_clock_mhz`, `tdp_w`, `pcie_version`, CPU는 `segment`, `architecture`, `cores`, `threads`. 값이 있으면 기존 규칙대로 검증한다. `release_date`가 null인 칩은 연도 폴더 자리에 `unknown`을 쓴다: `soc/<manufacturer>/unknown/<slug>.json`, `cpu/<manufacturer>/unknown/<세그먼트 폴더>/<slug>.json`, `gpu/<manufacturer>/unknown/<세그먼트 폴더>/<slug>.json`. CPU·GPU의 연도 폴더는 `release_date`의 연도와 같아야 한다. `segment`가 null인 CPU는 `cpu/<manufacturer>/<year>/unknown/<slug>.json`에 둔다. CPU·GPU의 `tdp_w`는 소수 와트(4.5, 0.65)를 허용한다. 값이 없는 칩은 해당 입력 없이 점수를 계산한다(출시일이 없으면 세대 구간·백분위 없음).
+> 칩 3종(soc, gpu, cpu)의 필수 필드도 식별·출처 정보뿐이다: `slug`, `name`, `manufacturer`, `source_urls`. 출처에 없는 스펙은 null로 둔다: 세 종 모두 `release_date`, SoC는 `process_nm`, `gpu_name`, GPU는 `architecture`, `memory_gb`, `memory_type`, `memory_bus_bit`, `base_clock_mhz`, `boost_clock_mhz`, `tdp_w`, `pcie_version`, CPU는 `segment`, `architecture`, `cores`, `threads`. 값이 있으면 기존 규칙대로 검증한다. `release_date`가 null인 칩은 연도 폴더 자리에 `unknown`을 쓴다: `soc/<manufacturer>/unknown/<slug>.json`, `cpu/<manufacturer>/unknown/<세그먼트 폴더>/<slug>.json`, `gpu/<manufacturer>/unknown/<세그먼트 폴더>/<slug>.json`. CPU·GPU의 연도 폴더는 `release_date`의 연도와 같아야 한다. `segment`가 null인 CPU는 `cpu/<manufacturer>/<year>/unknown/<slug>.json`에 둔다. CPU·GPU의 `tdp_w`는 소수 와트(4.5, 0.65)를 허용한다. 값이 없는 칩은 해당 입력 없이 점수를 계산한다(출시일이 없으면 세대 구간·백분위 없음). 칩의 `release_date`는 항상 `YYYY-MM-DD`이고, 출처가 연월이나 연도까지만 밝히면 모르는 부분을 `01`로 채운 뒤 선택 필드 `release_date_precision`(`day` | `month` | `year`, 없거나 null이면 `day`)으로 표시한다: `month`는 `-01`, `year`는 `-01-01`로 끝나야 하고 `release_date`가 null이면 쓸 수 없다. 상세 응답에 그대로 내보내며 정렬·연도 폴더·점수에는 영향이 없다.
 
 ### 6.4 Smartphone
 ```python

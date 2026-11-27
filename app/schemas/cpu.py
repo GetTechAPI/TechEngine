@@ -30,6 +30,7 @@ class CPURead(BaseModel):
     name: str
     manufacturer: ManufacturerRef
     release_date: date | None = None
+    release_date_precision: str | None = None
     segment: str | None = None
     architecture: str | None = None
     socket: str | None = None

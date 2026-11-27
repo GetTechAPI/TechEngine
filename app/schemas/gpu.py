@@ -30,6 +30,7 @@ class GPURead(BaseModel):
     manufacturer: ManufacturerRef
     architecture: str | None = None
     release_date: date | None = None
+    release_date_precision: str | None = None
     msrp_usd: int | None = None
     cuda_cores: int | None = None
     stream_processors: int | None = None
