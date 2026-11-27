@@ -406,13 +406,13 @@ FIELDS: dict[str, tuple[FieldSpec, ...]] = {
 
 # Columns that name the row. The first column is the fallback.
 NAME_LABELS: dict[str, re.Pattern[str]] = {
-    "socket": re.compile(r"socket name|^socket$|^name", re.IGNORECASE),
-    "cpu": re.compile(r"model|^name|processor", re.IGNORECASE),
-    "chipset": re.compile(r"chipset|model|^name|code ?name", re.IGNORECASE),
-    "gpu": re.compile(r"model|^name", re.IGNORECASE),
-    "soc": re.compile(r"model|^name|^soc|part number|product", re.IGNORECASE),
+    "socket": re.compile(r"socket name|^socket$|\bname\b", re.IGNORECASE),
+    "cpu": re.compile(r"model|\bname\b|processor", re.IGNORECASE),
+    "chipset": re.compile(r"chipset|model|\bname\b|code ?name", re.IGNORECASE),
+    "gpu": re.compile(r"model|\bname\b", re.IGNORECASE),
+    "soc": re.compile(r"model|\bname\b|^soc|part number|product", re.IGNORECASE),
     **{
-        cat: re.compile(r"model|^name|device|product|phone|handset", re.IGNORECASE)
+        cat: re.compile(r"model|\bname\b|device|product|phone|handset", re.IGNORECASE)
         for cat in ("laptop", "pda", "watch", "tablet", "smartphone")
     },
 }
@@ -421,6 +421,8 @@ NAME_LABELS: dict[str, re.Pattern[str]] = {
 _NOT_NAME_RE = re.compile(r"gpu|graphics|socket /|chipset /|southbridge|modem", re.IGNORECASE)
 # In a device table the processor and system columns have 'model' cells too.
 _NOT_DEVICE_NAME_RE = re.compile(r"cpu|processor|\bos\b|chipset|\bsoc\b", re.IGNORECASE)
+# A code name ('Bonaire') is shared by several models; only chipsets go by it.
+_CODE_NAME_RE = re.compile(r"code ?name", re.IGNORECASE)
 _DEVICES = frozenset({"laptop", "pda", "watch", "tablet", "smartphone"})
 
 # A leading word both sides may or may not write: 'Socket AM4' vs 'AM4'.
@@ -441,12 +443,25 @@ def name_keys(text: str, category: str, makers: Iterable[str] = ()) -> set[str]:
     for variant in variants:
         words = variant.split()
         classes = set(CLASS_WORDS.get(category, ()))
-        lead = {m.lower() for m in makers} | classes
+        # 'texas-instruments' leads a name as two words.
+        lead = {w for m in makers for w in m.lower().split("-")} | classes
         keys.update((normalize_name(variant), _word_key(variant)))
         while words and (words[0].lower() in lead or words[-1].lower() in classes):
             words = words[1:] if words[0].lower() in lead else words[:-1]
             keys.update((normalize_name(" ".join(words)), _word_key(" ".join(words))))
     return {k for k in keys if k}
+
+
+_CODE_RE = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9+-]{3,}$")
+
+# Categories whose name cell may list several part codes: 'RK3368 PX5'.
+CODE_LISTS = frozenset({"soc"})
+
+
+def part_codes(cell: str) -> list[str]:
+    """Each part code when a cell is nothing but part codes."""
+    words = _clean(_PAREN_RE.sub(" ", cell)).replace("/", " ").split()
+    return words if len(words) > 1 and all(_CODE_RE.match(w) for w in words) else []
 
 
 def row_names(cells: list[str], family: str) -> list[str]:
@@ -484,6 +499,7 @@ def _columns(table: Table, category: str) -> tuple[list[int], dict[int, FieldSpe
     names = [
         i for i, label in enumerate(table.labels)
         if name_re and name_re.search(label) and not _NOT_NAME_RE.search(label)
+        and not (category != "chipset" and _CODE_NAME_RE.search(label))
         and not (category in _DEVICES and _NOT_DEVICE_NAME_RE.search(label))
     ]
     fields: dict[int, FieldSpec] = {}
@@ -509,6 +525,8 @@ def match_rows(rec: dict[str, Any], category: str, page: Page) -> list[RowMatch]
         name_cols, field_cols = _columns(table, category)
         for row in table.rows:
             names = row_names([row[i] for i in name_cols if i < len(row)], family)
+            if category in CODE_LISTS:
+                names += [c for i in name_cols if i < len(row) for c in part_codes(row[i])]
             if not any(wanted & name_keys(name, category, makers) for name in names):
                 continue
             results: dict[str, tuple[str, str]] = {}
