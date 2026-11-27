@@ -34,6 +34,8 @@ class Laptop(SQLModel, table=True):
 
     # None = unknown, never estimated (also ram_gb and os below).
     release_date: date | None = None
+    # day | month | year; None = day. A month or year date stores the unknown parts as 01.
+    release_date_precision: str | None = None
     msrp_usd: int | None = None
     device_category: str | None = None  # e.g. "Gaming", "Thin & Light", "2-in-1"
 

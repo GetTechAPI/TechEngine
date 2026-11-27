@@ -27,6 +27,7 @@ class LaptopRead(BaseModel):
     cpu: ResourceRef | None = None
     gpu: ResourceRef | None = None
     release_date: date | None = None
+    release_date_precision: str | None = None
     msrp_usd: int | None = None
     device_category: str | None = None
     cpu_name: str | None = None

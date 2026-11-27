@@ -23,6 +23,7 @@ def test_monitor_detail(client: TestClient) -> None:
     body = client.get("/v1/monitors/lg-ultragear-27gp850-test").json()
     assert body["slug"] == "lg-ultragear-27gp850-test"
     assert body["brand"]["slug"] == "lg"
+    assert "release_date_precision" in body
     assert body["size_inch"] == 27.0
     assert body["resolution"] == "2560x1440"
     assert body["refresh_hz"] == 165

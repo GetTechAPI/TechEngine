@@ -23,6 +23,7 @@ def test_laptop_detail_embeds_cpu_and_gpu(client: TestClient) -> None:
     body = client.get("/v1/laptops/lenovo-legion-pro-5-test").json()
     assert body["slug"] == "lenovo-legion-pro-5-test"
     assert body["base_model_slug"] == "legion-pro-5"
+    assert "release_date_precision" in body
     assert body["brand"]["slug"] == "lenovo"
     assert body["cpu"]["slug"] == "test-core-ultra-7-255hx"
     assert body["gpu"]["slug"] == "test-rtx-5060-laptop"

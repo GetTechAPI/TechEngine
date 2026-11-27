@@ -172,3 +172,6 @@ def test_device_specs_openapi_contract(client: TestClient) -> None:
             assert field not in schemas[name]["required"]
     for field in ("release_date", "size_inch", "resolution"):
         assert field not in schemas["MonitorRead"]["required"]
+    for name in ("LaptopRead", "MonitorRead"):
+        assert "release_date_precision" in schemas[name]["properties"]
+        assert "release_date_precision" not in schemas[name]["required"]
