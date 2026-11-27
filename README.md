@@ -127,6 +127,12 @@ of the year: `soc/<manufacturer>/unknown/<slug>.json`,
 `gpu/<manufacturer>/unknown/<segment folder>/<slug>.json`. A CPU without a
 `segment` lives at `cpu/<manufacturer>/<year>/unknown/<slug>.json`.
 
+A chip's `release_date` is always a full `YYYY-MM-DD`. When the source states
+only the month or the year, the missing parts are stored as `01` and the
+optional `release_date_precision` (`day`, `month` or `year`; absent or `null`
+means `day`) says so: `month` needs a date ending in `-01`, `year` one ending
+in `-01-01`. The field is served on CPU, GPU and SoC detail responses.
+
 A CPU's or GPU's `tdp_w` may be fractional (4.5, 0.65). A laptop's `ram_gb`
 may be as well, down to 0.0001 (old portables: 0.000256 = 256 KB), as may a
 tablet's, watch's or PDA's; a laptop's `weight_g` may reach 10000.

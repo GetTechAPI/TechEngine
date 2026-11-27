@@ -24,6 +24,8 @@ class SoC(SQLModel, table=True):
     manufacturer_id: int = Field(foreign_key="brands.id", index=True)
     # None = unknown, never estimated (also process_nm and gpu_name below).
     release_date: date | None = None
+    # day | month | year; None = day. A month or year date stores the unknown parts as 01.
+    release_date_precision: str | None = None
     process_nm: float | None = None
     transistors_billion: float | None = None
 

@@ -51,6 +51,7 @@ class SoCRead(BaseModel):
     name: str
     manufacturer: SoCManufacturer
     release_date: date | None = None
+    release_date_precision: str | None = None
     process_nm: float | None = None
     transistors_billion: float | None = None
     cpu_config: dict[str, Any]

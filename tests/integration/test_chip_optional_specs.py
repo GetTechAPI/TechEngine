@@ -142,6 +142,72 @@ def test_chip_without_specs_round_trip(
         test_engine.dispose()
 
 
+@pytest.mark.parametrize("category", list(CASES))
+def test_chip_release_date_precision_round_trip(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    category: str,
+) -> None:
+    resource, _, full_dir, _, _ = CASES[category]
+    data_dir = tmp_path / "data"
+    _write(
+        data_dir / "brand" / "us" / "example.json",
+        {
+            "slug": "example",
+            "name": "Example",
+            "country": "US",
+            "categories": ["cpu-designer"],
+            "source_urls": SRC,
+        },
+    )
+    base = data_dir / category / "example"
+    # A CPU that states no segment lives in the unknown segment folder.
+    year_dir = "2012/unknown" if category == "cpu" else full_dir.replace("2020", "2012")
+    # What the source states: a full date, "May 2012", "2012".
+    chips = {
+        "chip-day": ("2012-05-14", None),
+        "chip-month": ("2012-05-01", "month"),
+        "chip-year": ("2012-01-01", "year"),
+    }
+    _write(base / year_dir / "chip-day.json", _chip("chip-day", {"release_date": "2012-05-14"}))
+    for slug in ("chip-month", "chip-year"):
+        released, precision = chips[slug]
+        _write(
+            base / year_dir / f"{slug}.json",
+            _chip(slug, {"release_date": released, "release_date_precision": precision}),
+        )
+    monkeypatch.setattr(validate, "DATA_DIR", data_dir)
+    assert validate.validate() == []
+
+    test_engine = create_engine(
+        f"sqlite:///{tmp_path / 'precision.db'}", connect_args={"check_same_thread": False}
+    )
+    SQLModel.metadata.create_all(test_engine)
+    try:
+        with Session(test_engine) as session:
+            assert seed(session, data_dir)[resource] == 3
+
+        def session_override() -> Iterator[Session]:
+            with Session(test_engine) as session:
+                yield session
+
+        monkeypatch.setitem(app.dependency_overrides, get_session, session_override)
+        output_dir = tmp_path / "dump"
+        assert generate(client, output_dir, [resource]) == {resource: 3}
+        for slug, (released, precision) in chips.items():
+            detail = client.get(f"/v1/{resource}/{slug}").json()
+            assert detail["release_date"] == released
+            # A record that does not state a precision is served with null.
+            assert detail["release_date_precision"] == precision
+            dumped = json.loads(
+                (output_dir / "v1" / resource / slug / "index.json").read_text("utf-8")
+            )
+            assert dumped == detail
+    finally:
+        test_engine.dispose()
+
+
 def test_chip_specs_openapi_contract(client: TestClient) -> None:
     schemas = client.get("/openapi.json").json()["components"]["schemas"]
     for name, (_, _, _, required, specs) in zip(
@@ -151,5 +217,7 @@ def test_chip_specs_openapi_contract(client: TestClient) -> None:
             assert field not in schemas[name]["required"]
         for field in required:
             assert field in schemas[name]["required"]
+        assert "release_date_precision" in schemas[name]["properties"]
+        assert "release_date_precision" not in schemas[name]["required"]
     for field in ("process_nm", "gpu_name"):
         assert field not in schemas["SoCSummary"]["required"]

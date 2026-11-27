@@ -27,6 +27,8 @@ class CPU(SQLModel, table=True):
     manufacturer_id: int = Field(foreign_key="brands.id", index=True)
     # None = unknown, never estimated (also segment, architecture, cores and threads below).
     release_date: date | None = None
+    # day | month | year; None = day. A month or year date stores the unknown parts as 01.
+    release_date_precision: str | None = None
     segment: str | None = None  # "desktop" | "laptop" | "hedt" | "server"
     architecture: str | None = None  # "Raptor Lake", "Zen 4"
     socket: str | None = None  # "LGA1700", "AM5"

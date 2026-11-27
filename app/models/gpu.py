@@ -20,6 +20,8 @@ class DiscreteGPU(SQLModel, table=True):
     # None = unknown, never estimated (also the memory, clock and power specs below).
     architecture: str | None = None
     release_date: date | None = None
+    # day | month | year; None = day. A month or year date stores the unknown parts as 01.
+    release_date_precision: str | None = None
     msrp_usd: int | None = None
 
     # Cores
