@@ -32,7 +32,7 @@ class LaptopRead(BaseModel):
     cpu_name: str | None = None
     gpu_name: str | None = None
     gpu_type: str | None = None
-    ram_gb: int | None = None
+    ram_gb: int | float | None = None
     storage_gb: int | None = None
     display: dict[str, Any]
     weight_g: float | None = None

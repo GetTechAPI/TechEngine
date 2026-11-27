@@ -55,3 +55,9 @@ def test_missing_specs_contribute_nothing() -> None:
     score = score_gpu(bare)
     assert score.overall is None
     assert score.graphics.index is None
+
+
+def test_undated_gpu_scores_without_an_era() -> None:
+    score = score_gpu(_gpu(release_date=None, fp32_tflops=32.0))
+    assert score.graphics.index == score_gpu(_gpu(fp32_tflops=32.0)).graphics.index
+    assert score.graphics.era is None

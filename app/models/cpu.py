@@ -25,8 +25,8 @@ class CPU(SQLModel, table=True):
     slug: str = Field(index=True, unique=True)
     name: str
     manufacturer_id: int = Field(foreign_key="brands.id", index=True)
-    release_date: date
-    # None = unknown, never estimated (also architecture, cores and threads below).
+    # None = unknown, never estimated (also segment, architecture, cores and threads below).
+    release_date: date | None = None
     segment: str | None = None  # "desktop" | "laptop" | "hedt" | "server"
     architecture: str | None = None  # "Raptor Lake", "Zen 4"
     socket: str | None = None  # "LGA1700", "AM5"
@@ -44,7 +44,7 @@ class CPU(SQLModel, table=True):
 
     # Cache / power
     l3_cache_mb: float | None = None
-    tdp_w: int | None = None  # base power (PBP/TDP)
+    tdp_w: float | None = None  # base power (PBP/TDP); fractional on low-power parts
     max_tdp_w: int | None = None  # turbo power (MTP/PPT)
 
     # Platform

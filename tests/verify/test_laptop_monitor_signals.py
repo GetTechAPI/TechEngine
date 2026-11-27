@@ -34,3 +34,8 @@ def test_specialty_monitor_sizes_are_plausible(size):
 @pytest.mark.parametrize("category", ["laptop", "monitor"])
 def test_absent_measurements_are_not_flags(category):
     assert all(s.result == "na" for s in signals_for(category, {}, 2026, {}))
+
+
+@pytest.mark.parametrize("record", [{"ram_gb": 0.000256}, {"ram_gb": 0.5}, {"weight_g": 7800}])
+def test_old_portable_measurements_are_plausible(record):
+    assert not any(s.failed for s in signals_for("laptop", record, 2026, {}))

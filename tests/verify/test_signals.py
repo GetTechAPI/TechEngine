@@ -141,3 +141,12 @@ def test_cinebench_multi_below_single_still_fails():
     """One scale, so multi < single there really is a defect."""
     rec = {"cores": 8, "threads": 16, "cinebench_r23_multi": 900, "cinebench_r23_single": 1500}
     assert _named(signals.cpu_signals(rec, NOW), "cb23_multi_ge_single").result == "fail"
+
+
+def test_undated_chip_signals_are_na_not_fail():
+    cpu = signals.cpu_signals({"cores": 4, "threads": 8, "tdp_w": 4.5, "max_tdp_w": 9}, NOW)
+    assert _named(cpu, "release_not_future").result == "na"
+    assert _named(cpu, "max_tdp_ge_tdp").result == "pass"
+    gpu = signals.gpu_signals({"manufacturer": "nvidia", "rt_cores": 50, "release_date": None}, NOW)
+    assert _named(gpu, "rt_cores_era").result == "na"
+    assert not any(s.failed and s.hard for s in cpu + gpu)

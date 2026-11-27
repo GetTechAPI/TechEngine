@@ -82,7 +82,9 @@ def era_score_outliers(rec: dict) -> list[str]:
     is implausible for the release era still is. Threads default to cores, then 1.
     """
     findings: list[str] = []
-    year = (rec.get("release_date") or "0")[:4]
+    if not rec.get("release_date"):
+        return findings  # no known era to compare the score against
+    year = rec["release_date"][:4]
     threads = rec.get("threads") or rec.get("cores") or 1
     name = rec.get("name", "?")
     pm = rec.get("passmark_cpu_mark")

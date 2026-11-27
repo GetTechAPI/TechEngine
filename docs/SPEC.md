@@ -545,7 +545,7 @@ class SoC:
     updated_at: datetime
 ```
 
-> 칩 3종(soc, gpu, cpu)의 필수 필드도 식별·출처 정보뿐이다: `slug`, `name`, `manufacturer`, `source_urls`, 그리고 GPU·CPU는 `release_date`. 출처에 없는 스펙은 null로 둔다: SoC는 `release_date`, `process_nm`, `gpu_name`, GPU는 `architecture`, `memory_gb`, `memory_type`, `memory_bus_bit`, `base_clock_mhz`, `boost_clock_mhz`, `tdp_w`, `pcie_version`, CPU는 `segment`, `architecture`, `cores`, `threads`. 값이 있으면 기존 규칙대로 검증한다. `release_date`가 null인 SoC는 `soc/<manufacturer>/unknown/<slug>.json`에, `segment`가 null인 CPU는 `cpu/<manufacturer>/<year>/unknown/<slug>.json`에 둔다. 값이 없는 칩은 해당 입력 없이 점수를 계산한다(출시일이 없으면 세대 구간·백분위 없음).
+> 칩 3종(soc, gpu, cpu)의 필수 필드도 식별·출처 정보뿐이다: `slug`, `name`, `manufacturer`, `source_urls`. 출처에 없는 스펙은 null로 둔다: 세 종 모두 `release_date`, SoC는 `process_nm`, `gpu_name`, GPU는 `architecture`, `memory_gb`, `memory_type`, `memory_bus_bit`, `base_clock_mhz`, `boost_clock_mhz`, `tdp_w`, `pcie_version`, CPU는 `segment`, `architecture`, `cores`, `threads`. 값이 있으면 기존 규칙대로 검증한다. `release_date`가 null인 칩은 연도 폴더 자리에 `unknown`을 쓴다: `soc/<manufacturer>/unknown/<slug>.json`, `cpu/<manufacturer>/unknown/<세그먼트 폴더>/<slug>.json`, `gpu/<manufacturer>/unknown/<세그먼트 폴더>/<slug>.json`. CPU·GPU의 연도 폴더는 `release_date`의 연도와 같아야 한다. `segment`가 null인 CPU는 `cpu/<manufacturer>/<year>/unknown/<slug>.json`에 둔다. CPU·GPU의 `tdp_w`는 소수 와트(4.5, 0.65)를 허용한다. 값이 없는 칩은 해당 입력 없이 점수를 계산한다(출시일이 없으면 세대 구간·백분위 없음).
 
 ### 6.4 Smartphone
 ```python
@@ -604,7 +604,7 @@ class Smartphone:
     updated_at: datetime
 ```
 
-> 기기 6종(smartphone, tablet, watch, pda, laptop, monitor)의 필수 필드는 식별·출처 정보뿐이다(`slug`, `name`, `brand`, `source_urls`, `verified`). 출처에 없는 스펙은 지어내지 않고 null로 둔다: `release_date`, `ram_gb`, `os`, 모니터는 `size_inch`, `resolution`. 값이 있으면 기존 규칙대로 검증한다. 연도 폴더는 `release_date`의 연도와 같아야 하고, `release_date`가 null이면 `unknown`이어야 한다(`smartphone/<brand>/unknown/<slug>.json`). 목록을 날짜로 정렬하면 값이 없는 레코드는 항상 마지막에 온다.
+> 기기 6종(smartphone, tablet, watch, pda, laptop, monitor)의 필수 필드는 식별·출처 정보뿐이다(`slug`, `name`, `brand`, `source_urls`, `verified`). 출처에 없는 스펙은 지어내지 않고 null로 둔다: `release_date`, `ram_gb`, `os`, 모니터는 `size_inch`, `resolution`. 값이 있으면 기존 규칙대로 검증한다. 연도 폴더는 `release_date`의 연도와 같아야 하고, `release_date`가 null이면 `unknown`이어야 한다(`smartphone/<brand>/unknown/<slug>.json`). 목록을 날짜로 정렬하면 값이 없는 레코드는 항상 마지막에 온다. 노트북의 `ram_gb`는 소수를 허용하고 범위는 0.0001~256(구형 휴대용 컴퓨터의 256 KB = 0.000256), `weight_g` 범위는 300~10000이다. 태블릿·워치·PDA의 `ram_gb` 범위는 0.0001~64이다.
 
 ### 6.5 Discrete GPU
 ```python
@@ -614,7 +614,7 @@ class DiscreteGPU:
     name: str                   # "GeForce RTX 5090"
     manufacturer_id: int        # FK → Brand
     architecture: str | None    # "Blackwell" (None = 미상, 아래 메모리·클럭·전력도 동일)
-    release_date: date
+    release_date: date | None   # None = 출시일 미상 (연도 폴더는 `unknown`)
     msrp_usd: int | None
 
     # Cores
@@ -634,7 +634,7 @@ class DiscreteGPU:
     boost_clock_mhz: int | None
 
     # Power
-    tdp_w: int | None
+    tdp_w: float | None         # 소수 와트 허용
     pcie_version: str | None
 
     # Benchmarks (open licenses only)
@@ -666,7 +666,7 @@ class CPU:
     slug: str                   # "core-i9-14900k"
     name: str                   # "Core i9-14900K"
     manufacturer_id: int        # FK → Brand (intel, amd)
-    release_date: date
+    release_date: date | None   # None = 출시일 미상 (연도 폴더는 `unknown`)
     segment: str | None         # "desktop" | "laptop" | "hedt" | "server" (None = 미상, 폴더는 `unknown`)
     architecture: str | None    # "Raptor Lake", "Zen 4"
     socket: str | None          # "LGA1700", "AM5"
@@ -680,7 +680,7 @@ class CPU:
     base_clock_ghz: float | None
     boost_clock_ghz: float | None
     l3_cache_mb: float | None
-    tdp_w: int | None           # base power (PBP/TDP)
+    tdp_w: float | None         # base power (PBP/TDP), 소수 와트 허용 (4.5, 0.65)
     max_tdp_w: int | None       # turbo power (MTP/PPT)
 
     integrated_graphics: str | None

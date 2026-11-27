@@ -121,6 +121,50 @@ def test_device_without_specs_round_trip(
         test_engine.dispose()
 
 
+@pytest.mark.parametrize("ram_gb", [0.000256, 0.5, 16])
+def test_laptop_ram_keeps_fractions(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ram_gb: float
+) -> None:
+    data_dir = tmp_path / "data"
+    _write(
+        data_dir / "brand" / "us" / "example.json",
+        {
+            "slug": "example",
+            "name": "Example",
+            "country": "US",
+            "categories": ["pc-oem"],
+            "source_urls": SRC,
+        },
+    )
+    _write(
+        data_dir / "laptop" / "example" / "1985" / "device" / "portable.json",
+        _device("portable", {"release_date": "1985-01-01", "ram_gb": ram_gb, "weight_g": 7800}),
+    )
+    monkeypatch.setattr(validate, "DATA_DIR", data_dir)
+    assert validate.validate() == []
+
+    test_engine = create_engine(
+        f"sqlite:///{tmp_path / 'laptop-ram.db'}", connect_args={"check_same_thread": False}
+    )
+    SQLModel.metadata.create_all(test_engine)
+    try:
+        with Session(test_engine) as session:
+            assert seed(session, data_dir)["laptops"] == 1
+
+        def session_override() -> Iterator[Session]:
+            with Session(test_engine) as session:
+                yield session
+
+        monkeypatch.setitem(app.dependency_overrides, get_session, session_override)
+        detail = client.get("/v1/laptops/portable").json()
+        assert detail["ram_gb"] == ram_gb
+        # Whole gigabytes stay integers in the JSON.
+        assert isinstance(detail["ram_gb"], int) is isinstance(ram_gb, int)
+        assert detail["weight_g"] == 7800
+    finally:
+        test_engine.dispose()
+
+
 def test_device_specs_openapi_contract(client: TestClient) -> None:
     schemas = client.get("/openapi.json").json()["components"]["schemas"]
     for name in ("SmartphoneRead", "MobileDeviceRead", "LaptopRead"):

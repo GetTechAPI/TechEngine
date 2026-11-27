@@ -125,18 +125,21 @@ DATED = {"release_date": "2020-01-01"}
     ("cpu/acme/2020/unknown/c.json", DATED, CPU_SPECS),
     ("gpu/acme/2020/consumer/c.json", DATED, GPU_SPECS),
     ("soc/acme/unknown/c.json", {}, SOC_SPECS),
-], ids=["cpu", "gpu", "soc"])
+    ("cpu/acme/unknown/unknown/c.json", {}, {**DATED, **CPU_SPECS}),
+    ("gpu/acme/unknown/consumer/c.json", {}, {**DATED, **GPU_SPECS}),
+], ids=["cpu", "gpu", "soc", "cpu-undated", "gpu-undated"])
 def test_chip_specs_optional(tmp_path, monkeypatch, rel, required, specs, null) -> None:
     chip = {**CHIP, **required, **(dict.fromkeys(specs) if null else {})}
     assert _errors(tmp_path, monkeypatch, rel, chip) == []
 
 
-@pytest.mark.parametrize("category", ["cpu", "gpu"])
-@pytest.mark.parametrize("patch", [{}, {"release_date": None}], ids=["omitted", "null"])
-def test_cpu_and_gpu_still_need_a_release_date(tmp_path, monkeypatch, category, patch) -> None:
-    errs = _errors(tmp_path, monkeypatch, f"{category}/acme/2020/unknown/c.json",
-                   {**CHIP, **patch})
-    assert any("release_date" in e for e in errs), errs
+@pytest.mark.parametrize("rel,specs", [
+    ("cpu/acme/unknown/consumer/c.json", CPU_SPECS),
+    ("cpu/acme/unknown/enterprise/c.json", {**CPU_SPECS, "segment": "server"}),
+    ("gpu/acme/unknown/enterprise/c.json", GPU_SPECS),
+])
+def test_undated_cpu_and_gpu_keep_their_segment_folder(tmp_path, monkeypatch, rel, specs) -> None:
+    assert _errors(tmp_path, monkeypatch, rel, {**CHIP, **specs, "release_date": None}) == []
 
 
 @pytest.mark.parametrize("rel,chip,needle", [
@@ -145,6 +148,18 @@ def test_cpu_and_gpu_still_need_a_release_date(tmp_path, monkeypatch, category, 
     ("cpu/acme/c.json", DATED, "segment is null, so it must live at"),
     ("cpu/acme/2020/unknown/c.json", {**DATED, **CPU_SPECS},
      "lives in 'unknown/' but segment='desktop'"),
+    ("cpu/acme/2020/consumer/c.json", CPU_SPECS,
+     "lives in year '2020' but release_date is null"),
+    ("cpu/acme/unknown/consumer/c.json", {**DATED, **CPU_SPECS},
+     "lives in year 'unknown' but release_date starts with '2020'"),
+    ("cpu/acme/2019/consumer/c.json", {**DATED, **CPU_SPECS},
+     "lives in year '2019' but release_date starts with '2020'"),
+    ("cpu/acme/c.json", CPU_SPECS, "release_date is null, so it must live at"),
+    ("gpu/acme/2020/consumer/c.json", {**GPU_SPECS, "release_date": None},
+     "lives in year '2020' but release_date is null"),
+    ("gpu/acme/unknown/consumer/c.json", {**DATED, **GPU_SPECS},
+     "lives in year 'unknown' but release_date starts with '2020'"),
+    ("gpu/acme/c.json", GPU_SPECS, "release_date is null, so it must live at"),
     ("soc/acme/2020/c.json", {**SOC_SPECS, "release_date": None},
      "lives in year '2020' but release_date is null"),
     ("soc/acme/c.json", {}, "release_date is null, so it must live at"),
@@ -163,11 +178,62 @@ def test_chip_unknown_folder_rules(tmp_path, monkeypatch, rel, chip, needle) -> 
     ("gpu/acme/2020/consumer/c.json", {**DATED, **GPU_SPECS, "tdp_w": 9000}, "out of range"),
     ("gpu/acme/2020/consumer/c.json", {**DATED, **GPU_SPECS, "memory_bus_bit": 1.5},
      "must be an integer"),
+    ("cpu/acme/2020/consumer/c.json", {**DATED, **CPU_SPECS, "release_date": "2020"},
+     "must be ISO 8601"),
+    ("gpu/acme/2020/consumer/c.json", {**DATED, **GPU_SPECS, "release_date": "2020-01"},
+     "must be ISO 8601"),
+    ("cpu/acme/2020/consumer/c.json", {**DATED, **CPU_SPECS, "tdp_w": -1}, "out of range"),
+    ("cpu/acme/2020/consumer/c.json", {**DATED, **CPU_SPECS, "tdp_w": "65"}, "out of range"),
+    ("cpu/acme/2020/consumer/c.json", {**DATED, **CPU_SPECS, "tdp_w": True},
+     "must be a number"),
+    ("cpu/acme/2020/consumer/c.json", {**DATED, **CPU_SPECS, "max_tdp_w": 9.5},
+     "must be an integer"),
+    ("gpu/acme/2020/consumer/c.json", {**DATED, **GPU_SPECS, "tdp_w": 0.5}, "out of range"),
+    ("gpu/acme/2020/consumer/c.json", {**DATED, **GPU_SPECS, "tdp_w": True},
+     "must be a number"),
     ("soc/acme/2020/c.json", {**SOC_SPECS, "process_nm": 500}, "out of range"),
     ("soc/acme/2020/c.json", {**SOC_SPECS, "release_date": "2020"}, "must be ISO 8601"),
 ])
 def test_chip_specs_still_validated_when_set(tmp_path, monkeypatch, rel, chip, needle) -> None:
     errs = _errors(tmp_path, monkeypatch, rel, {**CHIP, **chip})
+    assert any(needle in e for e in errs), errs
+
+
+@pytest.mark.parametrize("rel,chip", [
+    ("cpu/acme/2020/consumer/c.json", {**CPU_SPECS, "tdp_w": 4.5}),
+    ("cpu/acme/2020/consumer/c.json", {**CPU_SPECS, "tdp_w": 0.65}),
+    ("cpu/acme/2020/consumer/c.json", {**CPU_SPECS, "tdp_w": 65}),
+    ("gpu/acme/2020/consumer/c.json", {**GPU_SPECS, "tdp_w": 7.5}),
+])
+def test_fractional_tdp_accepted(tmp_path, monkeypatch, rel, chip) -> None:
+    assert _errors(tmp_path, monkeypatch, rel, {**CHIP, **DATED, **chip}) == []
+
+
+@pytest.mark.parametrize("rel,patch", [
+    ("laptop/acme/2020/d.json", {"ram_gb": 0.000256}),
+    ("laptop/acme/2020/d.json", {"ram_gb": 0.5}),
+    ("laptop/acme/2020/d.json", {"ram_gb": 0.0001}),
+    ("laptop/acme/2020/d.json", {"ram_gb": 256}),
+    ("laptop/acme/2020/d.json", {"weight_g": 7800}),
+    ("laptop/acme/2020/d.json", {"weight_g": 10000}),
+    ("pda/acme/2020/base/d.json", {"ram_gb": 0.000128}),
+    ("watch/acme/2020/base/d.json", {"ram_gb": 0.0001}),
+])
+def test_old_device_memory_and_weight_accepted(tmp_path, monkeypatch, rel, patch) -> None:
+    assert _errors(tmp_path, monkeypatch, rel, {**DEVICE, **DEVICE_SPECS, **patch}) == []
+
+
+@pytest.mark.parametrize("rel,patch,needle", [
+    ("laptop/acme/2020/d.json", {"ram_gb": 0.00009}, "out of range [0.0001, 256]"),
+    ("laptop/acme/2020/d.json", {"ram_gb": 512}, "out of range [0.0001, 256]"),
+    ("laptop/acme/2020/d.json", {"ram_gb": True}, "must be a number"),
+    ("laptop/acme/2020/d.json", {"weight_g": 10001}, "out of range [300, 10000]"),
+    ("laptop/acme/2020/d.json", {"storage_gb": 0.5}, "must be an integer"),
+    ("pda/acme/2020/base/d.json", {"ram_gb": 0.00009}, "out of range [0.0001, 64]"),
+    ("watch/acme/2020/base/d.json", {"ram_gb": 0.00009}, "out of range [0.0001, 64]"),
+])
+def test_old_device_bounds_still_hold(tmp_path, monkeypatch, rel, patch, needle) -> None:
+    errs = _errors(tmp_path, monkeypatch, rel, {**DEVICE, **DEVICE_SPECS, **patch})
     assert any(needle in e for e in errs), errs
 
 

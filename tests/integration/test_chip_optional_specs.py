@@ -1,4 +1,4 @@
-"""A CPU, GPU or SoC without specs survives validation, seeding, API responses, and dumps."""
+"""A CPU, GPU or SoC without specs or a date survives validation, seeding, the API and dumps."""
 
 from __future__ import annotations
 
@@ -18,17 +18,24 @@ from app.main import app
 from app.seed import seed
 
 SRC = ["https://example.com"]
-DATED = {"release_date": "2020-01-01"}
 # category -> (resource, folder of the bare record, folder of the full one,
 #              what stays required, the specs that may be unknown)
 CASES: dict[str, tuple[str, str, str, dict[str, Any], dict[str, Any]]] = {
     "cpu": (
-        "cpus", "2020/unknown", "2020/consumer", DATED,
-        {"segment": "desktop", "architecture": "Example", "cores": 8, "threads": 16},
+        "cpus", "unknown/unknown", "2020/consumer", {},
+        {
+            "release_date": "2020-01-01",
+            "segment": "desktop",
+            "architecture": "Example",
+            "cores": 8,
+            "threads": 16,
+            "tdp_w": 4.5,
+        },
     ),
     "gpu": (
-        "gpus", "2020/consumer", "2020/consumer", DATED,
+        "gpus", "unknown/consumer", "2020/consumer", {},
         {
+            "release_date": "2020-01-01",
             "architecture": "Example",
             "memory_gb": 8.0,
             "memory_type": "GDDR6",
@@ -111,6 +118,11 @@ def test_chip_without_specs_round_trip(
         # Nothing to score from, and nothing raised on the way.
         assert detail["score"]["overall"] is None
         assert client.get(f"/v1/{resource}/chip-bare/score").status_code == 200
+
+        # The full record keeps what it states, fractional watts included.
+        full = client.get(f"/v1/{resource}/chip-full").json()
+        for field, value in specs.items():
+            assert full[field] == value
 
         listing = client.get(f"/v1/{resource}")
         assert listing.status_code == 200

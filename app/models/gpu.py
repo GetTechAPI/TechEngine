@@ -19,7 +19,7 @@ class DiscreteGPU(SQLModel, table=True):
     manufacturer_id: int = Field(foreign_key="brands.id", index=True)
     # None = unknown, never estimated (also the memory, clock and power specs below).
     architecture: str | None = None
-    release_date: date
+    release_date: date | None = None
     msrp_usd: int | None = None
 
     # Cores
@@ -39,7 +39,7 @@ class DiscreteGPU(SQLModel, table=True):
     boost_clock_mhz: int | None = None
 
     # Power
-    tdp_w: int | None = None
+    tdp_w: float | None = None
     pcie_version: str | None = None
 
     # Benchmarks (open licenses only)

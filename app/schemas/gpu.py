@@ -29,7 +29,7 @@ class GPURead(BaseModel):
     name: str
     manufacturer: ManufacturerRef
     architecture: str | None = None
-    release_date: date
+    release_date: date | None = None
     msrp_usd: int | None = None
     cuda_cores: int | None = None
     stream_processors: int | None = None
@@ -41,7 +41,7 @@ class GPURead(BaseModel):
     memory_bandwidth_gbps: float | None = None
     base_clock_mhz: int | None = None
     boost_clock_mhz: int | None = None
-    tdp_w: int | None = None
+    tdp_w: int | float | None = None
     pcie_version: str | None = None
     fp32_tflops: float | None = None
     blender_score: float | None = None
