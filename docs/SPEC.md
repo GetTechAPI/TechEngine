@@ -671,6 +671,7 @@ class CPU:
     segment: str | None         # "desktop" | "laptop" | "hedt" | "server" (None = 미상, 폴더는 `unknown`)
     architecture: str | None    # "Raptor Lake", "Zen 4"
     socket: str | None          # "LGA1700", "AM5"
+    socket_slug: str | None     # 소켓 slug (None = 연결 없음), `socket` 문자열은 출처 표기 그대로 둔다
     process_node: str | None    # "Intel 7", "TSMC N4" (CPU 공정명은 단일 nm float로 환원 어려움)
 
     cores: int | None
@@ -745,7 +746,7 @@ class Chipset:
     updated_at: datetime
 ```
 
-> 필수 필드: 소켓은 `slug`, `name`, `verified`, `source_urls`, 칩셋은 여기에 `manufacturer`를 더한다. `manufacturer`가 있으면 brand에 존재해야 하고, 칩셋의 `sockets` 항목은 모두 socket에 존재해야 한다. `release_date`는 이 두 카테고리에서만 연도·연월까지 허용한다(다른 카테고리는 `YYYY-MM-DD`). `integrity_check.py`는 소켓끼리, 같은 제조사의 칩셋끼리 slug 중복·정규화한 이름 중복·다른 레코드의 이름이나 slug와 같은 alias를 hard anomaly로 잡는다. 데이터 폴더가 아직 없어도 두 컬렉션은 빈 목록으로 동작한다.
+> 필수 필드: 소켓은 `slug`, `name`, `verified`, `source_urls`, 칩셋은 여기에 `manufacturer`를 더한다. `manufacturer`가 있으면 brand에 존재해야 하고, 칩셋의 `sockets` 항목은 모두 socket에 존재해야 한다. CPU의 선택 필드 `socket_slug`도 값이 있으면 socket에 존재해야 한다. `release_date`는 이 두 카테고리에서만 연도·연월까지 허용한다(다른 카테고리는 `YYYY-MM-DD`). `integrity_check.py`는 소켓끼리, 같은 제조사의 칩셋끼리 slug 중복·정규화한 이름 중복·다른 레코드의 이름이나 slug와 같은 alias를 hard anomaly로 잡는다. 데이터 폴더가 아직 없어도 두 컬렉션은 빈 목록으로 동작한다.
 
 ---
 
@@ -773,7 +774,7 @@ class Chipset:
 | GET | `/socs/{slug}/smartphones` | 이 SoC를 쓰는 폰 |
 | GET | `/gpus` | 리스트 |
 | GET | `/gpus/{slug}` | 상세 |
-| GET | `/cpus` | 리스트 (`?segment=desktop\|laptop`) |
+| GET | `/cpus` | 리스트 (`?segment=desktop\|laptop`, `?socket_slug=am5`) |
 | GET | `/cpus/{slug}` | 상세 |
 | GET | `/brands` | 리스트 |
 | GET | `/brands/{slug}` | 상세 |

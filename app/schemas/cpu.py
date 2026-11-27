@@ -34,6 +34,7 @@ class CPURead(BaseModel):
     segment: str | None = None
     architecture: str | None = None
     socket: str | None = None
+    socket_slug: str | None = None
     process_node: str | None = None
     cores: int | None = None
     threads: int | None = None

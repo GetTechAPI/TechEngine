@@ -32,6 +32,8 @@ class CPU(SQLModel, table=True):
     segment: str | None = None  # "desktop" | "laptop" | "hedt" | "server"
     architecture: str | None = None  # "Raptor Lake", "Zen 4"
     socket: str | None = None  # "LGA1700", "AM5"
+    # Slug of the socket record the text above names; None = not linked.
+    socket_slug: str | None = Field(default=None, index=True)
     process_node: str | None = None  # "Intel 7", "TSMC N4" (CPU nodes resist a single nm float)
 
     # Cores

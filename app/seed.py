@@ -269,8 +269,10 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
         counts["gpus"] += 1
     session.commit()
 
-    # --- CPUs ---
+    # --- CPUs (reference brand [required], socket by slug [optional]) ---
     cpu_slugs = _existing_slugs(session, CPU)
+    # Sockets are seeded further down, so their slugs are read from the files.
+    known_sockets = {r["slug"] for r in _load_dir(data_dir / "socket", coerce_dates=False)}
     for record in _load_dir(data_dir / "cpu"):
         if record["slug"] in cpu_slugs:
             continue
@@ -279,6 +281,11 @@ def seed(session: Session, data_dir: Path = DATA_DIR) -> dict[str, int]:
         if manufacturer_id is None:
             raise ValueError(
                 f"CPU '{record['slug']}' references unknown brand '{manufacturer}'"
+            )
+        socket_slug = record.get("socket_slug")
+        if socket_slug and socket_slug not in known_sockets:
+            raise ValueError(
+                f"CPU '{record['slug']}' references unknown socket '{socket_slug}'"
             )
         session.add(_row(CPU, record, taken, stamps, manufacturer_id=manufacturer_id))
         counts["cpus"] += 1

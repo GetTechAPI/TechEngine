@@ -24,7 +24,10 @@ CHIPSET = {"slug": "acme-p55", "name": "P55", "manufacturer": "acme", "aliases":
            "segment": "desktop", "cpu_overclocking": True, "memory_types": ["DDR3"],
            "max_memory_gb": 16, "pcie_version": "2.0", "usb_ports": {"USB 2.0": 14},
            "sata_ports": 6, "tdp_w": 4.7, "process_nm": 65, "verified": False, "source_urls": SRC}
+CPU = {"slug": "acme-c1", "name": "C1", "manufacturer": "acme", "socket": "LGA1156",
+       "source_urls": SRC}
 SOCKET_REL = "socket/lga1156.json"
+CPU_REL = "cpu/acme/unknown/unknown/acme-c1.json"
 CHIPSET_REL = "chipset/acme/acme-p55.json"
 
 
@@ -160,7 +163,30 @@ def test_scoped_run_still_resolves_sockets(tmp_path, monkeypatch) -> None:
     _put(tmp_path, "brand/us/acme.json", BRAND)
     _put(tmp_path, SOCKET_REL, SOCKET)
     _put(tmp_path, CHIPSET_REL, CHIPSET)
+    _put(tmp_path, CPU_REL, {**CPU, "socket_slug": "lga1156"})
     assert validate.validate({CHIPSET_REL}) == []
+    assert validate.validate({CPU_REL}) == []
+
+
+@pytest.mark.parametrize("link", [
+    {}, {"socket_slug": None}, {"socket_slug": "lga1156"},
+    {"socket_slug": "lga1156", "socket": None},
+], ids=["absent", "null", "linked", "linked-without-text"])
+def test_cpu_socket_slug_accepted(tmp_path, monkeypatch, link) -> None:
+    assert _errors(tmp_path, monkeypatch, {SOCKET_REL: SOCKET, CPU_REL: {**CPU, **link}}) == []
+
+
+@pytest.mark.parametrize("value,needle", [
+    ("am5", "socket_slug 'am5' not a known socket"),
+    ("LGA 1156", "socket_slug 'LGA 1156' not a known socket"),
+    ("", "socket_slug '' not a known socket"),
+    (["lga1156"], "socket_slug must be a socket slug or null"),
+    (1156, "socket_slug must be a socket slug or null"),
+], ids=["unknown", "name-not-slug", "empty", "list", "number"])
+def test_cpu_socket_slug_rejected(tmp_path, monkeypatch, value, needle) -> None:
+    errs = _errors(tmp_path, monkeypatch,
+                   {SOCKET_REL: SOCKET, CPU_REL: {**CPU, "socket_slug": value}})
+    assert any(needle in e for e in errs), errs
 
 
 def _integrity(root: Path, *extra: str) -> tuple[int, list[str]]:
