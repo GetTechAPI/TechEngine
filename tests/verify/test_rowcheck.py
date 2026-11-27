@@ -183,6 +183,44 @@ def test_ranges_rounding_and_package_prefix():
     assert rowcheck.cmp_text("FCLGA1700", "LGA 1200", "Socket") == rowcheck.CONFLICT
 
 
+PHONES = """
+<table class="wikitable">
+<tr><th>Model</th><th>Release date</th><th>Operating system</th><th>RAM</th><th>Battery</th>
+    <th>Display</th><th>Weight</th></tr>
+<tr><td>Zenfone 5Z</td><td>June 2018</td><td>Android 8.0</td><td>4/6/8 GB LPDDR4</td>
+    <td>3300 mAh</td><td>6.2 in, 1080 × 2246</td><td>165 g</td></tr>
+</table>
+"""
+
+
+def test_device_rows():
+    pg = page(PHONES, "List_of_Asus_smartphones")
+    rec = {"name": "Asus Zenfone 5Z", "brand": "asus", "release_date": "2018-06-01",
+           "os": "Android", "ram_gb": 6, "battery_mah": 3300, "weight_g": 165,
+           "display": {"size_inch": 6.2, "resolution": "2246x1080"}}
+    got = decide(rec, "smartphone", pg)
+    assert got.decision == CONFIRM
+    assert set(got.agreements) == {"release_date", "os", "ram_gb", "battery_mah", "weight_g",
+                                   "display.resolution"}
+    assert decide({**rec, "ram_gb": 12}, "smartphone", pg).decision == CONTRADICT
+
+
+def test_a_weak_field_does_not_count():
+    pg = page(PHONES, "List_of_Asus_smartphones")
+    rec = {"name": "Asus Zenfone 5Z", "brand": "asus", "release_date": "2018-06-01",
+           "os": "Android"}
+    got = decide(rec, "smartphone", pg)
+    assert got.decision == INSUFFICIENT and set(got.agreements) == {"release_date", "os"}
+    # ... and a different system is no conflict either: the cell is free text.
+    assert decide({**rec, "os": "Tizen", "weight_g": 165}, "smartphone", pg).decision == CONFIRM
+
+
+def test_storage_and_slash_lists():
+    assert rowcheck.cmp_storage_gb(1024, "1 TB, 2 TB or 4 TB SSD", "Storage") == rowcheck.AGREE
+    assert rowcheck.cmp_memory_gb(6, "4/6/8 GB LPDDR4 RAM", "RAM") == rowcheck.AGREE
+    assert rowcheck.cmp_memory_gb(12, "4/6/8 GB LPDDR4 RAM", "RAM") == rowcheck.CONFLICT
+
+
 def test_free_text_mismatch_is_not_a_conflict():
     html = """<table class="wikitable">
     <tr><th>Model number</th><th>Fab</th><th>GPU</th><th>Released</th></tr>
