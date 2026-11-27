@@ -176,7 +176,20 @@ def _numbers(text: str) -> list[float]:
 
 
 def _close(a: float, b: float) -> bool:
+    """``a`` (cited) is ``b`` (record), allowing a record rounded to a whole number."""
+    if float(b).is_integer() and not float(a).is_integer() and abs(a - b) <= 0.5:
+        return True
     return abs(a - b) <= max(0.005, 0.01 * abs(b))
+
+
+_RANGE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[–—-]\s*(\d+(?:\.\d+)?)")
+
+
+def _in_range(cell: str, value: float, scale: float) -> bool:
+    """'25–45 W' covers a record that states 35."""
+    return any(
+        float(lo) * scale <= value <= float(hi) * scale for lo, hi in _RANGE_RE.findall(cell)
+    )
 
 
 def _unknown(cell: str) -> bool:
@@ -220,10 +233,9 @@ def _cmp_unit(units: dict[str, float], label_units: dict[str, float]) -> Compare
     def compare(value: Any, cell: str, label: str) -> str:
         if isinstance(value, bool) or not isinstance(value, int | float):
             return NA
-        found = [
-            float(num.replace(",", "")) * units[unit.lower()]
-            for num, unit in unit_re.findall(cell)
-        ]
+        hits = unit_re.findall(cell)
+        found = [float(num.replace(",", "")) * units[unit.lower()] for num, unit in hits]
+        scale = units[hits[-1][1].lower()] if hits else None
         if not found:
             scale = next((s for u, s in label_units.items() if u in label.lower()), None)
             if scale is None:
@@ -231,7 +243,9 @@ def _cmp_unit(units: dict[str, float], label_units: dict[str, float]) -> Compare
             found = [n * scale for n in _numbers(cell)]
         if not found:
             return NA
-        return AGREE if any(_close(n, float(value)) for n in found) else CONFLICT
+        if any(_close(n, float(value)) for n in found):
+            return AGREE
+        return AGREE if scale and _in_range(cell, float(value), scale) else CONFLICT
 
     return compare
 
@@ -263,7 +277,9 @@ def cmp_text(value: Any, cell: str, _label: str) -> str:
     want, have = normalize_name(value), normalize_name(cell)
     if not want or not have:
         return NA
-    return AGREE if want == have or want in have else CONFLICT
+    # Intel writes a package as 'FCLGA1700'; the tables say 'LGA 1700'.
+    bare = want[2:] if want.startswith("fc") and len(want) > 5 else want
+    return AGREE if want in have or bare in have else CONFLICT
 
 
 @dataclass(frozen=True)

@@ -174,6 +174,15 @@ def test_units():
     assert rowcheck.cmp_price(229, "229", "Notes") == rowcheck.NA
 
 
+def test_ranges_rounding_and_package_prefix():
+    assert rowcheck.cmp_watt(35, "25–45 W", "TDP") == rowcheck.AGREE
+    assert rowcheck.cmp_watt(55, "25–45 W", "TDP") == rowcheck.CONFLICT
+    assert rowcheck.cmp_watt(11, "11.5 W", "TDP") == rowcheck.AGREE  # record rounded
+    assert rowcheck.cmp_watt(54, "53 W", "TDP") == rowcheck.CONFLICT
+    assert rowcheck.cmp_text("FCLGA1700", "LGA 1700", "Socket") == rowcheck.AGREE
+    assert rowcheck.cmp_text("FCLGA1700", "LGA 1200", "Socket") == rowcheck.CONFLICT
+
+
 def test_free_text_mismatch_is_not_a_conflict():
     html = """<table class="wikitable">
     <tr><th>Model number</th><th>Fab</th><th>GPU</th><th>Released</th></tr>

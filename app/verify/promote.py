@@ -4,7 +4,8 @@ Promotion rules (only ever ``false -> true``, never a demotion):
 * band green AND >=1 cited source is a *live* Tier-1 host  -> auto-promote
 * Tier 2 cross-reference returned ``confirm`` (exact heading) -> promote
 * the cited Wikipedia table row agrees with the record (``rowcheck``) -> promote
-* either Tier 2 check returned ``contradict`` -> never promote
+* the cited Wikidata item agrees with the record (``itemcheck``) -> promote
+* any Tier 2 check returned ``contradict`` -> never promote
 * otherwise stay unverified, with a logged reason
 
 Write-back is *surgical*: only the ``"verified": false`` token is rewritten to
@@ -27,7 +28,7 @@ from .common import STATE_DIR
 CROSSREF_CACHE_PATH = STATE_DIR / "crossref_cache.jsonl"
 
 # Why a record was promoted; ``promote --reason`` can restrict a run to some.
-REASONS = ("row-confirm", "crossref-confirm", "green-live-source")
+REASONS = ("row-confirm", "item-confirm", "crossref-confirm", "green-live-source")
 
 # A top-level, one-key-per-line "verified": false entry (2-space indented).
 # Permit either common newline convention.  With ``re.MULTILINE``, ``$`` sits
@@ -67,6 +68,7 @@ has_live_t1 = has_live_authoritative_source
 def decide(
     *, band: str, source_urls: list[str], url_cache: dict[str, dict[str, Any]],
     crossref_decision: str | None, rowcheck_decision: str | None = None,
+    itemcheck_decision: str | None = None,
 ) -> PromotionDecision:
     # Reality veto: if an authoritative external source contradicts the record's
     # specs (e.g. release year mismatch), never promote — even a green record.
@@ -76,9 +78,13 @@ def decide(
     # The article the record itself cites states something else.
     if rowcheck_decision == "contradict":
         return PromotionDecision(False, "rowcheck-contradict")
+    if itemcheck_decision == "contradict":
+        return PromotionDecision(False, "itemcheck-contradict")
     # The cited table row carries the record's values: the most direct evidence.
     if rowcheck_decision == "confirm":
         return PromotionDecision(True, "row-confirm")
+    if itemcheck_decision == "confirm":
+        return PromotionDecision(True, "item-confirm")
     # Reality confirm: external source agrees -> strongest promotion.
     if crossref_decision == "confirm":
         return PromotionDecision(True, "crossref-confirm")
