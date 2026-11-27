@@ -24,7 +24,7 @@ def test_ranges_parity_with_validator():
         ("smartphone", "battery_mah"): (500, 12000),
         ("smartphone", "weight_g"): (50, 500),
         ("smartphone", "msrp_usd"): (50, 5000),
-        ("mobile", "ram_gb"): (0.016, 64),
+        ("mobile", "ram_gb"): (0.0001, 64),
         ("mobile", "battery_mah"): (50, 20000),
         ("mobile", "weight_g"): (10, 2000),
         ("mobile", "msrp_usd"): (10, 10000),

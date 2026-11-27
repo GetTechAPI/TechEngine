@@ -31,7 +31,7 @@ RANGES: dict[tuple[str, str], tuple[float, float]] = {
     ("smartphone", "battery_mah"): (500, 12000),
     ("smartphone", "weight_g"): (50, 500),
     ("smartphone", "msrp_usd"): (50, 5000),
-    ("mobile", "ram_gb"): (0.016, 64),
+    ("mobile", "ram_gb"): (0.0001, 64),
     ("mobile", "battery_mah"): (50, 20000),
     ("mobile", "weight_g"): (10, 2000),
     ("mobile", "msrp_usd"): (10, 10000),
@@ -329,10 +329,10 @@ def laptop_signals(rec: dict[str, Any], now_year: int) -> list[Signal]:
     raw_display = rec.get("display")
     display = raw_display if isinstance(raw_display, dict) else {}
     return [
-        _positive_range("ram_plausible", rec.get("ram_gb"), 1, 256),
+        _positive_range("ram_plausible", rec.get("ram_gb"), 0.0001, 256),
         _positive_range("storage_plausible", rec.get("storage_gb"), 1, 16384),
         _positive_range("display_size_plausible", display.get("size_inch"), 7, 21),
-        _positive_range("weight_plausible", rec.get("weight_g"), 400, 6000),
+        _positive_range("weight_plausible", rec.get("weight_g"), 400, 10000),
         _resolution_signal(display.get("resolution")),
         _ppi_signal(display),
         _device_release_signal(rec, now_year),

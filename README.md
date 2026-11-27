@@ -117,13 +117,19 @@ Specs are optional: seed records may omit `release_date`, `ram_gb`, `os`,
 preserve unknown values as `null`. A record without a `release_date` lives in
 an `unknown` folder in place of the year (`smartphone/<brand>/unknown/<slug>.json`).
 
-Chips follow the same rule. A CPU or GPU needs `slug`, `name`, `manufacturer`,
-`release_date` and `source_urls`; a SoC needs `slug`, `name`, `manufacturer` and
-`source_urls`. Every other spec (a CPU's `segment`, `architecture`, `cores`,
-`threads`; a GPU's `architecture`, memory, clocks, `tdp_w`, `pcie_version`; a
-SoC's `release_date`, `process_nm`, `gpu_name`) may be `null`. A SoC without a
-`release_date` lives at `soc/<manufacturer>/unknown/<slug>.json`, and a CPU
-without a `segment` at `cpu/<manufacturer>/<year>/unknown/<slug>.json`.
+Chips follow the same rule. A CPU, GPU or SoC needs `slug`, `name`,
+`manufacturer` and `source_urls`. Every other spec (`release_date`; a CPU's
+`segment`, `architecture`, `cores`, `threads`; a GPU's `architecture`, memory,
+clocks, `tdp_w`, `pcie_version`; a SoC's `process_nm`, `gpu_name`) may be
+`null`. A chip without a `release_date` lives in an `unknown` folder in place
+of the year: `soc/<manufacturer>/unknown/<slug>.json`,
+`cpu/<manufacturer>/unknown/<segment folder>/<slug>.json` and
+`gpu/<manufacturer>/unknown/<segment folder>/<slug>.json`. A CPU without a
+`segment` lives at `cpu/<manufacturer>/<year>/unknown/<slug>.json`.
+
+A CPU's or GPU's `tdp_w` may be fractional (4.5, 0.65). A laptop's `ram_gb`
+may be as well, down to 0.0001 (old portables: 0.000256 = 256 KB), as may a
+tablet's, watch's or PDA's; a laptop's `weight_g` may reach 10000.
 
 Sockets and chipsets have no year folder: `socket/<slug>.json` (flat, because a
 socket's `manufacturer` may be `null`) and `chipset/<manufacturer>/<slug>.json`.

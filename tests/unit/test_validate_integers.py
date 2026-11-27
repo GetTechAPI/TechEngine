@@ -64,9 +64,9 @@ SAMPLES = [
     ("tablet/acme/2020/t/t.json", "battery_mah"),
     ("watch/acme/2020/w/w.json", "msrp_usd"),
     ("pda/acme/2020/d/d.json", "battery_mah"),
-    ("gpu/acme/g1.json", "tdp_w"),
-    ("cpu/acme/x1.json", "tdp_w"),
-    ("laptop/acme/2020/l.json", "ram_gb"),
+    ("gpu/acme/g1.json", "memory_bus_bit"),
+    ("cpu/acme/x1.json", "max_tdp_w"),
+    ("laptop/acme/2020/l.json", "storage_gb"),
     ("monitor/acme/2020/m.json", "refresh_hz"),
     ("device_catalog/acme/acme-x.json", "android_sdk_min"),
     ("socket/s1.json", "pin_count"),
@@ -135,7 +135,9 @@ def test_mapping_matches_the_model(category: str) -> None:
 def test_keys_floats_and_bools_are_not_integer_fields() -> None:
     scalars, _ = _integer_fields(CPU)
     assert not {"id", "manufacturer_id", "base_clock_ghz", "verified"} & scalars
-    assert "ram_gb" in _integer_fields(Laptop)[0]
+    assert "storage_gb" in _integer_fields(Laptop)[0]
+    assert "ram_gb" not in _integer_fields(Laptop)[0]
+    assert "tdp_w" not in scalars | _integer_fields(DiscreteGPU)[0]
     assert "ram_gb" not in _integer_fields(Smartphone)[0]
 
 
@@ -169,7 +171,12 @@ def test_float_typed_field_keeps_fractions(tmp_path, monkeypatch) -> None:
     rec = {"slug": "s", "ram_gb": 0.5, "weight_g": 180.5}
     assert _integer_errors(tmp_path, monkeypatch, "smartphone/acme/2020/p.json", rec) == []
     assert _integer_errors(tmp_path, monkeypatch, "cpu/acme/x1.json",
-                           {"slug": "s", "base_clock_ghz": 3.5, "l3_cache_mb": 1.5}) == []
+                           {"slug": "s", "base_clock_ghz": 3.5, "l3_cache_mb": 1.5,
+                            "tdp_w": 4.5}) == []
+    assert _integer_errors(tmp_path, monkeypatch, "gpu/acme/g1.json",
+                           {"slug": "s", "tdp_w": 7.5}) == []
+    assert _integer_errors(tmp_path, monkeypatch, "laptop/acme/2020/l.json",
+                           {"slug": "s", "ram_gb": 0.000256}) == []
 
 
 @pytest.mark.parametrize("value,ok", [
@@ -184,13 +191,13 @@ def test_integer_list(tmp_path, monkeypatch, value, ok) -> None:
 
 
 def test_scoped_run_checks_changed_and_fk_records_only(tmp_path, monkeypatch) -> None:
-    _put(tmp_path, "laptop/acme/2020/old.json", {"slug": "old", "ram_gb": 7.5})
-    _put(tmp_path, "cpu/acme/x1.json", {"slug": "x1", "tdp_w": 5.9})
+    _put(tmp_path, "laptop/acme/2020/old.json", {"slug": "old", "storage_gb": 7.5})
+    _put(tmp_path, "cpu/acme/x1.json", {"slug": "x1", "max_tdp_w": 5.9})
     rel = "laptop/acme/2020/new.json"
-    errs = _integer_errors(tmp_path, monkeypatch, rel, {"slug": "new", "ram_gb": 15.5}, {rel})
+    errs = _integer_errors(tmp_path, monkeypatch, rel, {"slug": "new", "storage_gb": 15.5}, {rel})
     # cpu is a foreign-key target, so a scoped run still reads all of it
     assert errs == [
-        "cpu/acme/x1.json: tdp_w=5.9 must be an integer",
-        f"{rel}: ram_gb=15.5 must be an integer",
+        "cpu/acme/x1.json: max_tdp_w=5.9 must be an integer",
+        f"{rel}: storage_gb=15.5 must be an integer",
     ]
     assert len(_integer_errors(tmp_path, monkeypatch, rel, {"slug": "new"})) == 2

@@ -43,7 +43,7 @@ class Laptop(SQLModel, table=True):
     gpu_type: str | None = None  # "Dedicated" | "Integrated"
 
     # Memory / storage
-    ram_gb: int | None = None
+    ram_gb: float | None = None  # sub-GB on 1980s-1990s portables (0.000256 = 256 KB)
     storage_gb: int | None = None
 
     # Display — {size_inch, resolution, refresh_hz, panel, ...}

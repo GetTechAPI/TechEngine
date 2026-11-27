@@ -29,7 +29,7 @@ class CPURead(BaseModel):
     slug: str
     name: str
     manufacturer: ManufacturerRef
-    release_date: date
+    release_date: date | None = None
     segment: str | None = None
     architecture: str | None = None
     socket: str | None = None
@@ -41,7 +41,7 @@ class CPURead(BaseModel):
     base_clock_ghz: float | None = None
     boost_clock_ghz: float | None = None
     l3_cache_mb: float | None = None
-    tdp_w: int | None = None
+    tdp_w: int | float | None = None
     max_tdp_w: int | None = None
     integrated_graphics: str | None = None
     memory_support: str | None = None

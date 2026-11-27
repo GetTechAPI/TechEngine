@@ -57,3 +57,9 @@ def test_missing_specs_contribute_nothing() -> None:
     partial = score_cpu(_cpu(segment=None, architecture=None, cores=None, threads=None,
                              cinebench_r23_multi=35000))
     assert partial.multi.index == scored.multi.index
+
+
+def test_undated_cpu_scores_without_an_era() -> None:
+    score = score_cpu(_cpu(release_date=None, cinebench_r23_multi=35000))
+    assert score.multi.index == score_cpu(_cpu(cinebench_r23_multi=35000)).multi.index
+    assert score.multi.era is None

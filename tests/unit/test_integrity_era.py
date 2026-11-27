@@ -121,6 +121,15 @@ def test_missing_scores_never_flag() -> None:
     assert ic.era_score_outliers(_rec()) == []  # no score fields at all
 
 
+def test_undated_chip_is_not_compared_to_an_era() -> None:
+    for release_date in (None, ""):
+        rec = _rec(release_date=release_date, cinebench_r23_multi=60000, passmark_cpu_mark=60000)
+        assert ic.era_score_outliers(rec) == []
+    rec = _rec(cinebench_r23_multi=60000)
+    del rec["release_date"]
+    assert ic.era_score_outliers(rec) == []
+
+
 def test_importing_integrity_check_runs_no_scan(capsys) -> None:
     # The module must be importable without triggering the filesystem scan
     # (guarded by ``if __name__ == '__main__'``). Re-importing is a no-op; assert
