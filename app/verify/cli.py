@@ -26,6 +26,7 @@ from . import (
     catalog_candidates,
     crossref,
     http_check,
+    itemcheck,
     ledger,
     offline,
     promote,
@@ -580,14 +581,93 @@ def cmd_crossref(args: argparse.Namespace) -> int:
     return 0
 
 
-def _fresh_rowchecks(records: dict[str, list[Record]]) -> dict[tuple[str, str], dict[str, Any]]:
-    """Row-check results that still describe the record as it is now."""
-    cache = promote.load_crossref_cache(rowcheck.CACHE_PATH)
-    current = {
-        (rec.category, rec.slug): rec.content_hash()
-        for rows in records.values() for rec in rows if rec.slug
+def _fresh_checks(
+    records: dict[str, list[Record]], path: Path
+) -> dict[tuple[str, str], dict[str, Any]]:
+    """Cached check results that still describe the record as it is now."""
+    cache = promote.load_crossref_cache(path)
+    return {
+        (rec.category, rec.slug): cache[(rec.category, rec.slug)]
+        for rows in records.values() for rec in rows
+        if rec.slug and (rec.category, rec.slug) in cache
+        and cache[(rec.category, rec.slug)].get("hash") == rec.content_hash()
     }
-    return {k: e for k, e in cache.items() if e.get("hash") == current.get(k)}
+
+
+_ITEM_RANK = {
+    itemcheck.CONFIRM: 5, itemcheck.CONTRADICT: 4, itemcheck.INSUFFICIENT: 3,
+    itemcheck.NAME_MISMATCH: 2, itemcheck.NOITEM: 1,
+}
+
+
+def cmd_itemcheck(args: argparse.Namespace) -> int:
+    """Compare records with the Wikidata item they cite; results are cached."""
+    categories = tuple(args.category) if args.category else tuple(itemcheck.FIELDS)
+    records = load_all(categories)
+    cache = promote.load_crossref_cache(itemcheck.CACHE_PATH)
+    store = itemcheck.ItemStore(min_interval=args.min_interval)
+    ts = _now_iso()
+    decisions: Counter[tuple[str, str]] = Counter()
+    todo: list[tuple[Record, str, list[str]]] = []
+    for cat in categories:
+        for rec in records[cat]:
+            if not rec.slug or rec.verified != args.verified:
+                continue
+            items = itemcheck.cited_items(rec.data)
+            if not items:
+                continue
+            digest = rec.content_hash()
+            entry = cache.get((cat, rec.slug))
+            if entry and not args.recheck and entry.get("hash") == digest:
+                decisions[(cat, str(entry.get("decision")))] += 1
+            else:
+                todo.append((rec, digest, items))
+    if args.max is not None:
+        todo = todo[: args.max]
+
+    def save() -> None:
+        ledger.replace_all(
+            sorted(cache.values(), key=lambda e: (e["category"], e["slug"])),
+            itemcheck.CACHE_PATH,
+        )
+
+    unreadable = 0
+    step = itemcheck.BATCH * 10
+    for start in range(0, len(todo), step):
+        chunk = todo[start:start + step]
+        entities = store.entities(list(dict.fromkeys(q for _r, _d, qs in chunk for q in qs)))
+        store.resolve(
+            t for rec, _d, qs in chunk for q in qs if q in entities
+            for t in itemcheck.target_ids(entities[q], rec.category)
+        )
+        for rec, digest, items in chunk:
+            best: tuple[itemcheck.Decision, str] | None = None
+            for qid in items:
+                if qid not in entities:
+                    continue
+                got = itemcheck.check_record(rec.data, rec.category, entities[qid], store.labels)
+                if best is None or _ITEM_RANK[got.decision] > _ITEM_RANK[best[0].decision]:
+                    best = (got, qid)
+            if best is None:
+                unreadable += 1  # no verdict: asked again next run
+                continue
+            verdict, qid = best
+            decisions[(rec.category, verdict.decision)] += 1
+            cache[(rec.category, str(rec.slug))] = {
+                "ts": ts, "category": rec.category, "slug": rec.slug, "hash": digest,
+                "decision": verdict.decision, "item": qid,
+                "revid": entities[qid].get("lastrevid"),
+                "agreements": list(verdict.agreements), "conflicts": list(verdict.conflicts),
+            }
+        save()
+        print(f"  ... {min(start + step, len(todo))}/{len(todo)} checked, "
+              f"{store.requests} request(s)", flush=True)
+    save()
+    print(f"itemcheck: {len(todo)} record(s) checked, {store.requests} request(s), "
+          f"{unreadable} without a readable item")
+    for (cat, name), n in sorted(decisions.items()):
+        print(f"  {cat:<11} {name:<14} {n:>6}")
+    return 0
 
 
 def cmd_rowcheck(args: argparse.Namespace) -> int:
@@ -651,7 +731,8 @@ def cmd_promote(args: argparse.Namespace) -> int:
 
     url_cache = http_check.load_cache()
     xref_cache = promote.load_crossref_cache()
-    row_cache = _fresh_rowchecks(records)
+    row_cache = _fresh_checks(records, rowcheck.CACHE_PATH)
+    item_cache = _fresh_checks(records, itemcheck.CACHE_PATH)
     ts = _now_iso()
 
     candidates = []  # (rec, band, reason)
@@ -665,14 +746,20 @@ def cmd_promote(args: argparse.Namespace) -> int:
             urls = [u for u in rec.data.get("source_urls", []) if isinstance(u, str)]
             xref = xref_cache.get((cat, rec.slug), {}).get("decision")
             row = row_cache.get((cat, rec.slug), {})
+            item = item_cache.get((cat, rec.slug), {})
             d = promote.decide(
                 band=s.band, source_urls=urls, url_cache=url_cache, crossref_decision=xref,
-                rowcheck_decision=row.get("decision"),
+                rowcheck_decision=row.get("decision"), itemcheck_decision=item.get("decision"),
             )
             if d.promote and args.reason and d.reason not in args.reason:
                 blocked[f"skipped-{d.reason}"] += 1
             elif d.promote:
-                evidence[(cat, rec.slug)] = row if d.reason == "row-confirm" else {}
+                evidence[(cat, rec.slug)] = (
+                    {"rowcheck": {k: row.get(k) for k in ("page", "revid", "agreements")}}
+                    if d.reason == "row-confirm" else
+                    {"itemcheck": {k: item.get(k) for k in ("item", "revid", "agreements")}}
+                    if d.reason == "item-confirm" else {}
+                )
                 candidates.append((rec, s, d.reason))
             elif s.band == "green":
                 blocked["green-needs-live-t1"] += 1
@@ -708,22 +795,12 @@ def cmd_promote(args: argparse.Namespace) -> int:
                 "prev_verified": False, "new_verified": True, "reason": reason,
                 "tier0": {"score": s.score, "band": s.band},
                 "actor": "app.verify.promote",
-                **_row_evidence(evidence.get((rec.category, rec.slug or ""), {})),
+                **evidence.get((rec.category, rec.slug or ""), {}),
             })
     ledger.append_many(entries)
     print(f"\napplied: flipped verified->true in {written} file(s); ledger updated")
     print("next: run `python -m app.validate` and `git diff` to confirm only verified changed")
     return 0
-
-
-def _row_evidence(row: dict[str, Any]) -> dict[str, Any]:
-    """What the ledger keeps of a row check: where it was read and what agreed."""
-    if not row:
-        return {}
-    return {"rowcheck": {
-        "page": row.get("page"), "revid": row.get("revid"),
-        "agreements": row.get("agreements"),
-    }}
 
 
 def cmd_pr(args: argparse.Namespace) -> int:
@@ -920,6 +997,15 @@ def build_parser() -> argparse.ArgumentParser:
                     help="audit records already verified instead of unverified ones")
     rc.add_argument("--show", type=int, default=20, help="conflicts to print")
     rc.set_defaults(func=cmd_rowcheck)
+
+    it = sub.add_parser("itemcheck", help="Tier 2: compare with the cited Wikidata item")
+    it.add_argument("--category", nargs="*", choices=tuple(itemcheck.FIELDS))
+    it.add_argument("--max", type=int, default=None, help="cap records checked this run")
+    it.add_argument("--min-interval", type=float, default=1.0, help="seconds between requests")
+    it.add_argument("--recheck", action="store_true", help="ignore cached results")
+    it.add_argument("--verified", action="store_true",
+                    help="audit records already verified instead of unverified ones")
+    it.set_defaults(func=cmd_itemcheck)
 
     pm = sub.add_parser("promote", help="Tier 3: hybrid escalation + verified write-back")
     pm.add_argument("--reason", nargs="*", choices=promote.REASONS,

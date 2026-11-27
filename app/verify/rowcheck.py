@@ -74,6 +74,8 @@ _TITLE_NOISE = frozenset({
     "list", "of", "comparison", "processors", "processor", "microprocessors",
     "microprocessor", "chipsets", "chipset", "series", "cpu", "cpus", "and",
     "graphics", "processing", "units", "unit", "system", "systems", "on", "chip", "chips",
+    "devices", "device", "products", "product", "smartphones", "phones", "computers",
+    "netbooks", "laptops", "tablets", "mobility",
 })
 
 
@@ -176,7 +178,20 @@ def _numbers(text: str) -> list[float]:
 
 
 def _close(a: float, b: float) -> bool:
+    """``a`` (cited) is ``b`` (record), allowing a record rounded to a whole number."""
+    if float(b).is_integer() and not float(a).is_integer() and abs(a - b) <= 0.5:
+        return True
     return abs(a - b) <= max(0.005, 0.01 * abs(b))
+
+
+_RANGE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[–—-]\s*(\d+(?:\.\d+)?)")
+
+
+def _in_range(cell: str, value: float, scale: float) -> bool:
+    """'25–45 W' covers a record that states 35."""
+    return any(
+        float(lo) * scale <= value <= float(hi) * scale for lo, hi in _RANGE_RE.findall(cell)
+    )
 
 
 def _unknown(cell: str) -> bool:
@@ -212,18 +227,22 @@ def cmp_int(value: Any, cell: str, _label: str) -> str:
 def _cmp_unit(units: dict[str, float], label_units: dict[str, float]) -> Compare:
     """Numbers followed by a unit (or under a label naming one), scaled to the
     record's unit. A bare number with no unit anywhere is not comparable."""
+    # '4/6/8 GB' gives three values in that unit.
     unit_re = re.compile(
-        r"(\d+(?:[.,]\d+)*)\s*(" + "|".join(sorted(units, key=len, reverse=True)) + r")\b",
+        r"((?:\d+(?:[.,]\d+)*\s*/\s*)*\d+(?:[.,]\d+)*)\s*("
+        + "|".join(sorted(units, key=len, reverse=True)) + r")\b",
         re.IGNORECASE,
     )
 
     def compare(value: Any, cell: str, label: str) -> str:
         if isinstance(value, bool) or not isinstance(value, int | float):
             return NA
+        hits = unit_re.findall(cell)
         found = [
             float(num.replace(",", "")) * units[unit.lower()]
-            for num, unit in unit_re.findall(cell)
+            for nums, unit in hits for num in re.split(r"\s*/\s*", nums)
         ]
+        scale = units[hits[-1][1].lower()] if hits else None
         if not found:
             scale = next((s for u, s in label_units.items() if u in label.lower()), None)
             if scale is None:
@@ -231,7 +250,9 @@ def _cmp_unit(units: dict[str, float], label_units: dict[str, float]) -> Compare
             found = [n * scale for n in _numbers(cell)]
         if not found:
             return NA
-        return AGREE if any(_close(n, float(value)) for n in found) else CONFLICT
+        if any(_close(n, float(value)) for n in found):
+            return AGREE
+        return AGREE if scale and _in_range(cell, float(value), scale) else CONFLICT
 
     return compare
 
@@ -251,6 +272,25 @@ cmp_memory_gb = _cmp_unit(
 cmp_mhz = _cmp_unit({"mhz": 1.0, "ghz": 1000.0}, {"mhz": 1.0, "ghz": 1000.0})
 
 
+cmp_gram = _cmp_unit({"g": 1.0, "kg": 1000.0}, {"(g)": 1.0, "(kg)": 1000.0, "grams": 1.0})
+cmp_inch = _cmp_unit(
+    {"inches": 1.0, "inch": 1.0, "in": 1.0}, {"(in)": 1.0, "inch": 1.0, "(″)": 1.0}
+)
+cmp_mah = _cmp_unit({"mah": 1.0}, {"mah": 1.0})
+cmp_storage_gb = _cmp_unit({"gb": 1.0, "tb": 1024.0, "mb": 1 / 1024}, {"(gb)": 1.0})
+
+_PIXELS_RE = re.compile(r"(\d{3,5})\s*[x×]\s*(\d{3,5})", re.IGNORECASE)
+
+
+def cmp_resolution(value: Any, cell: str, _label: str) -> str:
+    """'1024x600' against '1024 × 600', in either orientation."""
+    ours = _PIXELS_RE.search(value) if isinstance(value, str) else None
+    theirs = {frozenset(pair) for pair in _PIXELS_RE.findall(cell)}
+    if not ours or not theirs:
+        return NA
+    return AGREE if frozenset(ours.groups()) in theirs else CONFLICT
+
+
 def cmp_price(value: Any, cell: str, _label: str) -> str:
     if "$" not in cell and "usd" not in _label.lower():
         return NA
@@ -263,7 +303,9 @@ def cmp_text(value: Any, cell: str, _label: str) -> str:
     want, have = normalize_name(value), normalize_name(cell)
     if not want or not have:
         return NA
-    return AGREE if want == have or want in have else CONFLICT
+    # Intel writes a package as 'FCLGA1700'; the tables say 'LGA 1700'.
+    bare = want[2:] if want.startswith("fc") and len(want) > 5 else want
+    return AGREE if want in have or bare in have else CONFLICT
 
 
 @dataclass(frozen=True)
@@ -273,15 +315,21 @@ class FieldSpec:
     compare: Compare
     reject: re.Pattern[str] | None = None  # labels that only look like it
     soft: bool = False  # free text: may agree, a mismatch proves nothing
+    weak: bool = False  # true of nearly every row ('Android'): recorded, not counted
 
 
 def _spec(
-    name: str, label: str, compare: Compare, reject: str | None = None, *, soft: bool = False
+    name: str, label: str, compare: Compare, reject: str | None = None, *,
+    soft: bool = False, weak: bool = False,
 ) -> FieldSpec:
     return FieldSpec(
         name, re.compile(label, re.IGNORECASE), compare,
-        re.compile(reject, re.IGNORECASE) if reject else None, soft,
+        re.compile(reject, re.IGNORECASE) if reject else None, soft or weak, weak,
     )
+
+
+def weak_fields(category: str) -> frozenset[str]:
+    return frozenset(spec.name for spec in FIELDS.get(category, ()) if spec.weak)
 
 
 def _field(rec: dict[str, Any], path: str) -> Any:
@@ -296,8 +344,26 @@ _RELEASE = _spec(
     r"price|discontinu|end of|eol",
 )
 
+_DEVICE_RELEASE = _spec(
+    "release_date", r"release|launch|introduc|announc|available|\bdate\b|\byear\b",
+    cmp_release, r"price|discontinu|end of|eol|os |android|update",
+)
+_DEVICE = (
+    _DEVICE_RELEASE,
+    _spec("weight_g", r"weight|\bmass\b", cmp_gram),
+    _spec("battery_mah", r"battery", cmp_mah),
+    _spec("display.resolution", r"resolution|pixels|display|screen", cmp_resolution),
+    _spec("display.size_inch", r"display|screen|\bsize\b", cmp_inch, r"resolution"),
+    _spec("storage_gb", r"storage|\bhdd\b|\bssd\b|hard d", cmp_storage_gb),
+    _spec("ram_gb", r"\bram\b|memory", cmp_memory_gb, r"storage|flash|\brom\b|card|expan"),
+    _spec("os", r"\bos\b|operating system|platform", cmp_text, weak=True),
+    _spec("cpu_name", r"\bcpu\b|processor", cmp_text, soft=True),
+)
+
 # Order matters: a column goes to the first spec whose label matches.
 FIELDS: dict[str, tuple[FieldSpec, ...]] = {
+    "laptop": _DEVICE, "pda": _DEVICE, "watch": _DEVICE, "tablet": _DEVICE,
+    "smartphone": _DEVICE,
     "socket": (
         _RELEASE,
         _spec("package_type", r"^package", cmp_text),
@@ -345,10 +411,17 @@ NAME_LABELS: dict[str, re.Pattern[str]] = {
     "chipset": re.compile(r"chipset|model|^name|code ?name", re.IGNORECASE),
     "gpu": re.compile(r"model|^name", re.IGNORECASE),
     "soc": re.compile(r"model|^name|^soc|part number|product", re.IGNORECASE),
+    **{
+        cat: re.compile(r"model|^name|device|product|phone|handset", re.IGNORECASE)
+        for cat in ("laptop", "pda", "watch", "tablet", "smartphone")
+    },
 }
 
 # 'Integrated GPU / Model' and 'Socket / Model' name something else in the row.
 _NOT_NAME_RE = re.compile(r"gpu|graphics|socket /|chipset /|southbridge|modem", re.IGNORECASE)
+# In a device table the processor and system columns have 'model' cells too.
+_NOT_DEVICE_NAME_RE = re.compile(r"cpu|processor|\bos\b|chipset|\bsoc\b", re.IGNORECASE)
+_DEVICES = frozenset({"laptop", "pda", "watch", "tablet", "smartphone"})
 
 # A leading word both sides may or may not write: 'Socket AM4' vs 'AM4'.
 CLASS_WORDS: dict[str, tuple[str, ...]] = {"socket": ("socket",), "chipset": ("chipset",)}
@@ -411,6 +484,7 @@ def _columns(table: Table, category: str) -> tuple[list[int], dict[int, FieldSpe
     names = [
         i for i, label in enumerate(table.labels)
         if name_re and name_re.search(label) and not _NOT_NAME_RE.search(label)
+        and not (category in _DEVICES and _NOT_DEVICE_NAME_RE.search(label))
     ]
     fields: dict[int, FieldSpec] = {}
     for i, label in enumerate(table.labels):
@@ -469,8 +543,13 @@ def check_record(rec: dict[str, Any], category: str, page: Page) -> Decision:
     if not rows:
         return Decision(NOTFOUND)
     clean = [r for r in rows if not r.conflicts]
-    best = max(clean, key=lambda r: len(r.agreements), default=None)
-    if best is not None and len(best.agreements) >= MIN_AGREEMENTS:
+    weak = weak_fields(category)
+
+    def strength(row: RowMatch) -> int:
+        return len(set(row.agreements) - weak)
+
+    best = max(clean, key=strength, default=None)
+    if best is not None and strength(best) >= MIN_AGREEMENTS:
         return Decision(CONFIRM, len(rows), best.agreements, (), best.headings)
     if best is None:
         # Every row with this name disagrees with the record somewhere.
