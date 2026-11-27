@@ -53,16 +53,20 @@ class FieldSpec:
     name: str  # record field
     kind: str
     props: tuple[str, ...]  # Wikidata properties that state it
+    soft: bool = False  # our value is a slug or short form: a mismatch proves nothing
+    weak: bool = False  # recorded when it agrees, not counted as evidence
 
 
-def _f(name: str, kind: str, *props: str) -> FieldSpec:
-    return FieldSpec(name, kind, props)
+def _f(name: str, kind: str, *props: str, soft: bool = False, weak: bool = False) -> FieldSpec:
+    return FieldSpec(name, kind, props, soft or weak, weak)
 
 
+# A brand is a slug ('samsung') where the item names a company ('Samsung
+# Electronics'), and the system is 'Android' where the item names a version.
 _DEVICE = (
     _f("release_date", DATE, "P577", "P571", "P729", "P1619"),
-    _f("brand", LABELS, "P176", "P1716", "P178"),
-    _f("os", LABELS, "P306"),
+    _f("brand", LABELS, "P176", "P1716", "P178", soft=True),
+    _f("os", LABELS, "P306", weak=True),
 )
 
 FIELDS: dict[str, tuple[FieldSpec, ...]] = {
@@ -235,6 +239,7 @@ def check_record(
         return Decision(NAME_MISMATCH)
     agreements: list[str] = []
     conflicts: list[str] = []
+    counted = 0
     for spec in FIELDS.get(category, ()):
         value = rec.get(spec.name)
         claims = list(_claims(entity, spec.props))
@@ -248,11 +253,12 @@ def check_record(
             verdict = cmp_labels(value, claims, labels)
         if verdict == AGREE:
             agreements.append(spec.name)
-        elif verdict == CONFLICT:
+            counted += not spec.weak
+        elif verdict == CONFLICT and not spec.soft:
             conflicts.append(spec.name)
     if conflicts:
         return Decision(CONTRADICT, tuple(agreements), tuple(conflicts))
-    if len(agreements) >= MIN_FIELDS.get(category, MIN_FIELDS_DEFAULT):
+    if counted >= MIN_FIELDS.get(category, MIN_FIELDS_DEFAULT):
         return Decision(CONFIRM, tuple(agreements))
     return Decision(INSUFFICIENT, tuple(agreements))
 
@@ -285,7 +291,7 @@ class ItemStore:
 
     def __init__(
         self, fetch: Fetch = fetch_entities, *, min_interval: float = 1.0,
-        retries: int = 3, sleep: Callable[[float], None] = time.sleep,
+        retries: int = 4, sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._fetch, self._interval, self._retries, self._sleep = (
             fetch, min_interval, retries, sleep)
@@ -295,7 +301,8 @@ class ItemStore:
     def _call(self, ids: list[str], props: str) -> dict[str, Any] | None:
         for attempt in range(self._retries):
             if self.requests:
-                self._sleep(self._interval * (1 + 4 * attempt))
+                # A lagged or throttling server needs real time: 1 s, then 10, 40, 160.
+                self._sleep(self._interval if not attempt else 2.5 * 4 ** attempt)
             self.requests += 1
             got = self._fetch(ids, props)
             if got is not None:

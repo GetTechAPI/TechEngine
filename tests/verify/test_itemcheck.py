@@ -100,6 +100,20 @@ def test_device_needs_two_fields():
     assert itemcheck.check_record(rec, "laptop", ent, labels).decision == CONTRADICT
 
 
+def test_device_brand_slug_and_system_are_not_held_against_a_record():
+    ent = entity("Galaxy S", P176=[item("Q5")], P306=[item("Q6")],
+                 P577=[when("+2010-06-04T00:00:00Z", 11)])
+    labels = {"Q5": {"samsungelectronics"}, "Q6": {"android21eclair"}}
+    rec = {"name": "Galaxy S", "brand": "samsung", "os": "Android", "release_date": "2010-06-04"}
+    got = itemcheck.check_record(rec, "smartphone", ent, labels)
+    assert got.decision == INSUFFICIENT and got.agreements == ("release_date",)
+    labels["Q6"] = {"android"}
+    got = itemcheck.check_record(rec, "smartphone", ent, labels)
+    assert got.decision == INSUFFICIENT and got.agreements == ("release_date", "os")
+    labels["Q5"] = {"samsung"}
+    assert itemcheck.check_record(rec, "smartphone", ent, labels).decision == CONFIRM
+
+
 def test_dates_compare_at_the_coarser_precision():
     year = [{"time": "+1988-00-00T00:00:00Z", "precision": 9}]
     day = [{"time": "+1988-03-09T00:00:00Z", "precision": 11}]
