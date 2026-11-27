@@ -131,6 +131,36 @@ def test_trailing_class_word_and_section():
     assert decide({**rec, "series": "Bridges"}, "chipset", pg).decision == INSUFFICIENT
 
 
+SOCS = """
+<h2>RK33xx</h2>
+<table class="wikitable">
+<tr><th colspan="2">General</th><th rowspan="2">Fab</th><th rowspan="2">Released</th></tr>
+<tr><th>Name</th><th>Code name</th></tr>
+<tr><td>RK3368 PX5</td><td>Maple</td><td>28 nm</td><td>2015</td></tr>
+<tr><td>OMAP3430</td><td>Maple</td><td>65 nm</td><td>2010</td></tr>
+</table>
+"""
+
+
+def test_grouped_name_header_part_code_lists_and_two_word_makers():
+    pg = page(SOCS, "Some_chips")
+    px5 = {"name": "Rockchip PX5", "manufacturer": "rockchip", "process_nm": 28.0,
+           "release_date": "2015-01-01"}
+    assert decide(px5, "soc", pg).decision == CONFIRM
+    assert decide({**px5, "name": "Rockchip RK3368"}, "soc", pg).decision == CONFIRM
+    omap = {"name": "Texas Instruments OMAP 3430", "manufacturer": "texas-instruments",
+            "process_nm": 65.0, "release_date": "2010-01-01"}
+    assert decide(omap, "soc", pg).decision == CONFIRM
+    # A code name is shared by several models and never names the row.
+    assert decide({**px5, "name": "Rockchip Maple"}, "soc", pg).decision == NOTFOUND
+
+
+def test_part_codes_only_when_the_cell_is_nothing_else():
+    assert rowcheck.part_codes("RK3368 PX5") == ["RK3368", "PX5"]
+    assert rowcheck.part_codes("Helio P23 MT6763") == []
+    assert rowcheck.part_codes("RK3368") == []
+
+
 # --- fields ----------------------------------------------------------------------
 
 
