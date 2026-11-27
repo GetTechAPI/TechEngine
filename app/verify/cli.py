@@ -22,7 +22,16 @@ from typing import Any
 
 from app.validate import DATA_DIR
 
-from . import catalog_candidates, crossref, http_check, ledger, offline, promote, wikidata
+from . import (
+    catalog_candidates,
+    crossref,
+    http_check,
+    ledger,
+    offline,
+    promote,
+    rowcheck,
+    wikidata,
+)
 from .common import (
     CATEGORIES,
     SCORES_PATH,
@@ -571,6 +580,69 @@ def cmd_crossref(args: argparse.Namespace) -> int:
     return 0
 
 
+def _fresh_rowchecks(records: dict[str, list[Record]]) -> dict[tuple[str, str], dict[str, Any]]:
+    """Row-check results that still describe the record as it is now."""
+    cache = promote.load_crossref_cache(rowcheck.CACHE_PATH)
+    current = {
+        (rec.category, rec.slug): rec.content_hash()
+        for rows in records.values() for rec in rows if rec.slug
+    }
+    return {k: e for k, e in cache.items() if e.get("hash") == current.get(k)}
+
+
+def cmd_rowcheck(args: argparse.Namespace) -> int:
+    """Compare records with the Wikipedia table row they cite; results are cached."""
+    categories = tuple(args.category) if args.category else tuple(rowcheck.FIELDS)
+    records = load_all(categories)
+    cache = promote.load_crossref_cache(rowcheck.CACHE_PATH)
+    store = rowcheck.PageStore(min_interval=args.min_interval)
+    ts = _now_iso()
+    decisions: Counter[tuple[str, str]] = Counter()
+    conflicts: list[str] = []
+    examined = unreadable = 0
+    for cat in categories:
+        for rec in records[cat]:
+            if not rec.slug or rec.verified != args.verified:
+                continue
+            if not any(rowcheck.page_ref(u) for u in rec.data.get("source_urls") or []):
+                continue
+            if args.max is not None and examined >= args.max:
+                break
+            examined += 1
+            digest = rec.content_hash()
+            entry = cache.get((cat, rec.slug))
+            if entry and not args.recheck and entry.get("hash") == digest:
+                decisions[(cat, str(entry.get("decision")))] += 1
+                continue
+            decision, page = rowcheck.check(rec.data, cat, store)
+            if page is None:
+                unreadable += 1  # no verdict: asked again next run
+                continue
+            decisions[(cat, decision.decision)] += 1
+            cache[(cat, rec.slug)] = {
+                "ts": ts, "category": cat, "slug": rec.slug, "hash": digest,
+                "decision": decision.decision, "page": page.ref.title, "revid": page.revid,
+                "pinned": page.ref.oldid is not None, "section": list(decision.headings),
+                "rows_matched": decision.rows_matched,
+                "agreements": list(decision.agreements),
+                "conflicts": [list(c) for c in decision.conflicts],
+            }
+            for name, ours, theirs in decision.conflicts:
+                conflicts.append(f"{rec.path}: {name} {ours!r} vs cited {theirs!r}")
+    ledger.replace_all(
+        sorted(cache.values(), key=lambda e: (e["category"], e["slug"])), rowcheck.CACHE_PATH
+    )
+    print(f"rowcheck: examined {examined} record(s), fetched {store.requests} article(s), "
+          f"{unreadable} without a readable article")
+    for (cat, verdict), n in sorted(decisions.items()):
+        print(f"  {cat:<8} {verdict:<12} {n:>6}")
+    for line in conflicts[: args.show]:
+        print(f"  conflict: {line}")
+    if len(conflicts) > args.show:
+        print(f"  ... and {len(conflicts) - args.show} more conflict(s)")
+    return 0
+
+
 def cmd_promote(args: argparse.Namespace) -> int:
     records = load_all()
     _, _, soc_release = foreign_key_sets(records)
@@ -579,9 +651,11 @@ def cmd_promote(args: argparse.Namespace) -> int:
 
     url_cache = http_check.load_cache()
     xref_cache = promote.load_crossref_cache()
+    row_cache = _fresh_rowchecks(records)
     ts = _now_iso()
 
     candidates = []  # (rec, band, reason)
+    evidence: dict[tuple[str, str], dict[str, Any]] = {}
     blocked: Counter[str] = Counter()
     for cat in categories:
         for rec in records[cat]:
@@ -590,10 +664,15 @@ def cmd_promote(args: argparse.Namespace) -> int:
             s = offline.score_record(rec, now_year, soc_release)
             urls = [u for u in rec.data.get("source_urls", []) if isinstance(u, str)]
             xref = xref_cache.get((cat, rec.slug), {}).get("decision")
+            row = row_cache.get((cat, rec.slug), {})
             d = promote.decide(
                 band=s.band, source_urls=urls, url_cache=url_cache, crossref_decision=xref,
+                rowcheck_decision=row.get("decision"),
             )
-            if d.promote:
+            if d.promote and args.reason and d.reason not in args.reason:
+                blocked[f"skipped-{d.reason}"] += 1
+            elif d.promote:
+                evidence[(cat, rec.slug)] = row if d.reason == "row-confirm" else {}
                 candidates.append((rec, s, d.reason))
             elif s.band == "green":
                 blocked["green-needs-live-t1"] += 1
@@ -607,7 +686,7 @@ def cmd_promote(args: argparse.Namespace) -> int:
     for reason, n in by_reason.most_common():
         print(f"  {n:>6}  {reason}")
     if blocked:
-        print("blocked (green but no live T1 source yet — run check-urls):")
+        print("not promoted:")
         for reason, n in blocked.most_common():
             print(f"  {n:>6}  {reason}")
 
@@ -629,11 +708,22 @@ def cmd_promote(args: argparse.Namespace) -> int:
                 "prev_verified": False, "new_verified": True, "reason": reason,
                 "tier0": {"score": s.score, "band": s.band},
                 "actor": "app.verify.promote",
+                **_row_evidence(evidence.get((rec.category, rec.slug or ""), {})),
             })
     ledger.append_many(entries)
     print(f"\napplied: flipped verified->true in {written} file(s); ledger updated")
     print("next: run `python -m app.validate` and `git diff` to confirm only verified changed")
     return 0
+
+
+def _row_evidence(row: dict[str, Any]) -> dict[str, Any]:
+    """What the ledger keeps of a row check: where it was read and what agreed."""
+    if not row:
+        return {}
+    return {"rowcheck": {
+        "page": row.get("page"), "revid": row.get("revid"),
+        "agreements": row.get("agreements"),
+    }}
 
 
 def cmd_pr(args: argparse.Namespace) -> int:
@@ -821,7 +911,19 @@ def build_parser() -> argparse.ArgumentParser:
     cr.add_argument("--recheck", action="store_true", help="ignore crossref cache")
     cr.set_defaults(func=cmd_crossref)
 
+    rc = sub.add_parser("rowcheck", help="Tier 2: compare with the cited Wikipedia table row")
+    rc.add_argument("--category", nargs="*", choices=tuple(rowcheck.FIELDS))
+    rc.add_argument("--max", type=int, default=None, help="cap records examined")
+    rc.add_argument("--min-interval", type=float, default=1.5, help="seconds between articles")
+    rc.add_argument("--recheck", action="store_true", help="ignore cached results")
+    rc.add_argument("--verified", action="store_true",
+                    help="audit records already verified instead of unverified ones")
+    rc.add_argument("--show", type=int, default=20, help="conflicts to print")
+    rc.set_defaults(func=cmd_rowcheck)
+
     pm = sub.add_parser("promote", help="Tier 3: hybrid escalation + verified write-back")
+    pm.add_argument("--reason", nargs="*", choices=promote.REASONS,
+                    help="promote only for these reasons (default: any)")
     pm.add_argument("--category", nargs="*", choices=CATEGORIES, help="limit to categories")
     pm.add_argument("--max", type=int, default=None, help="cap number promoted")
     pm.add_argument("--apply", action="store_true",
