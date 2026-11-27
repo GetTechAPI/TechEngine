@@ -19,6 +19,7 @@ class MonitorRead(BaseModel):
     name: str
     brand: BrandSummary
     release_date: date | None = None
+    release_date_precision: str | None = None
     msrp_usd: int | None = None
     size_inch: float | None = None
     resolution: str | None = None

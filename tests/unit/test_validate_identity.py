@@ -242,6 +242,44 @@ def test_chip_release_date_precision_needs_a_date(tmp_path, monkeypatch, rel, pr
     assert any("needs a release_date" in e for e in errs), errs
 
 
+DEVICE_PRECISION_RELS = ["laptop/acme/2012/d.json", "monitor/acme/2012/d.json"]
+DEVICE_PRECISION_IDS = ["laptop", "monitor"]
+
+
+@pytest.mark.parametrize("rel", DEVICE_PRECISION_RELS, ids=DEVICE_PRECISION_IDS)
+@pytest.mark.parametrize("dated", [
+    {"release_date": "2012-05-14"},
+    {"release_date": "2012-05-14", "release_date_precision": None},
+    {"release_date": "2012-05-14", "release_date_precision": "day"},
+    {"release_date": "2012-05-01", "release_date_precision": "month"},
+    {"release_date": "2012-01-01", "release_date_precision": "month"},
+    {"release_date": "2012-01-01", "release_date_precision": "year"},
+], ids=["absent", "null", "day", "month", "month-january", "year"])
+def test_device_release_date_precision_accepted(tmp_path, monkeypatch, rel, dated) -> None:
+    assert _errors(tmp_path, monkeypatch, rel, {**DEVICE, **dated}) == []
+
+
+@pytest.mark.parametrize("rel", DEVICE_PRECISION_RELS, ids=DEVICE_PRECISION_IDS)
+@pytest.mark.parametrize("dated,needle", [
+    ({"release_date": "2012-05-01", "release_date_precision": "decade"}, "not in"),
+    ({"release_date": "2012-01-01", "release_date_precision": "year_estimated"}, "not in"),
+    ({"release_date": "2012-05-01", "release_date_precision": ["month"]}, "not in"),
+    ({"release_date": "2012-05-14", "release_date_precision": "month"}, "ending in '-01'"),
+    ({"release_date": "2012-05-01", "release_date_precision": "year"}, "ending in '-01-01'"),
+], ids=["bad-value", "year-estimated", "not-a-string", "month-with-day", "year-with-month"])
+def test_device_release_date_precision_rejected(tmp_path, monkeypatch, rel, dated, needle) -> None:
+    errs = _errors(tmp_path, monkeypatch, rel, {**DEVICE, **dated})
+    assert any("release_date_precision" in e and needle in e for e in errs), errs
+
+
+@pytest.mark.parametrize("rel", ["laptop/acme/unknown/d.json", "monitor/acme/unknown/d.json"],
+                         ids=DEVICE_PRECISION_IDS)
+@pytest.mark.parametrize("precision", ["day", "month", "year"])
+def test_device_release_date_precision_needs_a_date(tmp_path, monkeypatch, rel, precision) -> None:
+    errs = _errors(tmp_path, monkeypatch, rel, {**DEVICE, "release_date_precision": precision})
+    assert any("needs a release_date" in e for e in errs), errs
+
+
 @pytest.mark.parametrize("rel,chip", [
     ("cpu/acme/2020/consumer/c.json", {**CPU_SPECS, "tdp_w": 4.5}),
     ("cpu/acme/2020/consumer/c.json", {**CPU_SPECS, "tdp_w": 0.65}),
