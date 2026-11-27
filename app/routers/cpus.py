@@ -26,21 +26,25 @@ def list_cpus(
     session: SessionDep,
     pagination: PaginationDep,
     segment: Annotated[str | None, Query()] = None,
+    socket_slug: Annotated[str | None, Query()] = None,
 ) -> Page[ResourceRef]:
     count_stmt = select(func.count()).select_from(CPU)
     list_stmt = select(CPU)
     if segment is not None:
         count_stmt = count_stmt.where(CPU.segment == segment)
         list_stmt = list_stmt.where(CPU.segment == segment)
+    if socket_slug is not None:
+        count_stmt = count_stmt.where(CPU.socket_slug == socket_slug)
+        list_stmt = list_stmt.where(CPU.socket_slug == socket_slug)
 
     count = session.exec(count_stmt).one()
     rows = session.exec(
         list_stmt.order_by(CPU.name).offset(pagination.offset).limit(pagination.limit)
     ).all()
     refs = [resource_ref("cpus", c.slug, c.name) for c in rows]
-    filters = {"segment": segment} if segment else None
+    applied = {k: v for k, v in (("segment", segment), ("socket_slug", socket_slug)) if v}
     return build_ref_page(
-        refs, count=count, path="/v1/cpus", pagination=pagination, filters=filters
+        refs, count=count, path="/v1/cpus", pagination=pagination, filters=applied
     )
 
 

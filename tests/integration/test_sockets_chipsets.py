@@ -54,6 +54,13 @@ def parts_client(
         usb_ports={"USB 2.0": 6, "USB 3.2 Gen 1x1": 4}, sata_ports=6, tdp_w=6.5, process_nm=14))
     _write(data_dir / "chipset" / "other" / "other-b1.json", _part(
         "other-b1", "B1", manufacturer="other"))
+    cpus = data_dir / "cpu" / "example" / "unknown" / "unknown"
+    _write(cpus / "example-c1.json", {
+        "slug": "example-c1", "name": "C1", "manufacturer": "example", "socket": "Socket E",
+        "socket_slug": "ex1", "source_urls": SRC})
+    _write(cpus / "example-c2.json", {
+        "slug": "example-c2", "name": "C2", "manufacturer": "example", "socket": "BGA 900",
+        "source_urls": SRC})
     monkeypatch.setattr(validate, "DATA_DIR", data_dir)
     assert validate.validate() == []
 
@@ -109,6 +116,46 @@ def test_socket_endpoints(parts_client: tuple[TestClient, Path]) -> None:
     for field in ("release_date", "package_type", "pin_count"):
         assert shared[field] is None
     assert client.get("/v1/sockets/nope").status_code == 404
+
+
+def test_cpu_socket_link(parts_client: tuple[TestClient, Path]) -> None:
+    client, tmp_path = parts_client
+    linked = client.get("/v1/cpus/example-c1").json()
+    # The text stays as the source wrote it; the slug joins to the socket record.
+    assert (linked["socket"], linked["socket_slug"]) == ("Socket E", "ex1")
+    assert client.get(f"/v1/sockets/{linked['socket_slug']}").json()["name"] == "EX 1"
+    unlinked = client.get("/v1/cpus/example-c2").json()
+    assert (unlinked["socket"], unlinked["socket_slug"]) == ("BGA 900", None)
+
+    assert _slugs(client, "/v1/cpus") == ["example-c1", "example-c2"]
+    assert _slugs(client, "/v1/cpus?socket_slug=ex1") == ["example-c1"]
+    assert _slugs(client, "/v1/cpus?socket_slug=ex2") == []
+
+    output_dir = tmp_path / "dump"
+    assert generate(client, output_dir, ["cpus"]) == {"cpus": 2}
+    dumped = json.loads(
+        (output_dir / "v1" / "cpus" / "example-c1" / "index.json").read_text("utf-8")
+    )
+    assert dumped == linked
+
+    schema = client.get("/openapi.json").json()["components"]["schemas"]["CPURead"]
+    assert "socket_slug" in schema["properties"]
+    assert "socket_slug" not in schema["required"]
+
+
+def test_seed_rejects_unknown_cpu_socket(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    _write(data_dir / "brand" / "us" / "example.json", _brand("example"))
+    _write(data_dir / "cpu" / "example" / "unknown" / "unknown" / "example-c1.json", {
+        "slug": "example-c1", "name": "C1", "manufacturer": "example",
+        "socket_slug": "nope", "source_urls": SRC})
+    test_engine = create_engine(f"sqlite:///{tmp_path / 'bad.db'}")
+    SQLModel.metadata.create_all(test_engine)
+    try:
+        with Session(test_engine) as session, pytest.raises(ValueError, match="unknown socket"):
+            seed(session, data_dir)
+    finally:
+        test_engine.dispose()
 
 
 def test_chipset_endpoints(parts_client: tuple[TestClient, Path]) -> None:

@@ -227,6 +227,7 @@ def cpu_read(cpu: CPU, manufacturer: Brand, score: CPUScore) -> CPURead:
         segment=cpu.segment,
         architecture=cpu.architecture,
         socket=cpu.socket,
+        socket_slug=cpu.socket_slug,
         process_node=cpu.process_node,
         cores=cpu.cores,
         threads=cpu.threads,

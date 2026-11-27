@@ -133,6 +133,11 @@ optional `release_date_precision` (`day`, `month` or `year`; absent or `null`
 means `day`) says so: `month` needs a date ending in `-01`, `year` one ending
 in `-01-01`. The field is served on CPU, GPU and SoC detail responses.
 
+A CPU's optional `socket_slug` links it to a socket record: when set it must be
+the slug of an existing socket, while the free-text `socket` stays as the source
+wrote it. It is served on CPU detail responses, and `/v1/cpus?socket_slug=am5`
+lists the CPUs for one socket.
+
 A CPU's or GPU's `tdp_w` may be fractional (4.5, 0.65). A laptop's `ram_gb`
 may be as well, down to 0.0001 (old portables: 0.000256 = 256 KB), as may a
 tablet's, watch's or PDA's; a laptop's `weight_g` may reach 10000.
