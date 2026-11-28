@@ -443,8 +443,10 @@ NAME_LABELS: dict[str, re.Pattern[str]] = {
 _NOT_NAME_RE = re.compile(r"gpu|graphics|socket /|chipset /|southbridge|modem", re.IGNORECASE)
 # In a device table the processor and system columns have 'model' cells too.
 _NOT_DEVICE_NAME_RE = re.compile(r"cpu|processor|\bos\b|chipset|\bsoc\b", re.IGNORECASE)
-# A code name ('Bonaire') is shared by several models; only chipsets go by it.
+# A chip's code name ('Bonaire') is shared by several models. A chipset or a
+# device ('HTC Alpine') goes by its own.
 _CODE_NAME_RE = re.compile(r"code ?name", re.IGNORECASE)
+_SHARED_CODE_NAMES = frozenset({"cpu", "gpu", "soc"})
 _DEVICES = frozenset({"laptop", "pda", "watch", "tablet", "smartphone"})
 
 # A leading word both sides may or may not write: 'Socket AM4' vs 'AM4'.
@@ -555,7 +557,7 @@ def _columns(table: Table, category: str) -> tuple[list[int], dict[int, list[Fie
     names = [
         i for i, label in enumerate(table.labels)
         if name_re and name_re.search(label) and not _NOT_NAME_RE.search(label)
-        and not (category != "chipset" and _CODE_NAME_RE.search(label))
+        and not (category in _SHARED_CODE_NAMES and _CODE_NAME_RE.search(label))
         and not (category in _DEVICES and _NOT_DEVICE_NAME_RE.search(label))
     ]
     fields: dict[int, list[FieldSpec]] = {}
