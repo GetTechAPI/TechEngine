@@ -251,6 +251,54 @@ def test_storage_and_slash_lists():
     assert rowcheck.cmp_memory_gb(12, "4/6/8 GB LPDDR4 RAM", "RAM") == rowcheck.CONFLICT
 
 
+INFOBOX = """
+<table class="infobox">
+<tr><th colspan="2" class="infobox-above">Galaxy Nexus</th></tr>
+<tr><th>Manufacturer</th><td>Samsung</td></tr>
+<tr><th>First released</th><td>17 November 2011<sup>[1]</sup></td></tr>
+<tr><th>Mass</th><td>135 g (4.8 oz)</td></tr>
+<tr><th>Battery</th><td>1,750 mAh</td></tr>
+<tr><th>Display</th><td>4.65 in (118 mm), 1280×720</td></tr>
+<tr><th>Memory</th><td>1 GB</td></tr>
+</table>
+"""
+
+
+def test_infobox_of_the_records_own_article():
+    pg = page(INFOBOX, "Galaxy_Nexus")
+    rec = {"name": "Samsung Galaxy Nexus", "brand": "samsung", "release_date": "2011-11-17",
+           "weight_g": 135, "battery_mah": 1750, "ram_gb": 1,
+           "display": {"size_inch": 4.65, "resolution": "720x1280"}}
+    got = decide(rec, "smartphone", pg)
+    assert got.decision == CONFIRM
+    assert set(got.agreements) == {"release_date", "weight_g", "battery_mah", "ram_gb",
+                                   "display.size_inch", "display.resolution"}
+    assert decide({**rec, "weight_g": 140}, "smartphone", pg).decision == CONTRADICT
+    # Another model that merely cites this article is not its subject.
+    assert decide({**rec, "name": "Samsung Galaxy Nexus 2"}, "smartphone", pg).decision \
+        == NOTFOUND
+
+
+def test_infobox_subject_named_by_the_article_title():
+    html = INFOBOX.replace("Galaxy Nexus</th>", "Google phone</th>")
+    rec = {"name": "Galaxy Nexus", "brand": "samsung", "weight_g": 135, "battery_mah": 1750}
+    assert decide(rec, "smartphone", page(html, "Galaxy_Nexus_(phone)")).decision == CONFIRM
+
+
+def test_one_model_of_many_is_not_the_subject_of_the_family_article():
+    pg = page(INFOBOX, "Galaxy_Nexus")
+    base = {"brand": "samsung", "weight_g": 135, "battery_mah": 1750}
+    assert decide({**base, "name": "Samsung Galaxy Nexus (1 GB RAM)", "ram_gb": 1},
+                  "smartphone", pg).decision == CONFIRM
+    assert decide({**base, "name": "Samsung Galaxy Nexus (Verizon, Late 2011)"},
+                  "smartphone", pg).decision == NOTFOUND
+
+
+def test_or_lists():
+    assert rowcheck.cmp_memory_gb(4, "4 or 6 GB LPDDR4 RAM", "Memory") == rowcheck.AGREE
+    assert rowcheck.cmp_memory_gb(8, "4 or 6 GB LPDDR4 RAM", "Memory") == rowcheck.CONFLICT
+
+
 def test_free_text_mismatch_is_not_a_conflict():
     html = """<table class="wikitable">
     <tr><th>Model number</th><th>Fab</th><th>GPU</th><th>Released</th></tr>
