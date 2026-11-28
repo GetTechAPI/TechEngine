@@ -130,6 +130,7 @@ class Table:
     headings: tuple[str, ...]  # innermost section first
     labels: tuple[str, ...]
     rows: tuple[tuple[str, ...], ...]
+    infobox: bool = False  # one row: the article's subject, named in column 0
 
 
 @dataclass(frozen=True)
@@ -158,7 +159,28 @@ def tables_from_html(html: str) -> list[Table]:
             tuple(_clean(label) for label in labels),
             tuple(tuple(_clean(cell) for cell in row) for row in body),
         ))
+    for box in soup.select("table.infobox"):
+        boxed = infobox_table(box) if isinstance(box, Tag) else None
+        if boxed is not None:
+            out.append(boxed)
     return out
+
+
+def infobox_table(box: Tag) -> Table | None:
+    """An article's infobox as a one-row table: its title, then label -> value."""
+    for junk in box.select("sup, style, script"):
+        junk.decompose()
+    title = box.select_one("caption, .infobox-above, .infobox-title, .fn")
+    labels = ["Name"]
+    cells = [_clean(title.get_text(" ", strip=True)) if title else ""]
+    for row in box.select("tr"):
+        head, value = row.find("th"), row.find("td")
+        if isinstance(head, Tag) and isinstance(value, Tag):
+            labels.append(_clean(head.get_text(" ", strip=True)))
+            cells.append(_clean(value.get_text(" ", strip=True)))
+    if len(labels) < 3:
+        return None
+    return Table((), tuple(labels), (tuple(cells),), infobox=True)
 
 
 # --- field comparison ------------------------------------------------------------
@@ -227,9 +249,9 @@ def cmp_int(value: Any, cell: str, _label: str) -> str:
 def _cmp_unit(units: dict[str, float], label_units: dict[str, float]) -> Compare:
     """Numbers followed by a unit (or under a label naming one), scaled to the
     record's unit. A bare number with no unit anywhere is not comparable."""
-    # '4/6/8 GB' gives three values in that unit.
+    # '4/6/8 GB' and '4 or 6 GB' give every value in that unit.
     unit_re = re.compile(
-        r"((?:\d+(?:[.,]\d+)*\s*/\s*)*\d+(?:[.,]\d+)*)\s*("
+        r"((?:\d+(?:[.,]\d+)*\s*(?:/|\bor\b)\s*)*\d+(?:[.,]\d+)*)\s*("
         + "|".join(sorted(units, key=len, reverse=True)) + r")\b",
         re.IGNORECASE,
     )
@@ -240,7 +262,7 @@ def _cmp_unit(units: dict[str, float], label_units: dict[str, float]) -> Compare
         hits = unit_re.findall(cell)
         found = [
             float(num.replace(",", "")) * units[unit.lower()]
-            for nums, unit in hits for num in re.split(r"\s*/\s*", nums)
+            for nums, unit in hits for num in re.split(r"\s*(?:/|\bor\b)\s*", nums)
         ]
         scale = units[hits[-1][1].lower()] if hits else None
         if not found:
@@ -345,7 +367,7 @@ _RELEASE = _spec(
 )
 
 _DEVICE_RELEASE = _spec(
-    "release_date", r"release|launch|introduc|announc|available|\bdate\b|\byear\b",
+    "release_date", r"release|launch|introduc|announc|availab|\bdate\b|\byear\b",
     cmp_release, r"price|discontinu|end of|eol|os |android|update",
 )
 _DEVICE = (
@@ -433,12 +455,38 @@ CLASS_WORDS: dict[str, tuple[str, ...]] = {"socket": ("socket",), "chipset": ("c
 SECTION_FIELD: dict[str, str] = {"chipset": "series"}
 
 
-def name_keys(text: str, category: str, makers: Iterable[str] = ()) -> set[str]:
+# A parenthesis that only states a configuration of the same model.
+_CONFIG_RE = re.compile(r"^\s*[\d./+ ]*(GB|TB|MB|RAM|ROM)\b[\w ./+]*$", re.IGNORECASE)
+
+
+def subject_keys(text: str, category: str, makers: Iterable[str] = ()) -> set[str]:
+    """Spellings under which a record may be the subject of an article.
+
+    'Honor 8X (4 GB RAM)' is the Honor 8X; 'MacBook Air (11-inch, Mid 2011)' is
+    one model of many and is not the subject of the MacBook Air article."""
+    text = _clean(text)
+    notes = _PAREN_RE.findall(text)
+    bare = _PAREN_RE.sub(" ", text) if notes and all(_CONFIG_RE.match(n) for n in notes) else text
+    return name_keys(bare, category, makers, variants=False) | name_keys(
+        text, category, makers, variants=False)
+
+
+def name_keys(
+    text: str, category: str, makers: Iterable[str] = (), *, variants: bool = True
+) -> set[str]:
     """Normalized spellings under which ``text`` may be matched exactly."""
     text = _clean(text)
+    return _keys(_spellings(text) if variants else {text}, category, makers)
+
+
+def _spellings(text: str) -> set[str]:
     variants = {text, _PAREN_RE.sub(" ", text)}
     variants.update(m.strip() for m in _PAREN_RE.findall(text))
     variants.update(part.strip() for part in _ALT_NAME_RE.split(text))
+    return variants
+
+
+def _keys(variants: set[str], category: str, makers: Iterable[str]) -> set[str]:
     keys: set[str] = set()
     for variant in variants:
         words = variant.split()
@@ -494,7 +542,15 @@ class Decision:
     comparable: frozenset[str] = field(default_factory=frozenset)
 
 
-def _columns(table: Table, category: str) -> tuple[list[int], dict[int, FieldSpec]]:
+def _columns(table: Table, category: str) -> tuple[list[int], dict[int, list[FieldSpec]]]:
+    if table.infobox:
+        # One cell may state several fields ('Display: 6.1 in, 2532 × 1170').
+        return [0], {
+            i: specs for i, label in enumerate(table.labels) if i and (specs := [
+                spec for spec in FIELDS.get(category, ())
+                if spec.label.search(label) and not (spec.reject and spec.reject.search(label))
+            ])
+        }
     name_re = NAME_LABELS.get(category)
     names = [
         i for i, label in enumerate(table.labels)
@@ -502,13 +558,13 @@ def _columns(table: Table, category: str) -> tuple[list[int], dict[int, FieldSpe
         and not (category != "chipset" and _CODE_NAME_RE.search(label))
         and not (category in _DEVICES and _NOT_DEVICE_NAME_RE.search(label))
     ]
-    fields: dict[int, FieldSpec] = {}
+    fields: dict[int, list[FieldSpec]] = {}
     for i, label in enumerate(table.labels):
         if i in names:
             continue
         for spec in FIELDS.get(category, ()):
             if spec.label.search(label) and not (spec.reject and spec.reject.search(label)):
-                fields[i] = spec
+                fields[i] = [spec]
                 break
     return names or [0], fields
 
@@ -516,21 +572,27 @@ def _columns(table: Table, category: str) -> tuple[list[int], dict[int, FieldSpe
 def match_rows(rec: dict[str, Any], category: str, page: Page) -> list[RowMatch]:
     makers = [m for m in (rec.get("manufacturer"), rec.get("brand")) if isinstance(m, str)]
     wanted: set[str] = set()
+    subject: set[str] = set()
     for name in [rec.get("name"), *(rec.get("aliases") or [])]:
         if isinstance(name, str):
             wanted |= name_keys(name, category, makers)
+            subject |= subject_keys(name, category, makers)
     out: list[RowMatch] = []
     family = title_family(page.ref.title, makers)
     for t_idx, table in enumerate(page.tables):
         name_cols, field_cols = _columns(table, category)
         for row in table.rows:
             names = row_names([row[i] for i in name_cols if i < len(row)], family)
+            if table.infobox:
+                # The subject of an article is also named by the article's title.
+                names.append(_PAREN_RE.sub(" ", page.ref.title.replace("_", " ")))
             if category in CODE_LISTS:
                 names += [c for i in name_cols if i < len(row) for c in part_codes(row[i])]
-            if not any(wanted & name_keys(name, category, makers) for name in names):
+            ours = subject if table.infobox else wanted
+            if not any(ours & name_keys(name, category, makers) for name in names):
                 continue
             results: dict[str, tuple[str, str]] = {}
-            for i, spec in field_cols.items():
+            for i, spec in ((i, spec) for i, specs in field_cols.items() for spec in specs):
                 if i >= len(row) or _unknown(row[i]):
                     continue
                 verdict = spec.compare(_field(rec, spec.name), row[i], table.labels[i])
