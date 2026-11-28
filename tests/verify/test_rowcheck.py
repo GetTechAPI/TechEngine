@@ -155,6 +155,14 @@ def test_grouped_name_header_part_code_lists_and_two_word_makers():
     assert decide({**px5, "name": "Rockchip Maple"}, "soc", pg).decision == NOTFOUND
 
 
+def test_a_device_goes_by_its_code_name():
+    html = """<table class="wikitable">
+    <tr><th>Code name</th><th>Market name</th><th>Release</th><th>Weight</th></tr>
+    <tr><td>Alpine</td><td>XDA II Pro</td><td>2004</td><td>210 g</td></tr></table>"""
+    rec = {"name": "HTC Alpine", "brand": "htc", "release_date": "2004-01-01", "weight_g": 210}
+    assert decide(rec, "smartphone", page(html, "Comparison_of_HTC_devices")).decision == CONFIRM
+
+
 def test_part_codes_only_when_the_cell_is_nothing_else():
     assert rowcheck.part_codes("RK3368 PX5") == ["RK3368", "PX5"]
     assert rowcheck.part_codes("Helio P23 MT6763") == []
